@@ -9,7 +9,8 @@ defmodule AWS.MixProject do
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
-      aliases: aliases()
+      aliases: aliases(),
+      docs: docs()
     ]
   end
 
@@ -37,6 +38,22 @@ defmodule AWS.MixProject do
   defp warnings_as_errors(true), do: " --warnings-as-errors"
   defp warnings_as_errors(_), do: ""
 
+  defp docs do
+    [
+      main: "AWS",
+      extras: ["README.md"],
+      groups_for_modules: [
+        "Core": [
+          AWS,
+          AWS.Error
+        ],
+        "S3": [
+          AWS.S3
+        ]
+      ]
+    ]
+  end
+
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
@@ -50,7 +67,7 @@ defmodule AWS.MixProject do
       {:req, "~> 0.5.17"},
       {:error_message, "~> 0.3.3"},
       {:recase, "~> 0.9.1"},
-      {:sandbox_registry, ">= 0.0.0", only: [:dev, :test]}
+      {:sandbox_registry, ">= 0.0.0", only: [:dev, :test], optional: true}
     ]
   end
 end

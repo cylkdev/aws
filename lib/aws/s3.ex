@@ -25,9 +25,10 @@ defmodule AWS.S3 do
 
   ## Sandbox
 
-  The sandbox allows you to mock S3 operations in tests without making real
-  AWS or LocalStack calls. Set `sandbox: [enabled: true, mode: :inline]` to
-  activate inline sandbox mode.
+  This API provides a sandbox that you can use during development and testing
+  to mock S3 operations without making real HTTP calls.
+
+  Set `sandbox: [enabled: true, mode: :inline]` to activate inline sandbox mode.
 
   ### Setup
 
@@ -113,11 +114,11 @@ defmodule AWS.S3 do
     if inline_sandbox?(opts) do
       sandbox_list_buckets_response(opts)
     else
-      call_list_buckets(opts)
+      do_list_buckets(opts)
     end
   end
 
-  defp call_list_buckets(opts) do
+  defp do_list_buckets(opts) do
     opts
     |> Keyword.get(:operation, [])
     |> API.list_buckets()
@@ -161,11 +162,11 @@ defmodule AWS.S3 do
     if inline_sandbox?(opts) do
       sandbox_create_bucket_response(bucket, opts)
     else
-      call_create_bucket(bucket, opts)
+      do_create_bucket(bucket, opts)
     end
   end
 
-  defp call_create_bucket(bucket, opts) do
+  defp do_create_bucket(bucket, opts) do
     region = opts[:region] || Config.region()
 
     bucket
@@ -228,11 +229,11 @@ defmodule AWS.S3 do
     if inline_sandbox?(opts) do
       sandbox_put_object_response(bucket, key, body, opts)
     else
-      call_put_object(bucket, key, body, opts)
+      do_put_object(bucket, key, body, opts)
     end
   end
 
-  defp call_put_object(bucket, key, body, opts) do
+  defp do_put_object(bucket, key, body, opts) do
     bucket
     |> API.put_object(key, body, opts)
     |> perform(opts)
@@ -274,11 +275,11 @@ defmodule AWS.S3 do
     if inline_sandbox?(opts) do
       sandbox_head_object_response(bucket, key, opts)
     else
-      call_head_object(bucket, key, opts)
+      do_head_object(bucket, key, opts)
     end
   end
 
-  defp call_head_object(bucket, key, opts) do
+  defp do_head_object(bucket, key, opts) do
     bucket
     |> API.head_object(key, opts)
     |> perform(opts)
@@ -320,11 +321,11 @@ defmodule AWS.S3 do
     if inline_sandbox?(opts) do
       sandbox_delete_object_response(bucket, key, opts)
     else
-      call_delete_object(bucket, key, opts)
+      do_delete_object(bucket, key, opts)
     end
   end
 
-  defp call_delete_object(bucket, key, opts) do
+  defp do_delete_object(bucket, key, opts) do
     bucket
     |> API.delete_object(key, opts)
     |> perform(opts)
@@ -364,11 +365,11 @@ defmodule AWS.S3 do
     if inline_sandbox?(opts) do
       sandbox_get_object_response(bucket, key, opts)
     else
-      call_get_object(bucket, key, opts)
+      do_get_object(bucket, key, opts)
     end
   end
 
-  defp call_get_object(bucket, key, opts) do
+  defp do_get_object(bucket, key, opts) do
     bucket
     |> API.get_object(key, opts)
     |> perform(opts)
@@ -407,11 +408,11 @@ defmodule AWS.S3 do
     if inline_sandbox?(opts) do
       sandbox_list_objects_response(bucket, opts)
     else
-      call_list_objects(bucket, opts)
+      do_list_objects(bucket, opts)
     end
   end
 
-  defp call_list_objects(bucket, opts) do
+  defp do_list_objects(bucket, opts) do
     bucket
     |> API.list_objects_v2(opts)
     |> perform(opts)
@@ -459,11 +460,11 @@ defmodule AWS.S3 do
     if inline_sandbox?(opts) do
       sandbox_copy_object_response(dest_bucket, dest_key, src_bucket, src_key, opts)
     else
-      call_copy_object(dest_bucket, dest_key, src_bucket, src_key, opts)
+      do_copy_object(dest_bucket, dest_key, src_bucket, src_key, opts)
     end
   end
 
-  defp call_copy_object(dest_bucket, dest_key, src_bucket, src_key, opts) do
+  defp do_copy_object(dest_bucket, dest_key, src_bucket, src_key, opts) do
     dest_bucket
     |> API.put_object_copy(dest_key, src_bucket, src_key, opts)
     |> perform(opts)
@@ -512,11 +513,11 @@ defmodule AWS.S3 do
     if inline_sandbox?(opts) do
       sandbox_presign_response(bucket, http_method, key, opts)
     else
-      call_presign(bucket, http_method, key, opts)
+      do_presign(bucket, http_method, key, opts)
     end
   end
 
-  defp call_presign(bucket, http_method, key, opts) do
+  defp do_presign(bucket, http_method, key, opts) do
     expires_in = opts[:expires_in] || @sixty_seconds
     opts = Keyword.put(opts, :expires_in, expires_in)
 
@@ -577,11 +578,11 @@ defmodule AWS.S3 do
     if inline_sandbox?(opts) do
       sandbox_presign_post_response(bucket, key, opts)
     else
-      call_presign_post(bucket, key, opts)
+      do_presign_post(bucket, key, opts)
     end
   end
 
-  defp call_presign_post(bucket, key, opts) do
+  defp do_presign_post(bucket, key, opts) do
     expires_in = opts[:expires_in] || @sixty_seconds
     min_size = Keyword.get(opts, :min_size, 0)
     max_size = Keyword.get(opts, :max_size, @one_gib)
@@ -660,11 +661,11 @@ defmodule AWS.S3 do
     if inline_sandbox?(opts) do
       sandbox_presign_part_response(bucket, object, upload_id, part_number, opts)
     else
-      call_presign_part(bucket, object, upload_id, part_number, opts)
+      do_presign_part(bucket, object, upload_id, part_number, opts)
     end
   end
 
-  defp call_presign_part(bucket, object, upload_id, part_number, opts) do
+  defp do_presign_part(bucket, object, upload_id, part_number, opts) do
     query_params = %{"uploadId" => upload_id, "partNumber" => part_number}
     opts = Keyword.update(opts, :query_params, query_params, &Map.merge(&1, query_params))
     presign(bucket, :put, object, opts)
@@ -704,11 +705,11 @@ defmodule AWS.S3 do
     if inline_sandbox?(opts) do
       sandbox_create_multipart_upload_response(bucket, key, opts)
     else
-      call_create_multipart_upload(bucket, key, opts)
+      do_create_multipart_upload(bucket, key, opts)
     end
   end
 
-  defp call_create_multipart_upload(bucket, key, opts) do
+  defp do_create_multipart_upload(bucket, key, opts) do
     one_min_from_now = DateTime.add(DateTime.utc_now(), 1, :minute)
     expiry = to_http_date(one_min_from_now)
 
@@ -765,11 +766,11 @@ defmodule AWS.S3 do
     if inline_sandbox?(opts) do
       sandbox_abort_multipart_upload_response(bucket, key, upload_id, opts)
     else
-      call_abort_multipart_upload(bucket, key, upload_id, opts)
+      do_abort_multipart_upload(bucket, key, upload_id, opts)
     end
   end
 
-  defp call_abort_multipart_upload(bucket, key, upload_id, opts) do
+  defp do_abort_multipart_upload(bucket, key, upload_id, opts) do
     bucket
     |> API.abort_multipart_upload(key, upload_id)
     |> perform(opts)
@@ -820,11 +821,11 @@ defmodule AWS.S3 do
     if inline_sandbox?(opts) do
       sandbox_upload_part_response(bucket, key, upload_id, part_number, body, opts)
     else
-      call_upload_part(bucket, key, upload_id, part_number, body, opts)
+      do_upload_part(bucket, key, upload_id, part_number, body, opts)
     end
   end
 
-  defp call_upload_part(bucket, key, upload_id, part_number, body, opts) do
+  defp do_upload_part(bucket, key, upload_id, part_number, body, opts) do
     bucket
     |> API.upload_part(key, upload_id, part_number, body, opts)
     |> perform(opts)
@@ -875,11 +876,11 @@ defmodule AWS.S3 do
     if inline_sandbox?(opts) do
       sandbox_list_parts_response(bucket, key, upload_id, part_number_marker, opts)
     else
-      call_list_parts(bucket, key, upload_id, part_number_marker, opts)
+      do_list_parts(bucket, key, upload_id, part_number_marker, opts)
     end
   end
 
-  defp call_list_parts(bucket, key, upload_id, part_number_marker, opts) do
+  defp do_list_parts(bucket, key, upload_id, part_number_marker, opts) do
     list_parts_opts =
       if part_number_marker do
         query_params = %{"part-number-marker" => part_number_marker}
@@ -959,7 +960,7 @@ defmodule AWS.S3 do
         opts
       )
     else
-      call_copy_part(
+      do_copy_part(
         dest_bucket,
         dest_key,
         src_bucket,
@@ -972,7 +973,7 @@ defmodule AWS.S3 do
     end
   end
 
-  defp call_copy_part(
+  defp do_copy_part(
          dest_bucket,
          dest_key,
          src_bucket,
@@ -999,11 +1000,11 @@ defmodule AWS.S3 do
   end
 
   @doc """
-  Copies parts of an object from one location to another using concurrent multipart copy operations.
+  Copies parts of an object from one location to another using concurrent
+  multipart copy operations.
 
-  Partitions the source object into byte-range chunks and copies each chunk
-  concurrently using `Task.async_stream/3`. Returns a sorted list of
-  `{part_number, etag}` tuples on success.
+  Partitions the source object into byte-range chunks and copies each
+  chunk concurrently using `Task.async_stream/3`.
 
   ## Permissions
 
@@ -1067,7 +1068,7 @@ defmodule AWS.S3 do
         opts
       )
     else
-      call_copy_parts(
+      do_copy_parts(
         dest_bucket,
         dest_key,
         src_bucket,
@@ -1079,7 +1080,7 @@ defmodule AWS.S3 do
     end
   end
 
-  defp call_copy_parts(
+  defp do_copy_parts(
          dest_bucket,
          dest_key,
          src_bucket,
@@ -1160,10 +1161,10 @@ defmodule AWS.S3 do
           opts :: keyword()
         ) :: {:ok, map()} | {:error, term()}
   def copy_object_multipart(dest_bucket, dest_key, src_bucket, src_key, opts \\ []) do
-    call_copy_object_multipart(dest_bucket, dest_key, src_bucket, src_key, opts)
+    do_copy_object_multipart(dest_bucket, dest_key, src_bucket, src_key, opts)
   end
 
-  defp call_copy_object_multipart(dest_bucket, dest_key, src_bucket, src_key, opts) do
+  defp do_copy_object_multipart(dest_bucket, dest_key, src_bucket, src_key, opts) do
     with {:ok, info} <- head_object(src_bucket, src_key, opts),
          {:ok, mpu} <- create_multipart_upload(dest_bucket, dest_key, opts),
          content_length = String.to_integer(info.content_length),
@@ -1247,11 +1248,11 @@ defmodule AWS.S3 do
     if inline_sandbox?(opts) do
       sandbox_complete_multipart_upload_response(bucket, key, upload_id, parts, opts)
     else
-      call_complete_multipart_upload(bucket, key, upload_id, parts, opts)
+      do_complete_multipart_upload(bucket, key, upload_id, parts, opts)
     end
   end
 
-  defp call_complete_multipart_upload(bucket, key, upload_id, parts, opts) do
+  defp do_complete_multipart_upload(bucket, key, upload_id, parts, opts) do
     with :ok <- validate_multipart_size(bucket, key, upload_id, opts) do
       bucket
       |> API.complete_multipart_upload(key, upload_id, validate_parts!(parts))
@@ -1275,68 +1276,85 @@ defmodule AWS.S3 do
   end
 
   if Code.ensure_loaded?(SandboxRegistry) do
+    @doc false
     defdelegate sandbox_disabled?, to: AWS.S3.Sandbox
 
+    @doc false
     defdelegate sandbox_list_buckets_response(opts),
       to: AWS.S3.Sandbox,
       as: :list_buckets_response
 
+    @doc false
     defdelegate sandbox_create_bucket_response(bucket, opts),
       to: AWS.S3.Sandbox,
       as: :create_bucket_response
 
+    @doc false
     defdelegate sandbox_put_object_response(bucket, key, body, opts),
       to: AWS.S3.Sandbox,
       as: :put_object_response
 
+    @doc false
     defdelegate sandbox_head_object_response(bucket, key, opts),
       to: AWS.S3.Sandbox,
       as: :head_object_response
 
+    @doc false
     defdelegate sandbox_delete_object_response(bucket, key, opts),
       to: AWS.S3.Sandbox,
       as: :delete_object_response
 
+    @doc false
     defdelegate sandbox_get_object_response(bucket, key, opts),
       to: AWS.S3.Sandbox,
       as: :get_object_response
 
+    @doc false
     defdelegate sandbox_list_objects_response(bucket, opts),
       to: AWS.S3.Sandbox,
       as: :list_objects_response
 
+    @doc false
     defdelegate sandbox_copy_object_response(dest_bucket, dest_key, src_bucket, src_key, opts),
       to: AWS.S3.Sandbox,
       as: :copy_object_response
 
+    @doc false
     defdelegate sandbox_presign_response(bucket, http_method, key, opts),
       to: AWS.S3.Sandbox,
       as: :presign_response
 
+    @doc false
     defdelegate sandbox_presign_post_response(bucket, key, opts),
       to: AWS.S3.Sandbox,
       as: :presign_post_response
 
+    @doc false
     defdelegate sandbox_presign_part_response(bucket, object, upload_id, part_number, opts),
       to: AWS.S3.Sandbox,
       as: :presign_part_response
 
+    @doc false
     defdelegate sandbox_create_multipart_upload_response(bucket, key, opts),
       to: AWS.S3.Sandbox,
       as: :create_multipart_upload_response
 
+    @doc false
     defdelegate sandbox_abort_multipart_upload_response(bucket, key, upload_id, opts),
       to: AWS.S3.Sandbox,
       as: :abort_multipart_upload_response
 
+    @doc false
     defdelegate sandbox_upload_part_response(bucket, key, upload_id, part_number, body, opts),
       to: AWS.S3.Sandbox,
       as: :upload_part_response
 
+    @doc false
     defdelegate sandbox_list_parts_response(bucket, key, upload_id, part_number_marker, opts),
       to: AWS.S3.Sandbox,
       as: :list_parts_response
 
+    @doc false
     defdelegate sandbox_copy_part_response(
                   dest_bucket,
                   dest_key,
@@ -1350,6 +1368,7 @@ defmodule AWS.S3 do
                 to: AWS.S3.Sandbox,
                 as: :copy_part_response
 
+    @doc false
     defdelegate sandbox_copy_parts_response(
                   dest_bucket,
                   dest_key,
@@ -1362,6 +1381,7 @@ defmodule AWS.S3 do
                 to: AWS.S3.Sandbox,
                 as: :copy_parts_response
 
+    @doc false
     defdelegate sandbox_complete_multipart_upload_response(
                   bucket,
                   key,
@@ -1749,6 +1769,8 @@ defmodule AWS.S3 do
       max ->
         with {:ok, size} <- aggregate_object_size(bucket, key, upload_id, opts) do
           if size > max do
+            abort_multipart_upload(bucket, key, upload_id, opts)
+
             {:error,
              Error.forbidden(
                "multipart upload size exceeds maximum allowed size",
@@ -1768,17 +1790,17 @@ defmodule AWS.S3 do
   end
 
   defp aggregate_object_size(bucket, key, upload_id, opts) do
-    call_aggregate_object_size(bucket, key, upload_id, nil, 0, opts)
+    do_aggregate_object_size(bucket, key, upload_id, nil, 0, opts)
   end
 
-  defp call_aggregate_object_size(bucket, key, upload_id, part_number_marker, acc, opts) do
+  defp do_aggregate_object_size(bucket, key, upload_id, part_number_marker, acc, opts) do
     case list_parts(bucket, key, upload_id, part_number_marker, opts) do
       {:ok, %{parts: parts} = body} ->
         size = Enum.reduce(parts, 0, fn p, sum -> sum + (p.size || 0) end)
         acc2 = acc + size
 
         if body.is_truncated do
-          call_aggregate_object_size(
+          do_aggregate_object_size(
             bucket,
             key,
             upload_id,
