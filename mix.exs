@@ -49,6 +49,12 @@ defmodule AWS.MixProject do
         ],
         "S3": [
           AWS.S3
+        ],
+        "EventBridge": [
+          AWS.EventBridge
+        ],
+        "CloudWatch": [
+          AWS.CloudWatch
         ]
       ]
     ]
@@ -67,6 +73,8 @@ defmodule AWS.MixProject do
       {:req, "~> 0.5.17"},
       {:error_message, "~> 0.3.3"},
       {:recase, "~> 0.9.1"},
+      {:ex_aws_cloudwatch, "~> 2.0"},
+      {:ex_aws_eventbridge, "~> 0.1.1"},
       {:sandbox_registry, ">= 0.0.0", only: [:dev, :test], optional: true}
     ]
   end

@@ -559,4 +559,47 @@ defmodule AWS.S3.SandboxTest do
                )
     end
   end
+
+  # S3 EventBridge notification functions
+
+  describe "enable_event_bridge/2" do
+    test "returns mocked success" do
+      Sandbox.set_enable_event_bridge_responses([
+        {@bucket, fn -> {:ok, %{}} end}
+      ])
+
+      assert {:ok, %{}} = S3.enable_event_bridge(@bucket, @sandbox_opts)
+    end
+  end
+
+  describe "disable_event_bridge/2" do
+    test "returns mocked success" do
+      Sandbox.set_disable_event_bridge_responses([
+        {@bucket, fn -> {:ok, %{}} end}
+      ])
+
+      assert {:ok, %{}} = S3.disable_event_bridge(@bucket, @sandbox_opts)
+    end
+  end
+
+  describe "get_notification_configuration/2" do
+    test "returns mocked configuration" do
+      Sandbox.set_get_notification_configuration_responses([
+        {@bucket, fn -> {:ok, %{event_bridge_enabled: true}} end}
+      ])
+
+      assert {:ok, %{event_bridge_enabled: true}} =
+               S3.get_notification_configuration(@bucket, @sandbox_opts)
+    end
+
+    test "returns mocked configuration with EventBridge disabled" do
+      Sandbox.set_get_notification_configuration_responses([
+        {@bucket, fn -> {:ok, %{event_bridge_enabled: false}} end}
+      ])
+
+      assert {:ok, %{event_bridge_enabled: false}} =
+               S3.get_notification_configuration(@bucket, @sandbox_opts)
+    end
+  end
+
 end

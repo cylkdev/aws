@@ -124,7 +124,7 @@ defmodule AWS.S3 do
     |> API.list_buckets()
     |> perform(opts)
     |> deserialize_response(opts, fn %{body: %{buckets: buckets}} ->
-      Serializer.deserialize(buckets, opts)
+      Serializer.deserialize(buckets)
     end)
   end
 
@@ -175,7 +175,7 @@ defmodule AWS.S3 do
     |> deserialize_response(opts, fn
       %{headers: headers} ->
         headers
-        |> Serializer.deserialize(opts)
+        |> Serializer.deserialize()
         |> Map.new()
     end)
     |> translate_error(fn
@@ -239,7 +239,7 @@ defmodule AWS.S3 do
     |> perform(opts)
     |> deserialize_response(opts, fn %{headers: headers} ->
       headers
-      |> Serializer.deserialize(opts)
+      |> Serializer.deserialize()
       |> Map.new()
     end)
   end
@@ -285,7 +285,7 @@ defmodule AWS.S3 do
     |> perform(opts)
     |> deserialize_response(opts, fn %{headers: headers} ->
       headers
-      |> Serializer.deserialize(opts)
+      |> Serializer.deserialize()
       |> Map.new()
     end)
   end
@@ -330,7 +330,7 @@ defmodule AWS.S3 do
     |> API.delete_object(key, opts)
     |> perform(opts)
     |> deserialize_response(opts, fn %{body: body} ->
-      Serializer.deserialize(body, opts)
+      Serializer.deserialize(body)
     end)
   end
 
@@ -417,7 +417,7 @@ defmodule AWS.S3 do
     |> API.list_objects_v2(opts)
     |> perform(opts)
     |> deserialize_response(opts, fn %{body: %{contents: contents}} ->
-      Serializer.deserialize(contents, opts)
+      Serializer.deserialize(contents)
     end)
   end
 
@@ -613,7 +613,7 @@ defmodule AWS.S3 do
     |> then(fn %{fields: fields, url: url} ->
       {:ok,
        %{
-         fields: Serializer.deserialize(fields, opts),
+         fields: Serializer.deserialize(fields),
          url: url,
          expires_in: expires_in,
          expires_at: DateTime.add(DateTime.utc_now(), expires_in, :second)
@@ -724,7 +724,7 @@ defmodule AWS.S3 do
     |> API.initiate_multipart_upload(key, opts)
     |> perform(opts)
     |> deserialize_response(opts, fn %{body: body} ->
-      Serializer.deserialize(body, opts)
+      Serializer.deserialize(body)
     end)
   end
 
@@ -776,7 +776,7 @@ defmodule AWS.S3 do
     |> perform(opts)
     |> deserialize_response(opts, fn %{headers: headers} ->
       headers
-      |> Serializer.deserialize(opts)
+      |> Serializer.deserialize()
       |> Map.new()
     end)
   end
@@ -831,7 +831,7 @@ defmodule AWS.S3 do
     |> perform(opts)
     |> deserialize_response(opts, fn %{headers: headers} ->
       headers
-      |> Serializer.deserialize(opts)
+      |> Serializer.deserialize()
       |> Map.new()
     end)
   end
@@ -893,7 +893,7 @@ defmodule AWS.S3 do
     |> API.list_parts(key, upload_id, list_parts_opts)
     |> perform(opts)
     |> deserialize_response(opts, fn %{body: body} ->
-      Serializer.deserialize(body, opts)
+      Serializer.deserialize(body)
     end)
   end
 
@@ -995,7 +995,7 @@ defmodule AWS.S3 do
     )
     |> perform(opts)
     |> deserialize_response(opts, fn %{body: body} ->
-      Serializer.deserialize(body, opts)
+      Serializer.deserialize(body)
     end)
   end
 
@@ -1259,10 +1259,154 @@ defmodule AWS.S3 do
       |> perform(opts)
       |> deserialize_response(opts, fn %{body: body} ->
         with :ok <- validate_multipart_content_type(bucket, key, upload_id, opts) do
-          Serializer.deserialize(body, opts)
+          Serializer.deserialize(body)
         end
       end)
     end
+  end
+
+  # S3 EventBridge notification configuration
+
+  @doc """
+  Enables EventBridge notifications on an S3 bucket.
+
+  Once enabled, all S3 event types are sent to EventBridge. Filtering is done at
+  the EventBridge rule level via event patterns. Existing notification configurations
+  (SNS, SQS, Lambda) are preserved.
+
+  Idempotent — returns `{:ok, %{}}` if EventBridge is already enabled.
+  """
+  @spec enable_event_bridge(bucket :: binary(), opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def enable_event_bridge(bucket, opts \\ []) do
+    if inline_sandbox?(opts) do
+      sandbox_enable_event_bridge_response(bucket, opts)
+    else
+      do_enable_event_bridge(bucket, opts)
+    end
+  end
+
+  defp do_enable_event_bridge(bucket, opts) do
+    with {:ok, xml} <- get_raw_notification_xml(bucket, opts) do
+      if String.contains?(xml, "EventBridgeConfiguration") do
+        {:ok, %{}}
+      else
+        xml = expand_self_closing_notification(xml)
+        new_xml = insert_event_bridge_config(xml)
+        put_notification_xml(bucket, new_xml, opts)
+      end
+    end
+  end
+
+  @doc """
+  Disables EventBridge notifications on an S3 bucket.
+
+  Other notification configurations (SNS, SQS, Lambda) are preserved.
+
+  Idempotent — returns `{:ok, %{}}` if EventBridge is not currently enabled.
+  """
+  @spec disable_event_bridge(bucket :: binary(), opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def disable_event_bridge(bucket, opts \\ []) do
+    if inline_sandbox?(opts) do
+      sandbox_disable_event_bridge_response(bucket, opts)
+    else
+      do_disable_event_bridge(bucket, opts)
+    end
+  end
+
+  defp do_disable_event_bridge(bucket, opts) do
+    with {:ok, xml} <- get_raw_notification_xml(bucket, opts) do
+      if String.contains?(xml, "EventBridgeConfiguration") do
+        new_xml = remove_event_bridge_config(xml)
+        put_notification_xml(bucket, new_xml, opts)
+      else
+        {:ok, %{}}
+      end
+    end
+  end
+
+  @doc """
+  Returns the notification configuration for an S3 bucket.
+
+  The result includes `:event_bridge_enabled` (boolean) and `:raw_xml` (the original XML).
+  """
+  @spec get_notification_configuration(bucket :: binary(), opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def get_notification_configuration(bucket, opts \\ []) do
+    if inline_sandbox?(opts) do
+      sandbox_get_notification_configuration_response(bucket, opts)
+    else
+      do_get_notification_configuration(bucket, opts)
+    end
+  end
+
+  defp do_get_notification_configuration(bucket, opts) do
+    with {:ok, xml} <- get_raw_notification_xml(bucket, opts) do
+      {:ok, XMLParser.parse_notification_configuration(xml)}
+    end
+  end
+
+  defp get_raw_notification_xml(bucket, opts) do
+    op = %ExAws.Operation.S3{
+      http_method: :get,
+      bucket: bucket,
+      resource: "notification",
+      path: "/",
+      body: "",
+      params: %{},
+      headers: %{},
+      parser: & &1,
+      stream_builder: nil
+    }
+
+    case ExAws.Operation.perform(op, s3_config(opts)) do
+      {:ok, %{body: body}} -> {:ok, body}
+      {:ok, body} when is_binary(body) -> {:ok, body}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp put_notification_xml(bucket, xml, opts) do
+    md5 = :crypto.hash(:md5, xml) |> Base.encode64()
+
+    op = %ExAws.Operation.S3{
+      http_method: :put,
+      bucket: bucket,
+      resource: "notification",
+      path: "/",
+      body: xml,
+      params: %{},
+      headers: %{"content-md5" => md5, "content-type" => "application/xml"},
+      parser: & &1,
+      stream_builder: nil
+    }
+
+    case ExAws.Operation.perform(op, s3_config(opts)) do
+      {:ok, _} -> {:ok, %{}}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp insert_event_bridge_config(xml) do
+    String.replace(
+      xml,
+      "</NotificationConfiguration>",
+      "<EventBridgeConfiguration/></NotificationConfiguration>"
+    )
+  end
+
+  defp remove_event_bridge_config(xml) do
+    xml
+    |> String.replace(~r/<EventBridgeConfiguration\s*\/?>(\s*<\/EventBridgeConfiguration>)?/, "")
+  end
+
+  defp expand_self_closing_notification(xml) do
+    String.replace(
+      xml,
+      ~r/<NotificationConfiguration\s*\/>/,
+      "<NotificationConfiguration></NotificationConfiguration>"
+    )
   end
 
   # Sandbox helpers
@@ -1391,6 +1535,23 @@ defmodule AWS.S3 do
                 ),
                 to: AWS.S3.Sandbox,
                 as: :complete_multipart_upload_response
+
+    # S3 EventBridge notification sandbox delegates
+    @doc false
+    defdelegate sandbox_enable_event_bridge_response(bucket, opts),
+      to: AWS.S3.Sandbox,
+      as: :enable_event_bridge_response
+
+    @doc false
+    defdelegate sandbox_disable_event_bridge_response(bucket, opts),
+      to: AWS.S3.Sandbox,
+      as: :disable_event_bridge_response
+
+    @doc false
+    defdelegate sandbox_get_notification_configuration_response(bucket, opts),
+      to: AWS.S3.Sandbox,
+      as: :get_notification_configuration_response
+
   else
     defp sandbox_disabled?, do: true
 
@@ -1609,6 +1770,34 @@ defmodule AWS.S3 do
       options: #{inspect(opts)}
       """
     end
+
+    defp sandbox_enable_event_bridge_response(bucket, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_disable_event_bridge_response(bucket, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_get_notification_configuration_response(bucket, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      options: #{inspect(opts)}
+      """
+    end
+
   end
 
   defp perform(op, opts) do

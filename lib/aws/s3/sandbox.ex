@@ -545,6 +545,55 @@ defmodule AWS.S3.Sandbox do
     set_responses(:complete_multipart_upload, tuples)
   end
 
+  # S3 EventBridge notification — response retrieval
+
+  def enable_event_bridge_response(bucket, opts) do
+    doc_examples = ["fn -> ...", "fn (opts) -> ..."]
+    func = find!(:enable_event_bridge, bucket, doc_examples)
+
+    case :erlang.fun_info(func)[:arity] do
+      0 -> func.()
+      1 -> func.(opts)
+      _ -> raise_unsupported_arity(func, doc_examples)
+    end
+  end
+
+  def disable_event_bridge_response(bucket, opts) do
+    doc_examples = ["fn -> ...", "fn (opts) -> ..."]
+    func = find!(:disable_event_bridge, bucket, doc_examples)
+
+    case :erlang.fun_info(func)[:arity] do
+      0 -> func.()
+      1 -> func.(opts)
+      _ -> raise_unsupported_arity(func, doc_examples)
+    end
+  end
+
+  def get_notification_configuration_response(bucket, opts) do
+    doc_examples = ["fn -> ...", "fn (opts) -> ..."]
+    func = find!(:get_notification_configuration, bucket, doc_examples)
+
+    case :erlang.fun_info(func)[:arity] do
+      0 -> func.()
+      1 -> func.(opts)
+      _ -> raise_unsupported_arity(func, doc_examples)
+    end
+  end
+
+  # S3 EventBridge notification — response registration
+
+  def set_enable_event_bridge_responses(tuples) do
+    set_responses(:enable_event_bridge, tuples)
+  end
+
+  def set_disable_event_bridge_responses(tuples) do
+    set_responses(:disable_event_bridge, tuples)
+  end
+
+  def set_get_notification_configuration_responses(tuples) do
+    set_responses(:get_notification_configuration, tuples)
+  end
+
   # Sandbox control
 
   @doc """
