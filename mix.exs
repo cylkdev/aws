@@ -55,6 +55,12 @@ defmodule AWS.MixProject do
         ],
         "CloudWatch": [
           AWS.CloudWatch
+        ],
+        "IAM": [
+          AWS.IAM
+        ],
+        "Identity Center": [
+          AWS.IdentityCenter
         ]
       ]
     ]
@@ -75,6 +81,7 @@ defmodule AWS.MixProject do
       {:recase, "~> 0.9.1"},
       {:ex_aws_cloudwatch, "~> 2.0"},
       {:ex_aws_eventbridge, "~> 0.1.1"},
+      {:ex_aws_iam, "~> 0.1.1"},
       {:sandbox_registry, ">= 0.0.0", only: [:dev, :test], optional: true}
     ]
   end
