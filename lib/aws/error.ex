@@ -1,4 +1,13 @@
 defmodule AWS.Error do
+  @moduledoc """
+  Error helpers that delegate to the `ErrorMessage` library.
+
+  HTTP 4xx responses map to `not_found`, 5xx responses map to
+  `service_unavailable`, and any other failures map to
+  `internal_server_error`. The adapter module is configurable via the
+  `:error_message_adapter` option (defaulting to `ErrorMessage`).
+  """
+
   def bad_request(message, details, opts) do
     adapter(opts).bad_request(message, details)
   end
@@ -21,6 +30,10 @@ defmodule AWS.Error do
 
   def service_unavailable(message, details, opts) do
     adapter(opts).service_unavailable(message, details)
+  end
+
+  def unauthorized(message, details, opts) do
+    adapter(opts).unauthorized(message, details)
   end
 
   defp adapter(opts) do

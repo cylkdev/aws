@@ -1,4 +1,5 @@
 defmodule AWS.Counter do
+  @moduledoc false
   @table __MODULE__
 
   def start do

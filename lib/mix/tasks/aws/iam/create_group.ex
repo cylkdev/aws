@@ -1,0 +1,64 @@
+defmodule Mix.Tasks.AWS.IAM.CreateGroup do
+  @shortdoc "Creates an IAM group"
+
+  @moduledoc """
+  Creates an IAM group. Skips if a group with the same name already exists
+  unless `--force` is given.
+
+  ## Usage
+
+      mix aws.iam.create_group --name NAME [options]
+
+  ## Options
+
+    * `--name` — Group name (required)
+    * `--path` — IAM path for the group (default: `/`)
+    * `--force` / `-f` — Proceed even if group already exists
+    * `--region` / `-r` — AWS region (default: config or `AWS.Config.region/0`)
+
+  ## Examples
+
+      mix aws.iam.create_group --name engineers
+      mix aws.iam.create_group --name engineers --path /teams/
+  """
+
+  use Mix.Task
+  alias Mix.Tasks.AWS.Helpers
+
+  @impl Mix.Task
+  def run(argv) do
+    Mix.Task.run("app.start")
+
+    {parsed, _args, _} = Helpers.parse_opts(argv, name: :string, path: :string)
+
+    name = parsed[:name] || Mix.raise("--name is required")
+
+    opts =
+      parsed
+      |> Helpers.build_opts()
+      |> Helpers.maybe_put(:path, parsed[:path])
+
+    force = parsed[:force] || false
+
+    Helpers.idempotent(
+      name,
+      fn -> find_group(AWS.IAM.list_groups(opts), name) end,
+      fn ->
+        name
+        |> AWS.IAM.create_group(opts)
+        |> Helpers.handle_result()
+      end,
+      force
+    )
+  end
+
+  defp find_group({:ok, %{groups: groups}}, name) do
+    if Enum.any?(groups, &(&1[:group_name] === name)) do
+      {:ok, %{}}
+    else
+      {:error, %{code: :not_found}}
+    end
+  end
+
+  defp find_group({:error, _} = error, _), do: error
+end

@@ -1,16 +1,43 @@
 defmodule AWS.MixProject do
   use Mix.Project
 
+  @mix_env Mix.env()
+  @version "0.1.0"
+
   def project do
     [
       app: :aws,
-      version: "0.1.0",
-      elixir: "~> 1.15",
+      version: @version,
+      elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       aliases: aliases(),
-      docs: docs()
+      docs: docs(),
+      test_coverage: [tool: ExCoveralls],
+      dialyzer: [
+        plt_add_apps: [:ex_unit, :mix],
+        plt_ignore_apps: [],
+        plt_local_path: "dialyzer",
+        plt_core_path: "dialyzer",
+        list_unused_filters: true,
+        ignore_warnings: ".dialyzer-ignore.exs",
+        flags: [:unmatched_returns, :no_improper_lists]
+      ]
+    ]
+  end
+
+  def cli do
+    [
+      doctor: :test,
+      coverage: :test,
+      dialyzer: :test,
+      coveralls: :test,
+      "coveralls.lcov": :test,
+      "coveralls.json": :test,
+      "coveralls.html": :test,
+      "coveralls.detail": :test,
+      "coveralls.post": :test
     ]
   end
 
@@ -32,23 +59,36 @@ defmodule AWS.MixProject do
   end
 
   defp compile_alias do
-    "compile" <> warnings_as_errors(Mix.env())
+    if @mix_env === :test do
+      "compile --warnings-as-errors"
+    else
+      "compile"
+    end
   end
-
-  defp warnings_as_errors(true), do: " --warnings-as-errors"
-  defp warnings_as_errors(_), do: ""
 
   defp docs do
     [
       main: "AWS",
       extras: ["README.md"],
       groups_for_modules: [
-        "Core": [
+        Core: [
           AWS,
           AWS.Error
         ],
-        "S3": [
+        S3: [
           AWS.S3
+        ],
+        EventBridge: [
+          AWS.EventBridge
+        ],
+        Logs: [
+          AWS.Logs
+        ],
+        IAM: [
+          AWS.IAM
+        ],
+        "Identity Center": [
+          AWS.IdentityCenter
         ]
       ]
     ]
@@ -57,17 +97,19 @@ defmodule AWS.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ex_doc, "~> 0.40.1", only: :dev},
-      {:ex_aws, "~> 2.6"},
-      {:ex_aws_s3, "~> 2.5"},
-      {:configparser_ex, "~> 5.0"},
+      {:ex_doc, "~> 0.40.1", only: :dev, runtime: false},
+      {:sandbox_registry, ">= 0.0.0", only: [:dev, :test], optional: true},
+      {:credo, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:blitz_credo_checks, "~> 0.1.5", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:excoveralls, "~> 0.13", only: :test, runtime: false},
+      # dev dependencies
       {:sweet_xml, "~> 0.7.5"},
-      {:timex, "~> 3.7"},
-      {:finch, "~> 0.21.0"},
-      {:req, "~> 0.5.17"},
+      {:finch, "~> 0.19"},
+      {:req, "~> 0.5"},
+      {:cowboy, "~> 2.10", only: :test},
       {:error_message, "~> 0.3.3"},
-      {:recase, "~> 0.9.1"},
-      {:sandbox_registry, ">= 0.0.0", only: [:dev, :test], optional: true}
+      {:recase, "~> 0.9.1"}
     ]
   end
 end

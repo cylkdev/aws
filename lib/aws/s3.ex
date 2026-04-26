@@ -1,18 +1,59 @@
 defmodule AWS.S3 do
   @moduledoc """
-  `AWS.S3` provides an API for with S3 (Simple Storage Service).
+  `AWS.S3` provides an API for working with S3 (Simple Storage Service).
 
-  This API is a wrapper for `ExAws.S3`. It also provides consistent error
+  This module calls the AWS S3 REST/XML API directly via `AWS.HTTP` and
+  `AWS.Signer` (through `AWS.S3.Client`). It provides consistent error
   handling, response deserialization, and sandbox support for local
   development and testing.
 
+  S3's public API is XML-only at the AWS wire level. The service model
+  (`botocore/data/s3/2006-03-01/service-2.json`) declares
+  `metadata.protocols = ["rest-xml"]`, and AWS does not expose a JSON
+  alternative for S3 operations. The XML handling in this module is a
+  consequence of AWS's protocol choice, not a library decision: per-
+  operation HTTP shapes (path, method, headers), XML response bodies
+  for list/describe-style calls, and header-only response payloads for
+  write-style calls. XPath extraction runs in `AWS.S3.XMLParser`;
+  response-header-to-map conversion runs in `AWS.Serializer`.
+
+  It is also the only service with first-class support for **presigned
+  URLs** (via `presign/4` and `presign_part/5`), **presigned POST form
+  policies** (via `presign_post/3`), and **streaming uploads** — pass an
+  `Enumerable` of iodata chunks as the body to `put_object/4` or
+  `upload_part/6` to avoid buffering large payloads in memory.
+
   ## Shared Options
 
-  The following options are available for most functions in this API:
+  Credential and region options are flat top-level keys on every call.
+  Each accepts a literal, a source tuple, or a list of sources (first
+  non-nil wins). This mirrors `ExAws.Config`.
 
-    - `:region` - The AWS region where the bucket will be created. Defaults to `AWS.Config.region()`.
+    - `:access_key_id` - AWS access key ID. Sources: literal binary,
+      `{:system, "ENV"}`, `:instance_role`, `:ecs_task_role`,
+      `{:awscli, profile}` / `{:awscli, profile, ttl_seconds}`, a module,
+      or a list of any of these.
 
-    - `:s3` - A keyword list of options used to configure the `ExAws.S3` API. See `ExAws.Config.new/2` for available options.
+    - `:secret_access_key` - AWS secret access key. Same source vocabulary.
+
+    - `:security_token` - STS session token. Same source vocabulary.
+
+    - `:region` - AWS region. Same source vocabulary. Defaults to
+      `AWS.Config.region()`.
+
+  If a source returns a map (e.g. `:instance_role` or `{:awscli, _}`),
+  its fields are merged into the resolved config, so listing
+  `:instance_role` under `:access_key_id` also populates
+  `:secret_access_key` and `:security_token`.
+
+  `{:awscli, _}` is **not** in the default chain — callers opt in
+  explicitly. Reading `~/.aws/*` silently on server runtimes is surprising.
+
+  The following options are also available for most functions:
+
+    - `:s3` - A keyword list of S3-specific endpoint overrides. Supports
+      `:scheme`, `:host`, `:port`, `:path_style`. Credentials are not
+      read from this sub-list; use the top-level keys above.
 
     - `:sandbox` - A keyword list to override sandbox configuration.
         - `:enabled` - Whether sandbox mode is enabled. Defaults to `AWS.Config.sandbox_enabled()`.
@@ -72,16 +113,21 @@ defmodule AWS.S3 do
       fn key -> {:ok, "content for \#{key}"} end
       fn key, opts -> {:ok, "content"} end
   """
+
   alias AWS.{
+    Client,
     Config,
     Error,
     S3.Multipart,
+    S3.Operation,
     S3.XMLParser,
-    Serializer
+    Serializer,
+    Signer
   }
 
-  alias ExAws.S3, as: API
+  @override_keys [:headers, :body, :http, :url, :stream_upload, :stream_response, :payload_hash]
 
+  @service "s3"
   @sixty_four_mib 64 * 1_024 * 1_024
   @one_gib 1 * 1_024 * 1_024 * 1_024
   @sixty_seconds 60
@@ -102,14 +148,13 @@ defmodule AWS.S3 do
   ## Options
 
   See the "Shared Options" section in the module documentation for common options.
-  See `ExAws.S3.put_bucket/3` for available options.
 
   ## Examples
 
       iex> AWS.S3.list_buckets()
-      {:ok, [%{name: "my-bucket", creation_date: "2023-01-01T00:00:00.000Z"}]}
+      {:ok, [%{name: "my-bucket", creation_date: "2024-01-01T00:00:00.000Z"}]}
   """
-  @spec list_buckets(opts :: keyword()) :: {:ok, map()} | {:error, term()}
+  @spec list_buckets(opts :: keyword()) :: {:ok, list()} | {:error, term()}
   def list_buckets(opts \\ []) do
     if inline_sandbox?(opts) do
       sandbox_list_buckets_response(opts)
@@ -119,12 +164,12 @@ defmodule AWS.S3 do
   end
 
   defp do_list_buckets(opts) do
-    opts
-    |> Keyword.get(:operation, [])
-    |> API.list_buckets()
-    |> perform(opts)
-    |> deserialize_response(opts, fn %{body: %{buckets: buckets}} ->
-      Serializer.deserialize(buckets, opts)
+    :get
+    |> s3_request(nil, nil, opts)
+    |> deserialize_response(opts, fn %{body: body} ->
+      body
+      |> XMLParser.parse_list_buckets()
+      |> Map.fetch!(:buckets)
     end)
   end
 
@@ -140,24 +185,19 @@ defmodule AWS.S3 do
   ## Arguments
 
     * `bucket` - The name of the bucket to create.
-    * `region` - The AWS region where the bucket will be created (e.g., "us-east-1", "us-west-2").
     * `opts` - A keyword list of options.
 
   ## Options
 
   See the "Shared Options" section in the module documentation for common options.
-  See `ExAws.S3.put_bucket/3` for available options.
 
   ## Examples
 
       iex> AWS.S3.create_bucket("my-bucket")
-      {:ok, [{"x-amz-id-2", "..."}, {"x-amz-request-id", "..."}]}
-
-      iex> AWS.S3.create_bucket("my-bucket", sandbox: [enabled: true, mode: :local])
-      {:ok, [{"x-amz-id-2", "..."}, {"x-amz-request-id", "..."}]}
+      {:ok, %{location: "...", x_amz_request_id: "...", date: "..."}}
   """
   @spec create_bucket(bucket :: binary(), opts :: keyword()) ::
-          {:ok, list()} | {:error, term()}
+          {:ok, map()} | {:error, term()}
   def create_bucket(bucket, opts \\ []) do
     if inline_sandbox?(opts) do
       sandbox_create_bucket_response(bucket, opts)
@@ -167,33 +207,70 @@ defmodule AWS.S3 do
   end
 
   defp do_create_bucket(bucket, opts) do
-    region = opts[:region] || Config.region()
+    region = opts[:region] || Config.region() || "us-east-1"
+    body = create_bucket_body(region)
 
-    bucket
-    |> API.put_bucket(region, opts)
-    |> perform(opts)
-    |> deserialize_response(opts, fn
-      %{headers: headers} ->
-        headers
-        |> Serializer.deserialize(opts)
-        |> Map.new()
-    end)
-    |> translate_error(fn
-      %{details: %{response: %{status_code: 409}}} ->
-        {
-          :error,
-          Error.conflict(
-            "bucket already exists",
-            %{
-              bucket: bucket,
-              region: region
-            },
-            opts
-          )
-        }
+    case s3_request(:put, bucket, nil, Keyword.put(opts, :body, body)) do
+      {:error, {:http_error, 409, _resp}} ->
+        {:error,
+         Error.conflict(
+           "bucket already exists",
+           %{bucket: bucket, region: region},
+           opts
+         )}
 
-      error ->
-        error
+      result ->
+        deserialize_response(result, opts, fn %{headers: headers} ->
+          headers
+          |> Serializer.deserialize()
+          |> Map.new()
+        end)
+    end
+  end
+
+  defp create_bucket_body("us-east-1"), do: ""
+
+  defp create_bucket_body(region) do
+    "<CreateBucketConfiguration><LocationConstraint>#{region}</LocationConstraint></CreateBucketConfiguration>"
+  end
+
+  @doc """
+  Deletes an empty bucket.
+
+  Returns `{:error, :not_found}` if the bucket does not exist and
+  `{:error, :conflict}` if the bucket is not empty.
+
+  ## Arguments
+
+    * `bucket` - The name of the bucket to delete.
+    * `opts` - A keyword list of options.
+
+  ## Options
+
+  See the "Shared Options" section in the module documentation for common options.
+
+  ## Examples
+
+      iex> AWS.S3.delete_bucket("my-bucket")
+      {:ok, %{x_amz_request_id: "...", date: "..."}}
+  """
+  @spec delete_bucket(bucket :: binary(), opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def delete_bucket(bucket, opts \\ []) do
+    if inline_sandbox?(opts) do
+      sandbox_delete_bucket_response(bucket, opts)
+    else
+      do_delete_bucket(bucket, opts)
+    end
+  end
+
+  defp do_delete_bucket(bucket, opts) do
+    :delete
+    |> s3_request(bucket, nil, opts)
+    |> deserialize_response(opts, fn %{headers: headers} ->
+      headers
+      |> Serializer.deserialize()
+      |> Map.new()
     end)
   end
 
@@ -210,20 +287,28 @@ defmodule AWS.S3 do
 
     * `bucket` - The name of the bucket to upload to.
     * `key` - The key under which to store the object.
-    * `body` - The content to upload.
+    * `body` - The content to upload (iodata, or an `Enumerable` of iodata chunks for streaming).
     * `opts` - A keyword list of options.
 
   ## Options
 
+    * `:content_type` - Explicit `content-type` header for the object.
+    * `:acl` - Canned ACL (maps to `x-amz-acl`).
+    * `:headers` - Additional raw request headers.
+
   See the "Shared Options" section in the module documentation for common options.
-  See `ExAws.S3.put_object/4` for available options.
 
   ## Examples
 
       iex> AWS.S3.put_object("my-bucket", "my-key", "hello world")
       {:ok, %{etag: "...", x_amz_request_id: "..."}}
   """
-  @spec put_object(bucket :: binary(), key :: binary(), body :: binary(), opts :: keyword()) ::
+  @spec put_object(
+          bucket :: binary(),
+          key :: binary(),
+          body :: iodata() | Enumerable.t(),
+          opts :: keyword()
+        ) ::
           {:ok, map()} | {:error, term()}
   def put_object(bucket, key, body, opts \\ []) do
     if inline_sandbox?(opts) do
@@ -234,12 +319,13 @@ defmodule AWS.S3 do
   end
 
   defp do_put_object(bucket, key, body, opts) do
-    bucket
-    |> API.put_object(key, body, opts)
-    |> perform(opts)
+    headers = object_headers(opts)
+
+    :put
+    |> s3_request(bucket, key, put_opts(opts, body: body, headers: headers))
     |> deserialize_response(opts, fn %{headers: headers} ->
       headers
-      |> Serializer.deserialize(opts)
+      |> Serializer.deserialize()
       |> Map.new()
     end)
   end
@@ -262,12 +348,11 @@ defmodule AWS.S3 do
   ## Options
 
   See the "Shared Options" section in the module documentation for common options.
-  See `ExAws.S3.head_object/3` for available options.
 
   ## Examples
 
       iex> AWS.S3.head_object("my-bucket", "my-key")
-      {:ok, %{content_length: 1234, content_type: "application/json", ...}}
+      {:ok, %{content_length: "1234", content_type: "application/json", ...}}
   """
   @spec head_object(bucket :: binary(), key :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -280,12 +365,11 @@ defmodule AWS.S3 do
   end
 
   defp do_head_object(bucket, key, opts) do
-    bucket
-    |> API.head_object(key, opts)
-    |> perform(opts)
+    :head
+    |> s3_request(bucket, key, opts)
     |> deserialize_response(opts, fn %{headers: headers} ->
       headers
-      |> Serializer.deserialize(opts)
+      |> Serializer.deserialize()
       |> Map.new()
     end)
   end
@@ -308,12 +392,11 @@ defmodule AWS.S3 do
   ## Options
 
   See the "Shared Options" section in the module documentation for common options.
-  See `ExAws.S3.delete_object/3` for available options.
 
   ## Examples
 
       iex> AWS.S3.delete_object("my-bucket", "my-key")
-      {:ok, %{}}
+      {:ok, ""}
   """
   @spec delete_object(bucket :: binary(), key :: binary(), opts :: keyword()) ::
           {:ok, term()} | {:error, term()}
@@ -326,12 +409,9 @@ defmodule AWS.S3 do
   end
 
   defp do_delete_object(bucket, key, opts) do
-    bucket
-    |> API.delete_object(key, opts)
-    |> perform(opts)
-    |> deserialize_response(opts, fn %{body: body} ->
-      Serializer.deserialize(body, opts)
-    end)
+    :delete
+    |> s3_request(bucket, key, opts)
+    |> deserialize_response(opts, fn %{body: body} -> body end)
   end
 
   @doc """
@@ -352,7 +432,6 @@ defmodule AWS.S3 do
   ## Options
 
   See the "Shared Options" section in the module documentation for common options.
-  See `ExAws.S3.get_object/3` for available options.
 
   ## Examples
 
@@ -370,12 +449,9 @@ defmodule AWS.S3 do
   end
 
   defp do_get_object(bucket, key, opts) do
-    bucket
-    |> API.get_object(key, opts)
-    |> perform(opts)
-    |> deserialize_response(opts, fn %{body: body} ->
-      body
-    end)
+    :get
+    |> s3_request(bucket, key, opts)
+    |> deserialize_response(opts, fn %{body: body} -> body end)
   end
 
   @doc """
@@ -394,13 +470,20 @@ defmodule AWS.S3 do
 
   ## Options
 
+    * `:prefix` - Limit the response to keys that begin with the specified prefix.
+    * `:delimiter` - Groups keys that contain the delimiter into a single result.
+    * `:max_keys` - Maximum number of keys returned (up to 1000).
+    * `:start_after` - Start listing after this key.
+    * `:continuation_token` - Pagination token from a previous response.
+    * `:fetch_owner` - Whether to include bucket owner info.
+    * `:encoding_type` - Encoding method for response keys.
+
   See the "Shared Options" section in the module documentation for common options.
-  See `ExAws.S3.list_objects_v2/2` for available options.
 
   ## Examples
 
       iex> AWS.S3.list_objects("my-bucket")
-      {:ok, [%{key: "my-key", size: 1234, ...}]}
+      {:ok, [%{key: "my-key", size: "1234", ...}]}
   """
   @spec list_objects(bucket :: binary(), opts :: keyword()) ::
           {:ok, list()} | {:error, term()}
@@ -413,12 +496,26 @@ defmodule AWS.S3 do
   end
 
   defp do_list_objects(bucket, opts) do
-    bucket
-    |> API.list_objects_v2(opts)
-    |> perform(opts)
-    |> deserialize_response(opts, fn %{body: %{contents: contents}} ->
-      Serializer.deserialize(contents, opts)
+    query = list_objects_query(opts)
+
+    :get
+    |> s3_request(bucket, nil, Keyword.put(opts, :query, query))
+    |> deserialize_response(opts, fn %{body: body} ->
+      body
+      |> XMLParser.parse_list_objects()
+      |> Map.fetch!(:contents)
     end)
+  end
+
+  defp list_objects_query(opts) do
+    %{"list-type" => "2"}
+    |> maybe_put_query("prefix", opts[:prefix])
+    |> maybe_put_query("delimiter", opts[:delimiter])
+    |> maybe_put_query("max-keys", opts[:max_keys])
+    |> maybe_put_query("start-after", opts[:start_after])
+    |> maybe_put_query("continuation-token", opts[:continuation_token])
+    |> maybe_put_query("fetch-owner", opts[:fetch_owner])
+    |> maybe_put_query("encoding-type", opts[:encoding_type])
   end
 
   @doc """
@@ -442,12 +539,11 @@ defmodule AWS.S3 do
   ## Options
 
   See the "Shared Options" section in the module documentation for common options.
-  See `ExAws.S3.put_object_copy/5` for available options.
 
   ## Examples
 
       iex> AWS.S3.copy_object("dest-bucket", "dest-key", "src-bucket", "src-key")
-      {:ok, %{copy_object_result: %{etag: "...", last_modified: "..."}}}
+      {:ok, %{etag: "...", last_modified: "..."}}
   """
   @spec copy_object(
           dest_bucket :: binary(),
@@ -465,9 +561,10 @@ defmodule AWS.S3 do
   end
 
   defp do_copy_object(dest_bucket, dest_key, src_bucket, src_key, opts) do
-    dest_bucket
-    |> API.put_object_copy(dest_key, src_bucket, src_key, opts)
-    |> perform(opts)
+    headers = [{"x-amz-copy-source", copy_source(src_bucket, src_key)}]
+
+    :put
+    |> s3_request(dest_bucket, dest_key, put_opts(opts, body: "", headers: headers))
     |> deserialize_response(opts, fn %{body: body} ->
       XMLParser.parse_copy_object_result(body)
     end)
@@ -499,6 +596,7 @@ defmodule AWS.S3 do
   ## Options
 
     - `:expires_in` - The number of seconds until the presigned URL expires. Defaults to 60.
+    - `:query_params` - Additional query parameters to include in the signed URL.
 
   See the "Shared Options" section in the module documentation for common options.
 
@@ -519,20 +617,18 @@ defmodule AWS.S3 do
 
   defp do_presign(bucket, http_method, key, opts) do
     expires_in = opts[:expires_in] || @sixty_seconds
-    opts = Keyword.put(opts, :expires_in, expires_in)
+    {:ok, config} = resolve_config(opts)
+    query_params = Map.new(opts[:query_params] || %{})
+    url = build_url(config, bucket, key, query_params)
 
-    case opts |> s3_config() |> API.presigned_url(http_method, bucket, key, opts) do
-      {:ok, url} ->
-        %{
-          key: key,
-          url: url,
-          expires_in: expires_in,
-          expires_at: DateTime.add(DateTime.utc_now(), expires_in, :second)
-        }
+    signed_url = Signer.sign_query(http_method, url, [], expires_in, signer_creds(config))
 
-      {:error, reason} ->
-        raise "Failed to generate presigned URL for object: #{inspect(reason)}"
-    end
+    %{
+      key: key,
+      url: signed_url,
+      expires_in: expires_in,
+      expires_at: DateTime.add(DateTime.utc_now(), expires_in, :second)
+    }
   end
 
   @doc """
@@ -558,12 +654,7 @@ defmodule AWS.S3 do
     * `:expires_in` - The number of seconds until the presigned POST expires. Defaults to 60.
     * `:min_size` - Minimum allowed upload size in bytes. Defaults to 0.
     * `:max_size` - Maximum allowed upload size in bytes. Defaults to 1 GiB.
-    * `:virtual_host` - Whether to use virtual hosted-style URLs. Defaults to false.
-    * `:s3_accelerate` - Whether to use S3 Transfer Acceleration. Defaults to false.
-    * `:bucket_as_host` - Whether to use the bucket name as host. Defaults to false.
     * `:content_type` - Optional content type prefix for the upload condition.
-    * `:acl_conditions` - Optional ACL conditions for the upload.
-    * `:key_conditions` - Optional key conditions for the upload.
 
   See the "Shared Options" section in the module documentation for common options.
 
@@ -586,39 +677,40 @@ defmodule AWS.S3 do
     expires_in = opts[:expires_in] || @sixty_seconds
     min_size = Keyword.get(opts, :min_size, 0)
     max_size = Keyword.get(opts, :max_size, @one_gib)
-    virtual_host? = Keyword.get(opts, :virtual_host, false)
-    s3_accelerate? = Keyword.get(opts, :s3_accelerate, false)
-    bucket_as_host? = Keyword.get(opts, :bucket_as_host, false)
 
-    content_type_conditions =
-      case Keyword.get(opts, :content_type) do
-        nil -> []
-        content_type -> ["starts-with", "$Content-Type", content_type]
-      end
+    {:ok, config} = resolve_config(opts)
+    url = build_url(config, bucket, nil, %{})
 
-    opts
-    |> s3_config()
-    |> API.presigned_post(
-      bucket,
-      key,
-      expires_in: expires_in,
-      content_length_range: [min_size, max_size],
-      acl: Keyword.get(opts, :acl_conditions),
-      key: Keyword.get(opts, :key_conditions),
-      custom_conditions: [content_type_conditions],
-      virtual_host: virtual_host?,
-      s3_accelerate: s3_accelerate?,
-      bucket_as_host: bucket_as_host?
-    )
-    |> then(fn %{fields: fields, url: url} ->
-      {:ok,
-       %{
-         fields: Serializer.deserialize(fields, opts),
-         url: url,
-         expires_in: expires_in,
-         expires_at: DateTime.add(DateTime.utc_now(), expires_in, :second)
-       }}
-    end)
+    conditions =
+      maybe_add_content_type_condition(
+        [
+          %{"bucket" => bucket},
+          %{"key" => key},
+          ["content-length-range", min_size, max_size]
+        ],
+        opts[:content_type]
+      )
+
+    result = Signer.presign_post_policy(url, conditions, expires_in, signer_creds(config))
+
+    fields =
+      result.fields
+      |> Map.put("key", key)
+      |> Serializer.deserialize()
+
+    {:ok,
+     %{
+       fields: fields,
+       url: result.url,
+       expires_in: expires_in,
+       expires_at: DateTime.add(DateTime.utc_now(), expires_in, :second)
+     }}
+  end
+
+  defp maybe_add_content_type_condition(conditions, nil), do: conditions
+
+  defp maybe_add_content_type_condition(conditions, content_type) do
+    conditions ++ [["starts-with", "$Content-Type", content_type]]
   end
 
   @doc """
@@ -666,7 +758,7 @@ defmodule AWS.S3 do
   end
 
   defp do_presign_part(bucket, object, upload_id, part_number, opts) do
-    query_params = %{"uploadId" => upload_id, "partNumber" => part_number}
+    query_params = %{"uploadId" => upload_id, "partNumber" => to_string(part_number)}
     opts = Keyword.update(opts, :query_params, query_params, &Map.merge(&1, query_params))
     presign(bucket, :put, object, opts)
   end
@@ -692,7 +784,6 @@ defmodule AWS.S3 do
       string, or `nil` (defaults to 1 minute from now).
 
   See the "Shared Options" section in the module documentation for common options.
-  See `ExAws.S3.initiate_multipart_upload/3` for available options.
 
   ## Examples
 
@@ -710,23 +801,31 @@ defmodule AWS.S3 do
   end
 
   defp do_create_multipart_upload(bucket, key, opts) do
-    one_min_from_now = DateTime.add(DateTime.utc_now(), 1, :minute)
-    expiry = to_http_date(one_min_from_now)
+    expires = resolve_expires(opts[:expires])
+    headers = object_headers(opts) ++ maybe_expires_header(expires)
 
-    opts =
-      Keyword.update(opts, :expires, expiry, fn
-        nil -> expiry
-        %DateTime{} = datetime -> to_http_date(datetime)
-        expires -> expires
-      end)
-
-    bucket
-    |> API.initiate_multipart_upload(key, opts)
-    |> perform(opts)
+    :post
+    |> s3_request(
+      bucket,
+      key,
+      put_opts(opts, query: %{"uploads" => ""}, body: "", headers: headers)
+    )
     |> deserialize_response(opts, fn %{body: body} ->
-      Serializer.deserialize(body, opts)
+      XMLParser.parse_initiate_multipart(body)
     end)
   end
+
+  defp resolve_expires(nil) do
+    DateTime.utc_now()
+    |> DateTime.add(1, :minute)
+    |> to_http_date()
+  end
+
+  defp resolve_expires(%DateTime{} = datetime), do: to_http_date(datetime)
+  defp resolve_expires(expires) when is_binary(expires), do: expires
+
+  defp maybe_expires_header(nil), do: []
+  defp maybe_expires_header(expires), do: [{"expires", expires}]
 
   @doc """
   Aborts a multipart upload.
@@ -771,12 +870,11 @@ defmodule AWS.S3 do
   end
 
   defp do_abort_multipart_upload(bucket, key, upload_id, opts) do
-    bucket
-    |> API.abort_multipart_upload(key, upload_id)
-    |> perform(opts)
+    :delete
+    |> s3_request(bucket, key, Keyword.put(opts, :query, %{"uploadId" => upload_id}))
     |> deserialize_response(opts, fn %{headers: headers} ->
       headers
-      |> Serializer.deserialize(opts)
+      |> Serializer.deserialize()
       |> Map.new()
     end)
   end
@@ -796,13 +894,12 @@ defmodule AWS.S3 do
     * `key` - The key of the object.
     * `upload_id` - The upload ID of the multipart upload.
     * `part_number` - The part number (1 to 10,000).
-    * `body` - The content of the part.
+    * `body` - The content of the part (iodata, or an `Enumerable` for streaming).
     * `opts` - A keyword list of options.
 
   ## Options
 
   See the "Shared Options" section in the module documentation for common options.
-  See `ExAws.S3.upload_part/6` for available options.
 
   ## Examples
 
@@ -814,7 +911,7 @@ defmodule AWS.S3 do
           key :: binary(),
           upload_id :: binary(),
           part_number :: integer(),
-          body :: binary(),
+          body :: iodata() | Enumerable.t(),
           opts :: keyword()
         ) :: {:ok, map()} | {:error, term()}
   def upload_part(bucket, key, upload_id, part_number, body, opts \\ []) do
@@ -826,12 +923,13 @@ defmodule AWS.S3 do
   end
 
   defp do_upload_part(bucket, key, upload_id, part_number, body, opts) do
-    bucket
-    |> API.upload_part(key, upload_id, part_number, body, opts)
-    |> perform(opts)
+    query = %{"uploadId" => upload_id, "partNumber" => to_string(part_number)}
+
+    :put
+    |> s3_request(bucket, key, put_opts(opts, query: query, body: body))
     |> deserialize_response(opts, fn %{headers: headers} ->
       headers
-      |> Serializer.deserialize(opts)
+      |> Serializer.deserialize()
       |> Map.new()
     end)
   end
@@ -855,15 +953,12 @@ defmodule AWS.S3 do
 
   ## Options
 
-    - `:part_number_marker` - Specifies the part after which listing should begin.
-
   See the "Shared Options" section in the module documentation for common options.
-  See `ExAws.S3.list_parts/4` for available options.
 
   ## Examples
 
       iex> AWS.S3.list_parts("my-bucket", "my-key", "upload-id")
-      {:ok, [%{part_number: 1, size: 5242880, etag: "..."}]}
+      {:ok, %{parts: [%{part_number: "1", size: "5242880", etag: "..."}], ...}}
   """
   @spec list_parts(
           bucket :: binary(),
@@ -881,19 +976,12 @@ defmodule AWS.S3 do
   end
 
   defp do_list_parts(bucket, key, upload_id, part_number_marker, opts) do
-    list_parts_opts =
-      if part_number_marker do
-        query_params = %{"part-number-marker" => part_number_marker}
-        Keyword.update(opts, :query_params, query_params, &Map.merge(&1, query_params))
-      else
-        Keyword.take(opts, [:query_params])
-      end
+    query = maybe_put_query(%{"uploadId" => upload_id}, "part-number-marker", part_number_marker)
 
-    bucket
-    |> API.list_parts(key, upload_id, list_parts_opts)
-    |> perform(opts)
+    :get
+    |> s3_request(bucket, key, Keyword.put(opts, :query, query))
     |> deserialize_response(opts, fn %{body: body} ->
-      Serializer.deserialize(body, opts)
+      XMLParser.parse_list_parts(body)
     end)
   end
 
@@ -921,7 +1009,6 @@ defmodule AWS.S3 do
   ## Options
 
   See the "Shared Options" section in the module documentation for common options.
-  See `ExAws.S3.upload_part_copy/8` for available options.
 
   ## Examples
 
@@ -983,19 +1070,21 @@ defmodule AWS.S3 do
          src_range,
          opts
        ) do
-    dest_bucket
-    |> API.upload_part_copy(
+    query = %{"uploadId" => upload_id, "partNumber" => to_string(part_number)}
+
+    headers = [
+      {"x-amz-copy-source", copy_source(src_bucket, src_key)},
+      {"x-amz-copy-source-range", range_header(src_range)}
+    ]
+
+    :put
+    |> s3_request(
+      dest_bucket,
       dest_key,
-      src_bucket,
-      src_key,
-      upload_id,
-      part_number,
-      src_range,
-      opts
+      put_opts(opts, query: query, body: "", headers: headers)
     )
-    |> perform(opts)
     |> deserialize_response(opts, fn %{body: body} ->
-      Serializer.deserialize(body, opts)
+      XMLParser.parse_copy_part(body)
     end)
   end
 
@@ -1254,15 +1343,179 @@ defmodule AWS.S3 do
 
   defp do_complete_multipart_upload(bucket, key, upload_id, parts, opts) do
     with :ok <- validate_multipart_size(bucket, key, upload_id, opts) do
-      bucket
-      |> API.complete_multipart_upload(key, upload_id, validate_parts!(parts))
-      |> perform(opts)
-      |> deserialize_response(opts, fn %{body: body} ->
-        with :ok <- validate_multipart_content_type(bucket, key, upload_id, opts) do
-          Serializer.deserialize(body, opts)
-        end
-      end)
+      xml = build_complete_multipart_xml(validate_parts!(parts))
+      query = %{"uploadId" => upload_id}
+      headers = [{"content-type", "application/xml"}]
+
+      :post
+      |> s3_request(bucket, key, put_opts(opts, query: query, body: xml, headers: headers))
+      |> deserialize_response(
+        opts,
+        &deserialize_completed_multipart(&1, bucket, key, upload_id, opts)
+      )
     end
+  end
+
+  defp deserialize_completed_multipart(%{body: body}, bucket, key, upload_id, opts) do
+    with :ok <- validate_multipart_content_type(bucket, key, upload_id, opts) do
+      XMLParser.parse_complete_multipart(body)
+    end
+  end
+
+  defp build_complete_multipart_xml(parts) do
+    parts_xml =
+      Enum.map_join(parts, "", fn {num, etag} ->
+        "<Part><PartNumber>#{num}</PartNumber><ETag>#{etag}</ETag></Part>"
+      end)
+
+    "<CompleteMultipartUpload>#{parts_xml}</CompleteMultipartUpload>"
+  end
+
+  # S3 EventBridge notification configuration
+
+  @doc """
+  Enables EventBridge notifications on an S3 bucket.
+
+  Once enabled, all S3 event types are sent to EventBridge. Filtering is done at
+  the EventBridge rule level via event patterns. Existing notification configurations
+  (SNS, SQS, Lambda) are preserved.
+
+  Idempotent — returns `{:ok, %{}}` if EventBridge is already enabled.
+  """
+  @spec enable_event_bridge(bucket :: binary(), opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def enable_event_bridge(bucket, opts \\ []) do
+    if inline_sandbox?(opts) do
+      sandbox_enable_event_bridge_response(bucket, opts)
+    else
+      do_enable_event_bridge(bucket, opts)
+    end
+  end
+
+  defp do_enable_event_bridge(bucket, opts) do
+    with {:ok, xml} <- get_raw_notification_xml(bucket, opts) do
+      if String.contains?(xml, "EventBridgeConfiguration") do
+        {:ok, %{}}
+      else
+        xml = expand_self_closing_notification(xml)
+        new_xml = insert_event_bridge_config(xml)
+        put_notification_xml(bucket, new_xml, opts)
+      end
+    end
+  end
+
+  @doc """
+  Disables EventBridge notifications on an S3 bucket.
+
+  Other notification configurations (SNS, SQS, Lambda) are preserved.
+
+  Idempotent — returns `{:ok, %{}}` if EventBridge is not currently enabled.
+  """
+  @spec disable_event_bridge(bucket :: binary(), opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def disable_event_bridge(bucket, opts \\ []) do
+    if inline_sandbox?(opts) do
+      sandbox_disable_event_bridge_response(bucket, opts)
+    else
+      do_disable_event_bridge(bucket, opts)
+    end
+  end
+
+  defp do_disable_event_bridge(bucket, opts) do
+    with {:ok, xml} <- get_raw_notification_xml(bucket, opts) do
+      if String.contains?(xml, "EventBridgeConfiguration") do
+        new_xml = remove_event_bridge_config(xml)
+        put_notification_xml(bucket, new_xml, opts)
+      else
+        {:ok, %{}}
+      end
+    end
+  end
+
+  @doc """
+  Returns the notification configuration for an S3 bucket.
+
+  The result includes `:event_bridge_enabled` (boolean) and `:raw_xml` (the original XML).
+  """
+  @spec get_notification_configuration(bucket :: binary(), opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def get_notification_configuration(bucket, opts \\ []) do
+    if inline_sandbox?(opts) do
+      sandbox_get_notification_configuration_response(bucket, opts)
+    else
+      do_get_notification_configuration(bucket, opts)
+    end
+  end
+
+  defp do_get_notification_configuration(bucket, opts) do
+    with {:ok, xml} <- get_raw_notification_xml(bucket, opts) do
+      {:ok, XMLParser.parse_notification_configuration(xml)}
+    end
+  end
+
+  defp get_raw_notification_xml(bucket, opts) do
+    case s3_request(:get, bucket, nil, Keyword.put(opts, :query, %{"notification" => ""})) do
+      {:ok, %{body: body}} -> {:ok, body}
+      {:error, _} = error -> normalize_notification_error(error, opts)
+    end
+  end
+
+  defp put_notification_xml(bucket, xml, opts) do
+    md5 = :md5 |> :crypto.hash(xml) |> Base.encode64()
+
+    headers = [
+      {"content-md5", md5},
+      {"content-type", "application/xml"}
+    ]
+
+    case s3_request(
+           :put,
+           bucket,
+           nil,
+           put_opts(opts, query: %{"notification" => ""}, body: xml, headers: headers)
+         ) do
+      {:ok, _} -> {:ok, %{}}
+      {:error, _} = error -> normalize_notification_error(error, opts)
+    end
+  end
+
+  defp normalize_notification_error({:error, {:http_error, status, resp}}, opts)
+       when status in 400..499 do
+    {:error, Error.not_found("resource not found.", %{response: resp}, opts)}
+  end
+
+  defp normalize_notification_error({:error, {:http_error, status, resp}}, opts)
+       when status >= 500 do
+    {:error,
+     Error.service_unavailable("service temporarily unavailable", %{response: resp}, opts)}
+  end
+
+  defp normalize_notification_error({:error, reason}, opts) do
+    {:error, Error.internal_server_error("internal server error", %{reason: reason}, opts)}
+  end
+
+  defp insert_event_bridge_config(xml) do
+    String.replace(
+      xml,
+      "</NotificationConfiguration>",
+      "<EventBridgeConfiguration/></NotificationConfiguration>"
+    )
+  end
+
+  defp remove_event_bridge_config(xml) do
+    String.replace(
+      xml,
+      ~r/<EventBridgeConfiguration\s*\/?>(\s*<\/EventBridgeConfiguration>)?/,
+      ""
+    )
+  end
+
+  defp expand_self_closing_notification(xml) do
+    String.replace(
+      xml,
+      ~r/<NotificationConfiguration\s*\/>/,
+      "<NotificationConfiguration></NotificationConfiguration>"
+    )
   end
 
   # Sandbox helpers
@@ -1288,6 +1541,11 @@ defmodule AWS.S3 do
     defdelegate sandbox_create_bucket_response(bucket, opts),
       to: AWS.S3.Sandbox,
       as: :create_bucket_response
+
+    @doc false
+    defdelegate sandbox_delete_bucket_response(bucket, opts),
+      to: AWS.S3.Sandbox,
+      as: :delete_bucket_response
 
     @doc false
     defdelegate sandbox_put_object_response(bucket, key, body, opts),
@@ -1391,6 +1649,22 @@ defmodule AWS.S3 do
                 ),
                 to: AWS.S3.Sandbox,
                 as: :complete_multipart_upload_response
+
+    # S3 EventBridge notification sandbox delegates
+    @doc false
+    defdelegate sandbox_enable_event_bridge_response(bucket, opts),
+      to: AWS.S3.Sandbox,
+      as: :enable_event_bridge_response
+
+    @doc false
+    defdelegate sandbox_disable_event_bridge_response(bucket, opts),
+      to: AWS.S3.Sandbox,
+      as: :disable_event_bridge_response
+
+    @doc false
+    defdelegate sandbox_get_notification_configuration_response(bucket, opts),
+      to: AWS.S3.Sandbox,
+      as: :get_notification_configuration_response
   else
     defp sandbox_disabled?, do: true
 
@@ -1403,6 +1677,15 @@ defmodule AWS.S3 do
     end
 
     defp sandbox_create_bucket_response(bucket, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_delete_bucket_response(bucket, opts) do
       raise """
       Cannot use inline sandbox mode outside of test environment.
 
@@ -1609,51 +1892,36 @@ defmodule AWS.S3 do
       options: #{inspect(opts)}
       """
     end
-  end
 
-  defp perform(op, opts) do
-    case ExAws.Operation.perform(op, s3_config(opts)) do
-      {:ok, payload} -> {:ok, payload}
-      {:error, reason} -> {:error, reason}
+    defp sandbox_enable_event_bridge_response(bucket, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_disable_event_bridge_response(bucket, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_get_notification_configuration_response(bucket, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      options: #{inspect(opts)}
+      """
     end
   end
 
-  defp s3_config(opts) do
-    {s3_opts, opts} = Keyword.pop(opts, :s3, [])
-    {sandbox_opts, opts} = Keyword.pop(opts, :sandbox, [])
-
-    overrides =
-      s3_opts
-      |> Keyword.put_new(:region, opts[:region] || Config.region())
-      |> configure_endpoint(sandbox_opts)
-
-    ExAws.Config.new(:s3, overrides)
-  end
-
-  defp configure_endpoint(s3_opts, sandbox_opts) do
-    sandbox_enabled = sandbox_opts[:enabled] || Config.sandbox_enabled?()
-    sandbox_mode = sandbox_opts[:mode] || Config.sandbox_mode()
-
-    if sandbox_enabled and sandbox_mode === :local do
-      s3_opts
-      |> Keyword.put(:scheme, Config.sandbox_scheme())
-      |> Keyword.put(:host, Config.sandbox_host())
-      |> Keyword.put(:port, Config.sandbox_port())
-      |> Keyword.put_new(:access_key_id, "test")
-      |> Keyword.put_new(:secret_access_key, "test")
-    else
-      maybe_put_credentials(s3_opts)
-    end
-  end
-
-  defp maybe_put_credentials(opts) do
-    opts
-    |> Keyword.put_new(:access_key_id, Config.access_key_id())
-    |> Keyword.put_new(:secret_access_key, Config.secret_access_key())
-  end
-
-  defp translate_error({:error, reason}, func), do: func.(reason)
-  defp translate_error({:ok, _} = ok, _func), do: ok
+  # --- Private helpers -------------------------------------------------------
 
   defp deserialize_response({:ok, response}, _opts, func) do
     case func.(response) do
@@ -1665,50 +1933,22 @@ defmodule AWS.S3 do
 
   defp deserialize_response({:error, {:http_error, status_code, response}}, opts, _func)
        when status_code in 300..399 do
-    {
-      :error,
-      Error.bad_request(
-        "redirect not followed.",
-        %{response: response},
-        opts
-      )
-    }
+    {:error, Error.bad_request("redirect not followed.", %{response: response}, opts)}
   end
 
   defp deserialize_response({:error, {:http_error, status_code, response}}, opts, _func)
        when status_code in 400..499 do
-    {
-      :error,
-      Error.not_found(
-        "resource not found.",
-        %{response: response},
-        opts
-      )
-    }
+    {:error, Error.not_found("resource not found.", %{response: response}, opts)}
   end
 
   defp deserialize_response({:error, {:http_error, status_code, response}}, opts, _func)
        when status_code >= 500 do
-    {
-      :error,
-      Error.service_unavailable(
-        "service temporarily unavailable",
-        %{response: response},
-        opts
-      )
-    }
+    {:error,
+     Error.service_unavailable("service temporarily unavailable", %{response: response}, opts)}
   end
 
-  # fallback
   defp deserialize_response({:error, reason}, opts, _func) do
-    {
-      :error,
-      Error.internal_server_error(
-        "internal server error",
-        %{reason: reason},
-        opts
-      )
-    }
+    {:error, Error.internal_server_error("internal server error", %{reason: reason}, opts)}
   end
 
   defp copy_part_range(
@@ -1757,36 +1997,37 @@ defmodule AWS.S3 do
 
   defp validate_multipart_size(bucket, key, upload_id, opts) do
     case Keyword.get(opts, :max_size, @one_gib) do
-      :infinity ->
-        :ok
-
-      false ->
-        :ok
-
-      nil ->
-        :ok
-
-      max ->
-        with {:ok, size} <- aggregate_object_size(bucket, key, upload_id, opts) do
-          if size > max do
-            abort_multipart_upload(bucket, key, upload_id, opts)
-
-            {:error,
-             Error.forbidden(
-               "multipart upload size exceeds maximum allowed size",
-               %{
-                 bucket: bucket,
-                 key: key,
-                 upload_id: upload_id,
-                 max_size: max
-               },
-               opts
-             )}
-          else
-            :ok
-          end
-        end
+      :infinity -> :ok
+      false -> :ok
+      nil -> :ok
+      max -> check_multipart_size(bucket, key, upload_id, max, opts)
     end
+  end
+
+  defp check_multipart_size(bucket, key, upload_id, max, opts) do
+    with {:ok, size} <- aggregate_object_size(bucket, key, upload_id, opts) do
+      if size > max do
+        abort_with_size_error(bucket, key, upload_id, max, opts)
+      else
+        :ok
+      end
+    end
+  end
+
+  defp abort_with_size_error(bucket, key, upload_id, max, opts) do
+    abort_multipart_upload(bucket, key, upload_id, opts)
+
+    {:error,
+     Error.forbidden(
+       "multipart upload size exceeds maximum allowed size",
+       %{
+         bucket: bucket,
+         key: key,
+         upload_id: upload_id,
+         max_size: max
+       },
+       opts
+     )}
   end
 
   defp aggregate_object_size(bucket, key, upload_id, opts) do
@@ -1796,7 +2037,7 @@ defmodule AWS.S3 do
   defp do_aggregate_object_size(bucket, key, upload_id, part_number_marker, acc, opts) do
     case list_parts(bucket, key, upload_id, part_number_marker, opts) do
       {:ok, %{parts: parts} = body} ->
-        size = Enum.reduce(parts, 0, fn p, sum -> sum + (p.size || 0) end)
+        size = Enum.reduce(parts, 0, fn p, sum -> sum + part_size(p.size) end)
         acc2 = acc + size
 
         if body.is_truncated do
@@ -1817,38 +2058,46 @@ defmodule AWS.S3 do
     end
   end
 
+  defp part_size(nil), do: 0
+  defp part_size(size) when is_integer(size), do: size
+  defp part_size(size) when is_binary(size) and size !== "", do: String.to_integer(size)
+  defp part_size(_), do: 0
+
   defp validate_multipart_content_type(bucket, key, upload_id, opts) do
     case Keyword.get(opts, :content_type) do
-      nil ->
+      nil -> :ok
+      :any -> :ok
+      content_type -> check_content_type(bucket, key, upload_id, content_type, opts)
+    end
+  end
+
+  defp check_content_type(bucket, key, upload_id, content_type, opts) do
+    with {:ok, meta} <- head_object(bucket, key, opts) do
+      if content_type_match?(content_type, meta.content_type) do
         :ok
+      else
+        handle_content_type_mismatch(bucket, key, upload_id, content_type, opts)
+      end
+    end
+  end
 
-      :any ->
-        :ok
+  defp handle_content_type_mismatch(bucket, key, upload_id, content_type, opts) do
+    error =
+      {:error,
+       Error.forbidden(
+         "content type mismatch",
+         %{
+           bucket: bucket,
+           key: key,
+           upload_id: upload_id,
+           content_type: content_type
+         },
+         opts
+       )}
 
-      content_type ->
-        with {:ok, meta} <- head_object(bucket, key, opts) do
-          if content_type_match?(content_type, meta.content_type) do
-            :ok
-          else
-            error =
-              {:error,
-               Error.forbidden(
-                 "content type mismatch",
-                 %{
-                   bucket: bucket,
-                   key: key,
-                   upload_id: upload_id,
-                   content_type: content_type
-                 },
-                 opts
-               )}
-
-            case Keyword.get(opts, :on_content_type_mismatch, :delete) do
-              :delete -> with {:ok, _} <- delete_object(bucket, key, opts), do: error
-              :error -> error
-            end
-          end
-        end
+    case Keyword.get(opts, :on_content_type_mismatch, :delete) do
+      :delete -> with {:ok, _} <- delete_object(bucket, key, opts), do: error
+      :error -> error
     end
   end
 
@@ -1889,4 +2138,199 @@ defmodule AWS.S3 do
     |> DateTime.from_unix!()
     |> Calendar.strftime("%a, %d %b %Y %H:%M:%S GMT")
   end
+
+  # --- Opt / header helpers --------------------------------------------------
+
+  # Merge caller opts with per-operation keys; per-op values win (the most
+  # recent call to `put_opts` decides).
+  defp put_opts(opts, extra), do: Keyword.merge(opts, extra)
+
+  defp maybe_put_query(query, _key, nil), do: query
+  defp maybe_put_query(query, _key, ""), do: query
+  defp maybe_put_query(query, key, value), do: Map.put(query, key, to_string(value))
+
+  defp object_headers(opts) do
+    explicit = Keyword.get(opts, :headers, [])
+
+    explicit
+    |> maybe_add_header("content-type", opts[:content_type])
+    |> maybe_add_header("x-amz-acl", opts[:acl])
+  end
+
+  defp maybe_add_header(headers, _key, nil), do: headers
+  defp maybe_add_header(headers, key, value), do: [{key, to_string(value)} | headers]
+
+  defp copy_source(src_bucket, src_key) do
+    "/" <> src_bucket <> "/" <> src_key
+  end
+
+  defp range_header(first..last//_step) do
+    "bytes=#{first}-#{last}"
+  end
+
+  defp signer_creds(config) do
+    %{
+      access_key_id: config.access_key_id,
+      secret_access_key: config.secret_access_key,
+      token: config.security_token,
+      region: config.region,
+      service: @service,
+      now: DateTime.utc_now()
+    }
+  end
+
+  @doc false
+  def build_operation(method, bucket, key, opts) do
+    with {:ok, config} <- resolve_config(opts) do
+      user_headers = Keyword.get(opts, :headers, [])
+      query = Keyword.get(opts, :query, %{})
+      body = Keyword.get(opts, :body, "")
+      stream_response? = Keyword.get(opts, :stream_response, false)
+
+      url = build_url(config, bucket, key, query)
+      {payload_hash, stream_upload?} = classify_body(body)
+
+      op = %Operation{
+        method: method,
+        url: url,
+        headers: user_headers,
+        body: body,
+        service: @service,
+        region: config.region,
+        access_key_id: config.access_key_id,
+        secret_access_key: config.secret_access_key,
+        security_token: config.security_token,
+        payload_hash: payload_hash,
+        stream_upload: stream_upload?,
+        stream_response: stream_response?,
+        http: Keyword.get(opts, :http, [])
+      }
+
+      {:ok, apply_overrides(op, opts[:s3] || [])}
+    end
+  end
+
+  # -- Operation build + dispatch ---------------------------------------------
+
+  defp s3_request(method, bucket, key, opts) do
+    with {:ok, op} <- build_operation(method, bucket, key, opts) do
+      Client.execute(op)
+    end
+  end
+
+  defp apply_overrides(op, overrides) do
+    Enum.reduce(@override_keys, op, fn key, acc ->
+      case Keyword.fetch(overrides, key) do
+        {:ok, value} -> Map.put(acc, key, value)
+        :error -> acc
+      end
+    end)
+  end
+
+  @doc """
+  Returns the URL a caller would hit for `{bucket, key, query}` given
+  `opts`. Used by presigning so the SigV4 signature lines up with the
+  URL built by `s3_request/4`.
+  """
+  @spec build_url(keyword | map, binary | nil, binary | nil, map | keyword) :: String.t()
+  def build_url(opts, bucket, key, query) when is_list(opts) do
+    case resolve_config(opts) do
+      {:ok, config} -> build_url(config, bucket, key, query)
+      {:error, reason} -> raise ArgumentError, "cannot build S3 URL: #{inspect(reason)}"
+    end
+  end
+
+  def build_url(config, bucket, key, query) when is_map(config) do
+    {host, path_prefix} = address(config, bucket)
+    base_path = build_base_path(path_prefix, key)
+    port_part = port_suffix(config.scheme, config.port)
+    query_part = build_query_part(query)
+
+    "#{config.scheme}://#{host}#{port_part}#{base_path}#{query_part}"
+  end
+
+  @doc """
+  Resolves the full config map (region, scheme, host, port, creds,
+  path_style) for a given opts keyword. Exposed so presigners can reuse it.
+  """
+  @spec resolve_config(keyword) :: {:ok, map} | {:error, term}
+  def resolve_config(opts) do
+    {sandbox_opts, _} = Keyword.pop(opts, :sandbox, [])
+
+    with {:ok, config} <-
+           Client.resolve_config(:s3, opts, &"s3.#{&1}.amazonaws.com", [:path_style]) do
+      path_style = resolve_path_style(config.path_style, sandbox_opts)
+      {:ok, Map.put(config, :path_style, path_style)}
+    end
+  end
+
+  defp build_base_path(nil, nil), do: "/"
+  defp build_base_path(nil, key), do: "/" <> encode_key(key)
+  defp build_base_path(prefix, nil), do: "/" <> prefix
+  defp build_base_path(prefix, key), do: "/" <> prefix <> "/" <> encode_key(key)
+
+  defp port_suffix(_scheme, nil), do: ""
+  defp port_suffix("https", 443), do: ""
+  defp port_suffix("http", 80), do: ""
+  defp port_suffix(_scheme, port), do: ":#{port}"
+
+  defp build_query_part(query) do
+    case encode_query(query) do
+      "" -> ""
+      qs -> "?" <> qs
+    end
+  end
+
+  defp address(%{path_style: true, host: host}, bucket) do
+    case bucket do
+      nil -> {host, nil}
+      b -> {host, b}
+    end
+  end
+
+  defp address(%{host: host}, nil), do: {host, nil}
+  defp address(%{host: host}, bucket), do: {"#{bucket}.#{host}", nil}
+
+  defp encode_key(key) do
+    key
+    |> String.split("/")
+    |> Enum.map_join("/", fn segment -> URI.encode(segment, &URI.char_unreserved?/1) end)
+  end
+
+  defp encode_query(map) when map_size(map) === 0, do: ""
+
+  defp encode_query(map) when is_map(map) or is_list(map) do
+    map
+    |> Enum.map(fn {k, v} -> {to_string(k), to_string(v)} end)
+    |> Enum.sort()
+    |> Enum.map_join("&", fn
+      {k, ""} ->
+        URI.encode(k, &URI.char_unreserved?/1)
+
+      {k, v} ->
+        "#{URI.encode(k, &URI.char_unreserved?/1)}=#{URI.encode(v, &URI.char_unreserved?/1)}"
+    end)
+  end
+
+  defp classify_body(""), do: {nil, false}
+  defp classify_body(body) when is_binary(body), do: {nil, false}
+
+  defp classify_body(body) when is_list(body) do
+    if iodata?(body), do: {nil, false}, else: {"UNSIGNED-PAYLOAD", true}
+  end
+
+  defp classify_body(%Stream{}), do: {"UNSIGNED-PAYLOAD", true}
+  defp classify_body(%{}), do: {"UNSIGNED-PAYLOAD", true}
+  defp classify_body(body) when is_function(body), do: {"UNSIGNED-PAYLOAD", true}
+  defp classify_body(_body), do: {nil, false}
+
+  defp iodata?(list) do
+    _ = IO.iodata_length(list)
+    true
+  rescue
+    _ -> false
+  end
+
+  defp resolve_path_style(nil, sandbox_opts), do: Client.sandbox_local?(sandbox_opts)
+  defp resolve_path_style(value, _sandbox_opts), do: value
 end

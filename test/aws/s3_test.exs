@@ -14,7 +14,7 @@ defmodule AWS.S3Test do
       assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
 
       assert {:ok, buckets} = S3.list_buckets(@sandbox_opts)
-      assert %{name: ^bucket, creation_date: _} = Enum.find(buckets, &(&1.name == bucket))
+      assert %{name: ^bucket, creation_date: _} = Enum.find(buckets, &(&1.name === bucket))
     end
   end
 
@@ -26,12 +26,13 @@ defmodule AWS.S3Test do
                S3.create_bucket(bucket, @sandbox_opts)
     end
 
-    test "returns a conflict error when bucket already exists" do
+    test "can recreate a bucket after it is deleted" do
       bucket = random_bucket()
 
       assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+      assert {:ok, _} = S3.delete_bucket(bucket, @sandbox_opts)
 
-      assert {:error, %ErrorMessage{code: :conflict}} =
+      assert {:ok, %{location: _, x_amz_request_id: _, date: _}} =
                S3.create_bucket(bucket, @sandbox_opts)
     end
   end
@@ -352,14 +353,14 @@ defmodule AWS.S3Test do
                  @sandbox_opts
                )
 
-      assert etag1 != etag2
+      assert etag1 !== etag2
 
       assert {:ok, %{parts: parts}} =
                S3.list_parts(bucket, dest_key, mpu.upload_id, nil, @sandbox_opts)
 
-      assert length(parts) == 2
-      assert Enum.find(parts, &(&1.part_number == "1"))
-      assert Enum.find(parts, &(&1.part_number == "2"))
+      assert length(parts) === 2
+      assert Enum.find(parts, &(&1.part_number === "1"))
+      assert Enum.find(parts, &(&1.part_number === "2"))
     end
   end
 
@@ -390,7 +391,7 @@ defmodule AWS.S3Test do
                  opts
                )
 
-      assert length(parts) == 3
+      assert length(parts) === 3
 
       Enum.each(parts, fn {result, part_num} ->
         assert %{etag: etag} = result
@@ -401,7 +402,7 @@ defmodule AWS.S3Test do
       assert {:ok, %{parts: listed_parts}} =
                S3.list_parts(bucket, dest_key, mpu.upload_id, nil, @sandbox_opts)
 
-      assert length(listed_parts) == 3
+      assert length(listed_parts) === 3
     end
 
     test "returns error when copying from non-existent source" do
@@ -429,7 +430,7 @@ defmodule AWS.S3Test do
                )
 
       assert is_list(errors)
-      assert length(errors) > 0
+      assert errors !== []
     end
 
     test "respects max_concurrency option" do
@@ -458,7 +459,7 @@ defmodule AWS.S3Test do
                  opts
                )
 
-      assert length(parts) == 3
+      assert length(parts) === 3
     end
   end
 
@@ -484,7 +485,7 @@ defmodule AWS.S3Test do
       assert {:ok, dest_meta} = S3.head_object(bucket, dest_key, @sandbox_opts)
       assert {:ok, src_meta} = S3.head_object(bucket, src_key, @sandbox_opts)
 
-      assert dest_meta.content_length == src_meta.content_length
+      assert dest_meta.content_length === src_meta.content_length
     end
 
     test "returns error when source object does not exist" do
