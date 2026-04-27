@@ -254,7 +254,7 @@ defmodule AWS.ClientTest do
                  fn _ -> "explicit.example.com" end
                )
 
-      # local: host falls back to Config.sandbox_host()
+      # local: host falls back to Config.sandbox()[:host]
       assert {:ok, %{host: sandbox_host}} =
                Client.resolve_config(
                  :events,
@@ -262,7 +262,7 @@ defmodule AWS.ClientTest do
                  fn _ -> "should-not-be-used.example" end
                )
 
-      assert sandbox_host === AWS.Config.sandbox_host()
+      assert sandbox_host === Keyword.fetch!(AWS.Config.sandbox(), :host)
     end
 
     test "extra keys are merged from namespace opts" do

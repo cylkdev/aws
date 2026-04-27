@@ -5,6 +5,7 @@ defmodule AWS.ConfigTest do
   alias AWS.Config
 
   @env_keys [
+    "AWS_PROFILE",
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
     "AWS_SESSION_TOKEN",
@@ -12,7 +13,7 @@ defmodule AWS.ConfigTest do
     "AWS_DEFAULT_REGION"
   ]
 
-  @app_env_keys [:access_key_id, :secret_access_key, :security_token, :region]
+  @app_env_keys [:access_key_id, :secret_access_key, :security_token, :region, :sandbox]
 
   setup do
     # Each test starts with a clean slate: no env creds, no app-env creds,
@@ -45,119 +46,108 @@ defmodule AWS.ConfigTest do
     :ok
   end
 
-  describe "sandbox_credentials/0" do
-    test "returns static test credentials including a session token" do
-      assert Config.sandbox_credentials() === [
-               access_key_id: "test",
-               secret_access_key: "test",
-               security_token: "test"
-             ]
+  describe "literals" do
+    test "binary chains pass through as the literal" do
+      Application.put_env(:aws, :access_key_id, "AKIA_LITERAL")
+      Application.put_env(:aws, :secret_access_key, "secret_literal")
+      Application.put_env(:aws, :region, "us-east-1")
+
+      resolved = Config.new()
+
+      assert resolved[:access_key_id] === "AKIA_LITERAL"
+      assert resolved[:secret_access_key] === "secret_literal"
+      assert resolved[:region] === "us-east-1"
     end
   end
 
-  describe "put_sandbox_credentials/1" do
-    test "seeds static test creds without overwriting caller-supplied keys" do
-      merged = Config.put_sandbox_credentials(access_key_id: "caller-wins")
-
-      assert merged[:access_key_id] === "caller-wins"
-      assert merged[:secret_access_key] === "test"
-      assert merged[:security_token] === "test"
-    end
-  end
-
-  describe "new/2 literals" do
-    test "passes literal binaries through unchanged" do
-      resolved =
-        Config.new(:s3,
-          access_key_id: "AKIA_LITERAL",
-          secret_access_key: "secret_literal",
-          region: "us-east-1"
-        )
-
-      assert resolved.access_key_id === "AKIA_LITERAL"
-      assert resolved.secret_access_key === "secret_literal"
-      assert resolved.region === "us-east-1"
-    end
-  end
-
-  describe "new/2 {:system, _} sources" do
+  describe "{:system, _} sources" do
     test "reads from the environment when set" do
       System.put_env("AWS_TEST_ID", "FROM_ENV")
       on_exit(fn -> System.delete_env("AWS_TEST_ID") end)
 
-      resolved = Config.new(:s3, access_key_id: {:system, "AWS_TEST_ID"})
-      assert resolved.access_key_id === "FROM_ENV"
+      Application.put_env(:aws, :access_key_id, {:system, "AWS_TEST_ID"})
+
+      assert Config.access_key_id() === "FROM_ENV"
     end
 
     test "yields nil when the env var is unset, falling through a list" do
-      resolved =
-        Config.new(:s3,
-          access_key_id: [{:system, "AWS_TEST_MISSING"}, "fallback_literal"]
-        )
+      Application.put_env(:aws, :access_key_id, [
+        {:system, "AWS_TEST_MISSING"},
+        "fallback_literal"
+      ])
 
-      assert resolved.access_key_id === "fallback_literal"
+      assert Config.access_key_id() === "fallback_literal"
     end
 
     test "treats empty-string env var as missing" do
       System.put_env("AWS_TEST_EMPTY", "")
       on_exit(fn -> System.delete_env("AWS_TEST_EMPTY") end)
 
-      resolved =
-        Config.new(:s3,
-          access_key_id: [{:system, "AWS_TEST_EMPTY"}, "fallback"]
-        )
+      Application.put_env(:aws, :access_key_id, [{:system, "AWS_TEST_EMPTY"}, "fallback"])
 
-      assert resolved.access_key_id === "fallback"
+      assert Config.access_key_id() === "fallback"
+    end
+
+    test "trims whitespace around env values" do
+      System.put_env("AWS_TEST_PADDED", "  padded  ")
+      on_exit(fn -> System.delete_env("AWS_TEST_PADDED") end)
+
+      Application.put_env(:aws, :access_key_id, {:system, "AWS_TEST_PADDED"})
+
+      assert Config.access_key_id() === "padded"
     end
   end
 
-  describe "new/2 list sources" do
+  describe "list sources" do
     test "first non-nil value in the list wins" do
-      resolved =
-        Config.new(:s3,
-          access_key_id: [{:system, "AWS_TEST_ABSENT"}, "first_winner", "second_loser"]
-        )
+      Application.put_env(:aws, :access_key_id, [
+        {:system, "AWS_TEST_ABSENT"},
+        "first_winner",
+        "second_loser"
+      ])
 
-      assert resolved.access_key_id === "first_winner"
+      assert Config.access_key_id() === "first_winner"
     end
 
     test "unresolved creds remain nil; region falls back to 'us-east-1'" do
-      resolved = Config.new(:s3, [])
-      assert resolved.region === "us-east-1"
-      assert is_nil(resolved.access_key_id)
-      assert is_nil(resolved.secret_access_key)
+      resolved = Config.new()
+      assert resolved[:region] === "us-east-1"
+      assert is_nil(resolved[:access_key_id])
+      assert is_nil(resolved[:secret_access_key])
     end
   end
 
-  describe "new/2 map-returning sources (outer-merge)" do
-    test ":instance_role populates all three cred fields" do
+  describe "map-returning sources (per-key resolution)" do
+    test ":instance_role yields the requested key from IMDS creds" do
       seed_cache(:aws_instance_auth, %{
         access_key_id: "AKIA_IMDS",
         secret_access_key: "IMDS_SECRET",
         security_token: "IMDS_TOKEN"
       })
 
-      resolved = Config.new(:s3, access_key_id: :instance_role)
+      Application.put_env(:aws, :access_key_id, :instance_role)
+      Application.put_env(:aws, :secret_access_key, :instance_role)
+      Application.put_env(:aws, :security_token, :instance_role)
 
-      assert resolved.access_key_id === "AKIA_IMDS"
-      assert resolved.secret_access_key === "IMDS_SECRET"
-      assert resolved.security_token === "IMDS_TOKEN"
+      assert Config.access_key_id() === "AKIA_IMDS"
+      assert Config.secret_access_key() === "IMDS_SECRET"
+      assert Config.security_token() === "IMDS_TOKEN"
     end
 
-    test ":ecs_task_role populates via outer-merge" do
+    test ":ecs_task_role extracts the requested key" do
       seed_cache(:aws_ecs_auth, %{
         access_key_id: "AKIA_ECS",
-        secret_access_key: "ECS_SECRET",
-        security_token: "ECS_TOKEN"
+        secret_access_key: "ECS_SECRET"
       })
 
-      resolved = Config.new(:s3, access_key_id: :ecs_task_role)
+      Application.put_env(:aws, :access_key_id, :ecs_task_role)
+      Application.put_env(:aws, :secret_access_key, :ecs_task_role)
 
-      assert resolved.access_key_id === "AKIA_ECS"
-      assert resolved.secret_access_key === "ECS_SECRET"
+      assert Config.access_key_id() === "AKIA_ECS"
+      assert Config.secret_access_key() === "ECS_SECRET"
     end
 
-    test "{:awscli, profile, ttl} populates creds and region from the profile" do
+    test "{:awscli, profile, ttl} extracts creds and region from the cached profile" do
       seed_cache({:awscli, "test-profile"}, %{
         access_key_id: "AKIA_AWSCLI",
         secret_access_key: "AWSCLI_SECRET",
@@ -165,30 +155,57 @@ defmodule AWS.ConfigTest do
         region: "eu-central-1"
       })
 
-      resolved =
-        Config.new(:s3,
-          access_key_id: {:awscli, "test-profile", 30},
-          region: {:awscli, "test-profile", 30}
-        )
+      Application.put_env(:aws, :access_key_id, {:awscli, "test-profile", 30})
+      Application.put_env(:aws, :secret_access_key, {:awscli, "test-profile", 30})
+      Application.put_env(:aws, :security_token, {:awscli, "test-profile", 30})
+      Application.put_env(:aws, :region, {:awscli, "test-profile", 30})
 
-      assert resolved.access_key_id === "AKIA_AWSCLI"
-      assert resolved.secret_access_key === "AWSCLI_SECRET"
-      assert resolved.security_token === "AWSCLI_TOKEN"
-      assert resolved.region === "eu-central-1"
+      assert Config.access_key_id() === "AKIA_AWSCLI"
+      assert Config.secret_access_key() === "AWSCLI_SECRET"
+      assert Config.security_token() === "AWSCLI_TOKEN"
+      assert Config.region() === "eu-central-1"
+    end
+
+    test "{:awscli, {:system, var}, ttl} resolves the profile name from the env at call time" do
+      seed_cache({:awscli, "from-env-profile"}, %{
+        access_key_id: "AKIA_FROM_ENV",
+        region: "ap-northeast-1"
+      })
+
+      Application.put_env(
+        :aws,
+        :access_key_id,
+        {:awscli, {:system, "AWS_PROFILE"}, 30}
+      )
+
+      Application.put_env(:aws, :region, {:awscli, {:system, "AWS_PROFILE"}, 30})
+
+      System.put_env("AWS_PROFILE", "from-env-profile")
+      on_exit(fn -> System.delete_env("AWS_PROFILE") end)
+
+      assert Config.access_key_id() === "AKIA_FROM_ENV"
+      assert Config.region() === "ap-northeast-1"
     end
   end
 
-  describe "new/2 precedence (per-call > app env > defaults)" do
+  describe "precedence (per-call > app env > defaults)" do
     test "per-call override beats app env" do
       Application.put_env(:aws, :access_key_id, "FROM_APP_ENV")
-      resolved = Config.new(:s3, access_key_id: "FROM_CALL")
-      assert resolved.access_key_id === "FROM_CALL"
+
+      assert Config.access_key_id(access_key_id: "FROM_CALL") === "FROM_CALL"
+    end
+
+    test "per-call override threads through new/1" do
+      Application.put_env(:aws, :access_key_id, "FROM_APP_ENV")
+
+      resolved = Config.new(access_key_id: "FROM_CALL")
+      assert resolved[:access_key_id] === "FROM_CALL"
     end
 
     test "app env beats built-in defaults" do
       Application.put_env(:aws, :region, "ap-southeast-2")
-      resolved = Config.new(:s3, [])
-      assert resolved.region === "ap-southeast-2"
+
+      assert Config.region() === "ap-southeast-2"
     end
 
     test "region default chain prefers AWS_REGION over AWS_DEFAULT_REGION" do
@@ -200,8 +217,7 @@ defmodule AWS.ConfigTest do
         System.delete_env("AWS_DEFAULT_REGION")
       end)
 
-      resolved = Config.new(:s3, [])
-      assert resolved.region === "primary-region"
+      assert Config.region() === "primary-region"
     end
   end
 
@@ -219,6 +235,54 @@ defmodule AWS.ConfigTest do
 
     test "falls back to 'us-east-1' when everything is unset" do
       assert Config.region() === "us-east-1"
+    end
+  end
+
+  describe "sandbox/1" do
+    test "returns the built-in defaults with no overrides" do
+      sandbox = Config.sandbox()
+
+      assert sandbox[:enabled] === false
+      assert sandbox[:mode] === :local
+      assert sandbox[:scheme] === "http://"
+      assert sandbox[:host] === "localhost"
+      assert sandbox[:port] === 4566
+    end
+
+    test "app env overrides defaults" do
+      Application.put_env(:aws, :sandbox, host: "sandbox.local", port: 9999)
+
+      sandbox = Config.sandbox()
+
+      assert sandbox[:host] === "sandbox.local"
+      assert sandbox[:port] === 9999
+      assert sandbox[:scheme] === "http://"
+    end
+
+    test "caller opts override app env" do
+      Application.put_env(:aws, :sandbox, host: "from-app-env")
+
+      sandbox = Config.sandbox(sandbox: [host: "from-call"])
+
+      assert sandbox[:host] === "from-call"
+    end
+  end
+
+  describe "new/1" do
+    test "aggregates every per-key resolver" do
+      Application.put_env(:aws, :access_key_id, "AK")
+      Application.put_env(:aws, :secret_access_key, "SK")
+      Application.put_env(:aws, :security_token, "ST")
+      Application.put_env(:aws, :region, "us-west-1")
+
+      resolved = Config.new()
+
+      assert resolved[:access_key_id] === "AK"
+      assert resolved[:secret_access_key] === "SK"
+      assert resolved[:security_token] === "ST"
+      assert resolved[:region] === "us-west-1"
+      assert is_list(resolved[:sandbox])
+      assert resolved[:sandbox][:enabled] === false
     end
   end
 

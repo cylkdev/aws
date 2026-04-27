@@ -606,6 +606,74 @@ if Code.ensure_loaded?(SandboxRegistry) do
       end
     end
 
+    @doc """
+    Returns the registered response function for `head_bucket/2` in the
+    context of the calling process.
+    """
+    def head_bucket_response(bucket, opts) do
+      doc_examples = ["fn -> ...", "fn (opts) -> ..."]
+      func = find!(:head_bucket, bucket, doc_examples)
+
+      case :erlang.fun_info(func)[:arity] do
+        0 -> func.()
+        1 -> func.(opts)
+        _ -> raise_unsupported_arity(func, doc_examples)
+      end
+    end
+
+    @doc """
+    Returns the registered response function for `put_public_access_block/2`
+    in the context of the calling process.
+    """
+    def put_public_access_block_response(bucket, opts) do
+      doc_examples = ["fn -> ...", "fn (opts) -> ..."]
+      func = find!(:put_public_access_block, bucket, doc_examples)
+
+      case :erlang.fun_info(func)[:arity] do
+        0 -> func.()
+        1 -> func.(opts)
+        _ -> raise_unsupported_arity(func, doc_examples)
+      end
+    end
+
+    @doc """
+    Returns the registered response function for `put_bucket_encryption/2`
+    in the context of the calling process.
+    """
+    def put_bucket_encryption_response(bucket, opts) do
+      doc_examples = ["fn -> ...", "fn (opts) -> ..."]
+      func = find!(:put_bucket_encryption, bucket, doc_examples)
+
+      case :erlang.fun_info(func)[:arity] do
+        0 -> func.()
+        1 -> func.(opts)
+        _ -> raise_unsupported_arity(func, doc_examples)
+      end
+    end
+
+    @doc """
+    Returns the registered response function for
+    `put_bucket_lifecycle_configuration/3` in the context of the calling
+    process.
+    """
+    def put_bucket_lifecycle_configuration_response(bucket, rules, opts) do
+      doc_examples =
+        [
+          "fn -> ...",
+          "fn (rules) -> ...",
+          "fn (rules, opts) -> ..."
+        ]
+
+      func = find!(:put_bucket_lifecycle_configuration, bucket, doc_examples)
+
+      case :erlang.fun_info(func)[:arity] do
+        0 -> func.()
+        1 -> func.(rules)
+        2 -> func.(rules, opts)
+        _ -> raise_unsupported_arity(func, doc_examples)
+      end
+    end
+
     # S3 EventBridge notification — response registration
 
     def set_enable_event_bridge_responses(tuples) do
@@ -618,6 +686,22 @@ if Code.ensure_loaded?(SandboxRegistry) do
 
     def set_get_notification_configuration_responses(tuples) do
       set_responses(:get_notification_configuration, tuples)
+    end
+
+    def set_head_bucket_responses(tuples) do
+      set_responses(:head_bucket, tuples)
+    end
+
+    def set_put_public_access_block_responses(tuples) do
+      set_responses(:put_public_access_block, tuples)
+    end
+
+    def set_put_bucket_encryption_responses(tuples) do
+      set_responses(:put_bucket_encryption, tuples)
+    end
+
+    def set_put_bucket_lifecycle_configuration_responses(tuples) do
+      set_responses(:put_bucket_lifecycle_configuration, tuples)
     end
 
     # Sandbox control

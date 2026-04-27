@@ -120,6 +120,21 @@ if Code.ensure_loaded?(SandboxRegistry) do
     end
 
     # ---------------------------------------------------------------------------
+    # Response retrieval — Instances
+    # ---------------------------------------------------------------------------
+
+    def describe_instances_response(opts) do
+      doc_examples = ["fn -> ...", "fn (opts) -> ..."]
+      func = find!(:describe_instances, "*", doc_examples)
+
+      case :erlang.fun_info(func)[:arity] do
+        0 -> func.()
+        1 -> func.(opts)
+        _ -> raise_unsupported_arity(func, doc_examples)
+      end
+    end
+
+    # ---------------------------------------------------------------------------
     # Response retrieval — Tags
     # ---------------------------------------------------------------------------
 
@@ -127,6 +142,17 @@ if Code.ensure_loaded?(SandboxRegistry) do
       doc_examples = ["fn -> ...", "fn (opts) -> ..."]
       key = List.first(resource_ids) || "*"
       func = find!(:create_tags, key, doc_examples)
+
+      case :erlang.fun_info(func)[:arity] do
+        0 -> func.()
+        1 -> func.(opts)
+        _ -> raise_unsupported_arity(func, doc_examples)
+      end
+    end
+
+    def describe_tags_response(opts) do
+      doc_examples = ["fn -> ...", "fn (opts) -> ..."]
+      func = find!(:describe_tags, "*", doc_examples)
 
       case :erlang.fun_info(func)[:arity] do
         0 -> func.()
@@ -166,7 +192,13 @@ if Code.ensure_loaded?(SandboxRegistry) do
     def set_describe_subnets_responses(funcs),
       do: set_responses(:describe_subnets, Enum.map(funcs, &{"*", &1}))
 
+    def set_describe_instances_responses(funcs),
+      do: set_responses(:describe_instances, Enum.map(funcs, &{"*", &1}))
+
     def set_create_tags_responses(tuples), do: set_responses(:create_tags, tuples)
+
+    def set_describe_tags_responses(funcs),
+      do: set_responses(:describe_tags, Enum.map(funcs, &{"*", &1}))
 
     # ---------------------------------------------------------------------------
     # Sandbox control

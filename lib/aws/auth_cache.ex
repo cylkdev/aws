@@ -1,8 +1,8 @@
 defmodule AWS.AuthCache do
   @moduledoc """
   ETS-backed credential cache for the runtime-resolved sources consumed
-  by `AWS.Config.retrieve_runtime_value/3`: `:instance_role`,
-  `:ecs_task_role`, and `{:awscli, profile, ttl}`.
+  by `AWS.Config`: `:instance_role`, `:ecs_task_role`, and
+  `{:awscli, profile, ttl}`.
 
   Port of `ExAws.Config.AuthCache`. Keys:
 

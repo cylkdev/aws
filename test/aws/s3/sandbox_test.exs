@@ -601,4 +601,75 @@ defmodule AWS.S3.SandboxTest do
                S3.get_notification_configuration(@bucket, @sandbox_opts)
     end
   end
+
+  describe "head_bucket/2" do
+    test "returns mocked headers" do
+      Sandbox.set_head_bucket_responses([
+        {@bucket, fn -> {:ok, %{x_amz_bucket_region: "us-east-1"}} end}
+      ])
+
+      assert {:ok, %{x_amz_bucket_region: "us-east-1"}} =
+               S3.head_bucket(@bucket, @sandbox_opts)
+    end
+
+    test "returns error when bucket does not exist" do
+      Sandbox.set_head_bucket_responses([
+        {@bucket,
+         fn -> {:error, %ErrorMessage{code: :not_found, message: "bucket not found"}} end}
+      ])
+
+      assert {:error, %ErrorMessage{code: :not_found}} = S3.head_bucket(@bucket, @sandbox_opts)
+    end
+  end
+
+  describe "put_public_access_block/2" do
+    test "returns mocked success" do
+      Sandbox.set_put_public_access_block_responses([
+        {@bucket, fn -> {:ok, %{x_amz_request_id: "req-1"}} end}
+      ])
+
+      assert {:ok, %{x_amz_request_id: "req-1"}} =
+               S3.put_public_access_block(@bucket, @sandbox_opts)
+    end
+
+    test "passes opts through to the response function" do
+      Sandbox.set_put_public_access_block_responses([
+        {@bucket,
+         fn opts ->
+           assert opts[:block_public_acls] === false
+           {:ok, %{}}
+         end}
+      ])
+
+      assert {:ok, %{}} =
+               S3.put_public_access_block(
+                 @bucket,
+                 Keyword.merge(@sandbox_opts, block_public_acls: false)
+               )
+    end
+  end
+
+  describe "put_bucket_encryption/2" do
+    test "returns mocked success" do
+      Sandbox.set_put_bucket_encryption_responses([
+        {@bucket, fn -> {:ok, %{x_amz_request_id: "req-2"}} end}
+      ])
+
+      assert {:ok, %{x_amz_request_id: "req-2"}} =
+               S3.put_bucket_encryption(@bucket, @sandbox_opts)
+    end
+  end
+
+  describe "put_bucket_lifecycle_configuration/3" do
+    test "returns mocked success" do
+      Sandbox.set_put_bucket_lifecycle_configuration_responses([
+        {@bucket, fn rules -> {:ok, %{rule_count: length(rules)}} end}
+      ])
+
+      rules = [%{id: "r1", filter: %{prefix: "logs/"}, expiration: %{days: 30}}]
+
+      assert {:ok, %{rule_count: 1}} =
+               S3.put_bucket_lifecycle_configuration(@bucket, rules, @sandbox_opts)
+    end
+  end
 end

@@ -312,6 +312,74 @@ defmodule AWS.EC2 do
   end
 
   # ---------------------------------------------------------------------------
+  # Instances
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Describes one or more instances, grouped by reservation.
+
+  Returns `%{reservations: [...]}` where each reservation contains a list of
+  `:instances`. Each instance includes its `:tags` and `:security_groups`
+  (parsed from the instance-level `groupSet`).
+
+  ## Options
+
+    * `:instance_ids` - List of instance IDs to describe.
+    * `:filters` - List of `%{name:, values:}` filters.
+  """
+  @spec describe_instances(opts :: keyword()) ::
+          {:ok, %{reservations: list(map())}} | {:error, term()}
+  def describe_instances(opts \\ []) do
+    if inline_sandbox?(opts) do
+      sandbox_describe_instances_response(opts)
+    else
+      do_describe_instances(opts)
+    end
+  end
+
+  defp do_describe_instances(opts) do
+    params =
+      %{}
+      |> put_member_list("InstanceId", opts[:instance_ids] || [])
+      |> put_filters(opts[:filters] || [])
+
+    "DescribeInstances"
+    |> perform(params, opts)
+    |> deserialize_response(opts, fn body ->
+      reservations =
+        xpath(body, ~x"//reservationSet/item"l,
+          reservation_id: ~x"./reservationId/text()"s,
+          owner_id: ~x"./ownerId/text()"s,
+          instances: [
+            ~x"./instancesSet/item"l,
+            instance_id: ~x"./instanceId/text()"s,
+            image_id: ~x"./imageId/text()"s,
+            instance_type: ~x"./instanceType/text()"s,
+            state: ~x"./instanceState/name/text()"s,
+            private_ip_address: ~x"./privateIpAddress/text()"s,
+            public_ip_address: ~x"./ipAddress/text()"s,
+            subnet_id: ~x"./subnetId/text()"s,
+            vpc_id: ~x"./vpcId/text()"s,
+            availability_zone: ~x"./placement/availabilityZone/text()"s,
+            launch_time: ~x"./launchTime/text()"s,
+            tags: [
+              ~x"./tagSet/item"l,
+              key: ~x"./key/text()"s,
+              value: ~x"./value/text()"s
+            ],
+            security_groups: [
+              ~x"./groupSet/item"l,
+              group_id: ~x"./groupId/text()"s,
+              group_name: ~x"./groupName/text()"s
+            ]
+          ]
+        )
+
+      {:ok, %{reservations: reservations}}
+    end)
+  end
+
+  # ---------------------------------------------------------------------------
   # Tags
   # ---------------------------------------------------------------------------
 
@@ -344,14 +412,54 @@ defmodule AWS.EC2 do
     |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
   end
 
+  @doc """
+  Describes the specified tags for the given resources.
+
+  Returns `%{tags: [...]}`, where each tag is
+  `%{resource_id:, resource_type:, key:, value:}`.
+
+  ## Options
+
+    * `:filters` - List of `%{name:, values:}` filters. Common filter names:
+      `"key"`, `"value"`, `"resource-id"`, `"resource-type"`.
+  """
+  @spec describe_tags(opts :: keyword()) ::
+          {:ok, %{tags: list(map())}} | {:error, term()}
+  def describe_tags(opts \\ []) do
+    if inline_sandbox?(opts) do
+      sandbox_describe_tags_response(opts)
+    else
+      do_describe_tags(opts)
+    end
+  end
+
+  defp do_describe_tags(opts) do
+    params = put_filters(%{}, opts[:filters] || [])
+
+    "DescribeTags"
+    |> perform(params, opts)
+    |> deserialize_response(opts, fn body ->
+      tags =
+        xpath(body, ~x"//tagSet/item"l,
+          resource_id: ~x"./resourceId/text()"s,
+          resource_type: ~x"./resourceType/text()"s,
+          key: ~x"./key/text()"s,
+          value: ~x"./value/text()"s
+        )
+
+      {:ok, %{tags: tags}}
+    end)
+  end
+
   # ---------------------------------------------------------------------------
   # Sandbox delegation
   # ---------------------------------------------------------------------------
 
   defp inline_sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
-    sandbox_enabled = sandbox_opts[:enabled] || Config.sandbox_enabled?()
-    sandbox_mode = sandbox_opts[:mode] || Config.sandbox_mode()
+    cfg = Config.sandbox()
+    sandbox_enabled = sandbox_opts[:enabled] || cfg[:enabled]
+    sandbox_mode = sandbox_opts[:mode] || cfg[:mode]
 
     sandbox_enabled and sandbox_mode === :inline and not sandbox_disabled?()
   end
@@ -409,6 +517,16 @@ defmodule AWS.EC2 do
     defdelegate sandbox_create_tags_response(resource_ids, opts),
       to: AWS.EC2.Sandbox,
       as: :create_tags_response
+
+    @doc false
+    defdelegate sandbox_describe_tags_response(opts),
+      to: AWS.EC2.Sandbox,
+      as: :describe_tags_response
+
+    @doc false
+    defdelegate sandbox_describe_instances_response(opts),
+      to: AWS.EC2.Sandbox,
+      as: :describe_instances_response
   else
     defp sandbox_disabled?, do: true
 
@@ -431,6 +549,8 @@ defmodule AWS.EC2 do
     defp sandbox_describe_vpcs_response(_), do: raise("sandbox not available")
     defp sandbox_describe_subnets_response(_), do: raise("sandbox not available")
     defp sandbox_create_tags_response(_, _), do: raise("sandbox not available")
+    defp sandbox_describe_tags_response(_), do: raise("sandbox not available")
+    defp sandbox_describe_instances_response(_), do: raise("sandbox not available")
   end
 
   # ---------------------------------------------------------------------------

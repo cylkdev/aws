@@ -563,6 +563,105 @@ defmodule AWS.S3Test do
     end
   end
 
+  describe "head_bucket/2" do
+    test "returns deserialized headers when the bucket exists" do
+      bucket = random_bucket()
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+
+      assert {:ok, headers} = S3.head_bucket(bucket, @sandbox_opts)
+      assert is_map(headers)
+    end
+
+    test "returns not_found when the bucket does not exist" do
+      bucket = random_bucket()
+
+      assert {:error, %ErrorMessage{code: :not_found}} = S3.head_bucket(bucket, @sandbox_opts)
+    end
+  end
+
+  describe "put_public_access_block/2" do
+    test "applies the default (most restrictive) configuration" do
+      bucket = random_bucket()
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+
+      assert {:ok, _} = S3.put_public_access_block(bucket, @sandbox_opts)
+    end
+
+    test "accepts overrides for individual flags" do
+      bucket = random_bucket()
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+
+      opts =
+        Keyword.merge(@sandbox_opts,
+          block_public_acls: false,
+          ignore_public_acls: true,
+          block_public_policy: false,
+          restrict_public_buckets: true
+        )
+
+      assert {:ok, _} = S3.put_public_access_block(bucket, opts)
+    end
+  end
+
+  describe "put_bucket_encryption/2" do
+    test "sets default AES256 encryption" do
+      bucket = random_bucket()
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+
+      assert {:ok, _} = S3.put_bucket_encryption(bucket, @sandbox_opts)
+    end
+
+    test "accepts a bucket key enabled flag" do
+      bucket = random_bucket()
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+
+      opts = Keyword.merge(@sandbox_opts, bucket_key_enabled: true)
+
+      assert {:ok, _} = S3.put_bucket_encryption(bucket, opts)
+    end
+  end
+
+  describe "put_bucket_lifecycle_configuration/3" do
+    test "applies a single expiration rule" do
+      bucket = random_bucket()
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+
+      rules = [
+        %{
+          id: "expire-logs",
+          filter: %{prefix: "logs/"},
+          expiration: %{days: 30}
+        }
+      ]
+
+      assert {:ok, _} = S3.put_bucket_lifecycle_configuration(bucket, rules, @sandbox_opts)
+    end
+
+    test "applies a rule with transitions and abort multipart" do
+      bucket = random_bucket()
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+
+      rules = [
+        %{
+          id: "tier-and-cleanup",
+          filter: %{},
+          status: "Enabled",
+          transitions: [%{days: 30, storage_class: "STANDARD_IA"}],
+          abort_incomplete_multipart_upload: %{days_after_initiation: 7}
+        }
+      ]
+
+      assert {:ok, _} = S3.put_bucket_lifecycle_configuration(bucket, rules, @sandbox_opts)
+    end
+  end
+
   defp random_bucket do
     "#{@bucket_name}-#{random_id()}"
   end

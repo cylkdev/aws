@@ -117,7 +117,7 @@ defmodule AWS.Client do
   for endpoint-only overrides (`:scheme`, `:host`, `:port`, plus any
   `extra` keys). Credential keys (`:access_key_id`,
   `:secret_access_key`, `:security_token`, `:region`) are read from
-  the flat top-level opts and resolved through `AWS.Config.new/2`.
+  the flat top-level opts and resolved through `AWS.Config.new/1`.
 
   `default_host_fn` is a 1-arity function that receives the resolved
   region and returns the default host for the service.
@@ -141,10 +141,10 @@ defmodule AWS.Client do
         cred_opts
       end
 
-    resolved = Config.new(namespace, cred_opts)
+    resolved = Config.new(cred_opts)
 
     with {:ok, ak, sk, st} <- extract_creds(resolved) do
-      region = resolved[:region] || "us-east-1"
+      region = resolved[:region]
       {scheme, host, port} = resolve_endpoint(svc_opts, sandbox_opts, default_host_fn, region)
 
       base = %{
@@ -161,12 +161,16 @@ defmodule AWS.Client do
     end
   end
 
-  defp extract_creds(%{access_key_id: ak, secret_access_key: sk} = resolved)
-       when is_binary(ak) and is_binary(sk) do
-    {:ok, ak, sk, Map.get(resolved, :security_token)}
-  end
+  defp extract_creds(resolved) do
+    ak = resolved[:access_key_id]
+    sk = resolved[:secret_access_key]
 
-  defp extract_creds(_resolved), do: {:error, :missing_credentials}
+    if is_binary(ak) and is_binary(sk) do
+      {:ok, ak, sk, resolved[:security_token]}
+    else
+      {:error, :missing_credentials}
+    end
+  end
 
   defp sandbox_cred_overrides do
     [access_key_id: "test", secret_access_key: "test", security_token: "test"]
@@ -192,8 +196,9 @@ defmodule AWS.Client do
   """
   @spec sandbox_local?(keyword) :: boolean
   def sandbox_local?(sandbox_opts) do
-    enabled = sandbox_opts[:enabled] || Config.sandbox_enabled?()
-    mode = sandbox_opts[:mode] || Config.sandbox_mode()
+    cfg = Config.sandbox()
+    enabled = sandbox_opts[:enabled] || cfg[:enabled]
+    mode = sandbox_opts[:mode] || cfg[:mode]
     enabled and mode === :local
   end
 
@@ -259,10 +264,12 @@ defmodule AWS.Client do
 
   defp resolve_endpoint(svc_opts, sandbox_opts, default_host_fn, region) do
     if sandbox_local?(sandbox_opts) do
+      cfg = Config.sandbox()
+
       {
-        strip_scheme(svc_opts[:scheme] || Config.sandbox_scheme()),
-        svc_opts[:host] || Config.sandbox_host(),
-        svc_opts[:port] || Config.sandbox_port()
+        strip_scheme(svc_opts[:scheme] || cfg[:scheme]),
+        svc_opts[:host] || cfg[:host],
+        svc_opts[:port] || cfg[:port]
       }
     else
       {
@@ -273,8 +280,8 @@ defmodule AWS.Client do
     end
   end
 
-  # AWS.Config returns "http://" for sandbox scheme; strip trailing "://" so
-  # we can URI-compose cleanly.
+  # Config.sandbox() returns "http://" for sandbox scheme; strip trailing
+  # "://" so we can URI-compose cleanly.
   defp strip_scheme(scheme) do
     scheme
     |> to_string()

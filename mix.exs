@@ -98,11 +98,11 @@ defmodule AWS.MixProject do
   defp deps do
     [
       {:ex_doc, "~> 0.40.1", only: :dev, runtime: false},
-      {:sandbox_registry, ">= 0.0.0", only: [:dev, :test], optional: true},
       {:credo, "~> 1.4", only: [:dev, :test], runtime: false},
       {:blitz_credo_checks, "~> 0.1.5", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.13", only: :test, runtime: false},
+      {:sandbox_registry, ">= 0.0.0", only: [:dev, :test]},
       # dev dependencies
       {:sweet_xml, "~> 0.7.5"},
       {:finch, "~> 0.19"},

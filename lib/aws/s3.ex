@@ -55,14 +55,15 @@ defmodule AWS.S3 do
       `:scheme`, `:host`, `:port`, `:path_style`. Credentials are not
       read from this sub-list; use the top-level keys above.
 
-    - `:sandbox` - A keyword list to override sandbox configuration.
-        - `:enabled` - Whether sandbox mode is enabled. Defaults to `AWS.Config.sandbox_enabled()`.
+    - `:sandbox` - A keyword list to override sandbox configuration. Each
+      key falls back to the corresponding entry in `AWS.Config.sandbox/0`.
+        - `:enabled` - Whether sandbox mode is enabled.
         - `:mode` - Controls whether the sandbox uses an emulated service or an OTP process.
           - When the mode is `:local`, the sandbox makes HTTP calls to a sandboxed service such as localstack.
           - When the mode is `:inline`, the sandbox uses an OTP process to handle requests.
-        - `:scheme` - The sandbox scheme. Defaults to `AWS.Config.sandbox_scheme()`.
-        - `:host` - The sandbox host. Defaults to `AWS.Config.sandbox_host()`.
-        - `:port` - The sandbox port. Defaults to `AWS.Config.sandbox_port()`.
+        - `:scheme` - The sandbox scheme.
+        - `:host` - The sandbox host.
+        - `:port` - The sandbox port.
 
   ## Sandbox
 
@@ -120,6 +121,7 @@ defmodule AWS.S3 do
     Error,
     S3.Multipart,
     S3.Operation,
+    S3.XMLBuilder,
     S3.XMLParser,
     Serializer,
     Signer
@@ -163,16 +165,6 @@ defmodule AWS.S3 do
     end
   end
 
-  defp do_list_buckets(opts) do
-    :get
-    |> s3_request(nil, nil, opts)
-    |> deserialize_response(opts, fn %{body: body} ->
-      body
-      |> XMLParser.parse_list_buckets()
-      |> Map.fetch!(:buckets)
-    end)
-  end
-
   @doc """
   Creates a bucket in the specified region.
 
@@ -206,34 +198,6 @@ defmodule AWS.S3 do
     end
   end
 
-  defp do_create_bucket(bucket, opts) do
-    region = opts[:region] || Config.region() || "us-east-1"
-    body = create_bucket_body(region)
-
-    case s3_request(:put, bucket, nil, Keyword.put(opts, :body, body)) do
-      {:error, {:http_error, 409, _resp}} ->
-        {:error,
-         Error.conflict(
-           "bucket already exists",
-           %{bucket: bucket, region: region},
-           opts
-         )}
-
-      result ->
-        deserialize_response(result, opts, fn %{headers: headers} ->
-          headers
-          |> Serializer.deserialize()
-          |> Map.new()
-        end)
-    end
-  end
-
-  defp create_bucket_body("us-east-1"), do: ""
-
-  defp create_bucket_body(region) do
-    "<CreateBucketConfiguration><LocationConstraint>#{region}</LocationConstraint></CreateBucketConfiguration>"
-  end
-
   @doc """
   Deletes an empty bucket.
 
@@ -264,14 +228,42 @@ defmodule AWS.S3 do
     end
   end
 
-  defp do_delete_bucket(bucket, opts) do
-    :delete
-    |> s3_request(bucket, nil, opts)
-    |> deserialize_response(opts, fn %{headers: headers} ->
-      headers
-      |> Serializer.deserialize()
-      |> Map.new()
-    end)
+  @doc """
+  Determines whether a bucket exists and the caller has permission to access it.
+
+  Returns `{:ok, headers}` when the bucket exists and is accessible (the response
+  body is empty; useful headers such as `x-amz-bucket-region` are returned).
+  Returns `{:error, :not_found}` when the bucket does not exist or the caller
+  lacks permission.
+
+  ## Permissions
+
+  To execute this request, you must have the following permission:
+
+    - s3:ListBucket
+
+  ## Arguments
+
+    * `bucket` - The name of the bucket to check.
+    * `opts` - A keyword list of options.
+
+  ## Options
+
+  See the "Shared Options" section in the module documentation for common options.
+
+  ## Examples
+
+      iex> AWS.S3.head_bucket("my-bucket")
+      {:ok, %{x_amz_bucket_region: "us-east-1", x_amz_request_id: "...", date: "..."}}
+  """
+  @spec head_bucket(bucket :: binary(), opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def head_bucket(bucket, opts \\ []) do
+    if inline_sandbox?(opts) do
+      sandbox_head_bucket_response(bucket, opts)
+    else
+      do_head_bucket(bucket, opts)
+    end
   end
 
   @doc """
@@ -318,18 +310,6 @@ defmodule AWS.S3 do
     end
   end
 
-  defp do_put_object(bucket, key, body, opts) do
-    headers = object_headers(opts)
-
-    :put
-    |> s3_request(bucket, key, put_opts(opts, body: body, headers: headers))
-    |> deserialize_response(opts, fn %{headers: headers} ->
-      headers
-      |> Serializer.deserialize()
-      |> Map.new()
-    end)
-  end
-
   @doc """
   Returns the metadata of an object stored in S3 without returning the object itself.
 
@@ -362,16 +342,6 @@ defmodule AWS.S3 do
     else
       do_head_object(bucket, key, opts)
     end
-  end
-
-  defp do_head_object(bucket, key, opts) do
-    :head
-    |> s3_request(bucket, key, opts)
-    |> deserialize_response(opts, fn %{headers: headers} ->
-      headers
-      |> Serializer.deserialize()
-      |> Map.new()
-    end)
   end
 
   @doc """
@@ -408,12 +378,6 @@ defmodule AWS.S3 do
     end
   end
 
-  defp do_delete_object(bucket, key, opts) do
-    :delete
-    |> s3_request(bucket, key, opts)
-    |> deserialize_response(opts, fn %{body: body} -> body end)
-  end
-
   @doc """
   Returns the content of an object stored in S3.
 
@@ -446,12 +410,6 @@ defmodule AWS.S3 do
     else
       do_get_object(bucket, key, opts)
     end
-  end
-
-  defp do_get_object(bucket, key, opts) do
-    :get
-    |> s3_request(bucket, key, opts)
-    |> deserialize_response(opts, fn %{body: body} -> body end)
   end
 
   @doc """
@@ -495,29 +453,6 @@ defmodule AWS.S3 do
     end
   end
 
-  defp do_list_objects(bucket, opts) do
-    query = list_objects_query(opts)
-
-    :get
-    |> s3_request(bucket, nil, Keyword.put(opts, :query, query))
-    |> deserialize_response(opts, fn %{body: body} ->
-      body
-      |> XMLParser.parse_list_objects()
-      |> Map.fetch!(:contents)
-    end)
-  end
-
-  defp list_objects_query(opts) do
-    %{"list-type" => "2"}
-    |> maybe_put_query("prefix", opts[:prefix])
-    |> maybe_put_query("delimiter", opts[:delimiter])
-    |> maybe_put_query("max-keys", opts[:max_keys])
-    |> maybe_put_query("start-after", opts[:start_after])
-    |> maybe_put_query("continuation-token", opts[:continuation_token])
-    |> maybe_put_query("fetch-owner", opts[:fetch_owner])
-    |> maybe_put_query("encoding-type", opts[:encoding_type])
-  end
-
   @doc """
   Copies an object from one bucket to another.
 
@@ -558,16 +493,6 @@ defmodule AWS.S3 do
     else
       do_copy_object(dest_bucket, dest_key, src_bucket, src_key, opts)
     end
-  end
-
-  defp do_copy_object(dest_bucket, dest_key, src_bucket, src_key, opts) do
-    headers = [{"x-amz-copy-source", copy_source(src_bucket, src_key)}]
-
-    :put
-    |> s3_request(dest_bucket, dest_key, put_opts(opts, body: "", headers: headers))
-    |> deserialize_response(opts, fn %{body: body} ->
-      XMLParser.parse_copy_object_result(body)
-    end)
   end
 
   @doc """
@@ -615,22 +540,6 @@ defmodule AWS.S3 do
     end
   end
 
-  defp do_presign(bucket, http_method, key, opts) do
-    expires_in = opts[:expires_in] || @sixty_seconds
-    {:ok, config} = resolve_config(opts)
-    query_params = Map.new(opts[:query_params] || %{})
-    url = build_url(config, bucket, key, query_params)
-
-    signed_url = Signer.sign_query(http_method, url, [], expires_in, signer_creds(config))
-
-    %{
-      key: key,
-      url: signed_url,
-      expires_in: expires_in,
-      expires_at: DateTime.add(DateTime.utc_now(), expires_in, :second)
-    }
-  end
-
   @doc """
   Returns a presigned POST configuration for uploading an object directly to S3.
 
@@ -671,46 +580,6 @@ defmodule AWS.S3 do
     else
       do_presign_post(bucket, key, opts)
     end
-  end
-
-  defp do_presign_post(bucket, key, opts) do
-    expires_in = opts[:expires_in] || @sixty_seconds
-    min_size = Keyword.get(opts, :min_size, 0)
-    max_size = Keyword.get(opts, :max_size, @one_gib)
-
-    {:ok, config} = resolve_config(opts)
-    url = build_url(config, bucket, nil, %{})
-
-    conditions =
-      maybe_add_content_type_condition(
-        [
-          %{"bucket" => bucket},
-          %{"key" => key},
-          ["content-length-range", min_size, max_size]
-        ],
-        opts[:content_type]
-      )
-
-    result = Signer.presign_post_policy(url, conditions, expires_in, signer_creds(config))
-
-    fields =
-      result.fields
-      |> Map.put("key", key)
-      |> Serializer.deserialize()
-
-    {:ok,
-     %{
-       fields: fields,
-       url: result.url,
-       expires_in: expires_in,
-       expires_at: DateTime.add(DateTime.utc_now(), expires_in, :second)
-     }}
-  end
-
-  defp maybe_add_content_type_condition(conditions, nil), do: conditions
-
-  defp maybe_add_content_type_condition(conditions, content_type) do
-    conditions ++ [["starts-with", "$Content-Type", content_type]]
   end
 
   @doc """
@@ -757,12 +626,6 @@ defmodule AWS.S3 do
     end
   end
 
-  defp do_presign_part(bucket, object, upload_id, part_number, opts) do
-    query_params = %{"uploadId" => upload_id, "partNumber" => to_string(part_number)}
-    opts = Keyword.update(opts, :query_params, query_params, &Map.merge(&1, query_params))
-    presign(bucket, :put, object, opts)
-  end
-
   @doc """
   Initiates a multipart upload and returns the upload ID.
 
@@ -799,33 +662,6 @@ defmodule AWS.S3 do
       do_create_multipart_upload(bucket, key, opts)
     end
   end
-
-  defp do_create_multipart_upload(bucket, key, opts) do
-    expires = resolve_expires(opts[:expires])
-    headers = object_headers(opts) ++ maybe_expires_header(expires)
-
-    :post
-    |> s3_request(
-      bucket,
-      key,
-      put_opts(opts, query: %{"uploads" => ""}, body: "", headers: headers)
-    )
-    |> deserialize_response(opts, fn %{body: body} ->
-      XMLParser.parse_initiate_multipart(body)
-    end)
-  end
-
-  defp resolve_expires(nil) do
-    DateTime.utc_now()
-    |> DateTime.add(1, :minute)
-    |> to_http_date()
-  end
-
-  defp resolve_expires(%DateTime{} = datetime), do: to_http_date(datetime)
-  defp resolve_expires(expires) when is_binary(expires), do: expires
-
-  defp maybe_expires_header(nil), do: []
-  defp maybe_expires_header(expires), do: [{"expires", expires}]
 
   @doc """
   Aborts a multipart upload.
@@ -867,16 +703,6 @@ defmodule AWS.S3 do
     else
       do_abort_multipart_upload(bucket, key, upload_id, opts)
     end
-  end
-
-  defp do_abort_multipart_upload(bucket, key, upload_id, opts) do
-    :delete
-    |> s3_request(bucket, key, Keyword.put(opts, :query, %{"uploadId" => upload_id}))
-    |> deserialize_response(opts, fn %{headers: headers} ->
-      headers
-      |> Serializer.deserialize()
-      |> Map.new()
-    end)
   end
 
   @doc """
@@ -922,18 +748,6 @@ defmodule AWS.S3 do
     end
   end
 
-  defp do_upload_part(bucket, key, upload_id, part_number, body, opts) do
-    query = %{"uploadId" => upload_id, "partNumber" => to_string(part_number)}
-
-    :put
-    |> s3_request(bucket, key, put_opts(opts, query: query, body: body))
-    |> deserialize_response(opts, fn %{headers: headers} ->
-      headers
-      |> Serializer.deserialize()
-      |> Map.new()
-    end)
-  end
-
   @doc """
   Returns a list of parts that have been uploaded for a multipart upload.
 
@@ -973,16 +787,6 @@ defmodule AWS.S3 do
     else
       do_list_parts(bucket, key, upload_id, part_number_marker, opts)
     end
-  end
-
-  defp do_list_parts(bucket, key, upload_id, part_number_marker, opts) do
-    query = maybe_put_query(%{"uploadId" => upload_id}, "part-number-marker", part_number_marker)
-
-    :get
-    |> s3_request(bucket, key, Keyword.put(opts, :query, query))
-    |> deserialize_response(opts, fn %{body: body} ->
-      XMLParser.parse_list_parts(body)
-    end)
   end
 
   @doc """
@@ -1058,34 +862,6 @@ defmodule AWS.S3 do
         opts
       )
     end
-  end
-
-  defp do_copy_part(
-         dest_bucket,
-         dest_key,
-         src_bucket,
-         src_key,
-         upload_id,
-         part_number,
-         src_range,
-         opts
-       ) do
-    query = %{"uploadId" => upload_id, "partNumber" => to_string(part_number)}
-
-    headers = [
-      {"x-amz-copy-source", copy_source(src_bucket, src_key)},
-      {"x-amz-copy-source-range", range_header(src_range)}
-    ]
-
-    :put
-    |> s3_request(
-      dest_bucket,
-      dest_key,
-      put_opts(opts, query: query, body: "", headers: headers)
-    )
-    |> deserialize_response(opts, fn %{body: body} ->
-      XMLParser.parse_copy_part(body)
-    end)
   end
 
   @doc """
@@ -1169,46 +945,6 @@ defmodule AWS.S3 do
     end
   end
 
-  defp do_copy_parts(
-         dest_bucket,
-         dest_key,
-         src_bucket,
-         src_key,
-         upload_id,
-         content_length,
-         opts
-       ) do
-    content_byte_stream_opts = opts[:content_byte_stream] || []
-    content_byte_range_index = content_byte_stream_opts[:byte_range_index] || 0
-    content_chunk_size = content_byte_stream_opts[:chunk_size] || @sixty_four_mib
-
-    async_stream_opts =
-      content_byte_stream_opts
-      |> Keyword.take([:max_concurrency, :timeout, :on_timeout])
-      |> Keyword.put_new(:max_concurrency, System.schedulers_online())
-      |> Keyword.put(:ordered, false)
-
-    content_byte_range_index
-    |> Multipart.content_byte_stream(content_length, content_chunk_size)
-    |> Stream.with_index(1)
-    |> Task.async_stream(
-      fn {{start_byte, end_byte}, part_num} ->
-        copy_part_range(
-          dest_bucket,
-          dest_key,
-          src_bucket,
-          src_key,
-          upload_id,
-          part_num,
-          {start_byte, end_byte, content_length},
-          opts
-        )
-      end,
-      async_stream_opts
-    )
-    |> handle_async_stream_response()
-  end
-
   @doc """
   Copies an object from one location to another using multipart upload.
 
@@ -1251,35 +987,6 @@ defmodule AWS.S3 do
         ) :: {:ok, map()} | {:error, term()}
   def copy_object_multipart(dest_bucket, dest_key, src_bucket, src_key, opts \\ []) do
     do_copy_object_multipart(dest_bucket, dest_key, src_bucket, src_key, opts)
-  end
-
-  defp do_copy_object_multipart(dest_bucket, dest_key, src_bucket, src_key, opts) do
-    with {:ok, info} <- head_object(src_bucket, src_key, opts),
-         {:ok, mpu} <- create_multipart_upload(dest_bucket, dest_key, opts),
-         content_length = String.to_integer(info.content_length),
-         {:ok, parts} <-
-           copy_parts(
-             dest_bucket,
-             dest_key,
-             src_bucket,
-             src_key,
-             mpu.upload_id,
-             content_length,
-             opts
-           ) do
-      parts =
-        parts
-        |> Enum.map(fn {%{etag: etag}, part_num} -> {part_num, etag} end)
-        |> Enum.sort()
-
-      complete_multipart_upload(
-        dest_bucket,
-        dest_key,
-        mpu.upload_id,
-        parts,
-        opts
-      )
-    end
   end
 
   @doc """
@@ -1341,6 +1048,621 @@ defmodule AWS.S3 do
     end
   end
 
+  # S3 EventBridge notification configuration
+
+  @doc """
+  Enables EventBridge notifications on an S3 bucket.
+
+  Once enabled, all S3 event types are sent to EventBridge. Filtering is done at
+  the EventBridge rule level via event patterns. Existing notification configurations
+  (SNS, SQS, Lambda) are preserved.
+
+  Idempotent — returns `{:ok, %{}}` if EventBridge is already enabled.
+  """
+  @spec enable_event_bridge(bucket :: binary(), opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def enable_event_bridge(bucket, opts \\ []) do
+    if inline_sandbox?(opts) do
+      sandbox_enable_event_bridge_response(bucket, opts)
+    else
+      do_enable_event_bridge(bucket, opts)
+    end
+  end
+
+  @doc """
+  Disables EventBridge notifications on an S3 bucket.
+
+  Other notification configurations (SNS, SQS, Lambda) are preserved.
+
+  Idempotent — returns `{:ok, %{}}` if EventBridge is not currently enabled.
+  """
+  @spec disable_event_bridge(bucket :: binary(), opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def disable_event_bridge(bucket, opts \\ []) do
+    if inline_sandbox?(opts) do
+      sandbox_disable_event_bridge_response(bucket, opts)
+    else
+      do_disable_event_bridge(bucket, opts)
+    end
+  end
+
+  @doc """
+  Returns the notification configuration for an S3 bucket.
+
+  The result includes `:event_bridge_enabled` (boolean) and `:raw_xml` (the original XML).
+  """
+  @spec get_notification_configuration(bucket :: binary(), opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def get_notification_configuration(bucket, opts \\ []) do
+    if inline_sandbox?(opts) do
+      sandbox_get_notification_configuration_response(bucket, opts)
+    else
+      do_get_notification_configuration(bucket, opts)
+    end
+  end
+
+  # S3 bucket configuration
+
+  @doc """
+  Sets the public access block configuration for a bucket.
+
+  All four flags default to `true` (the most restrictive setting). Pass
+  `false` for any flag you want to relax.
+
+  ## Permissions
+
+  To execute this request, you must have the following permission:
+
+    - s3:PutBucketPublicAccessBlock
+
+  ## Arguments
+
+    * `bucket` - The name of the bucket.
+    * `opts` - A keyword list of options.
+
+  ## Options
+
+    * `:block_public_acls` - Reject public ACLs on this bucket and its objects. Defaults to `true`.
+    * `:ignore_public_acls` - Ignore public ACLs on this bucket and its objects. Defaults to `true`.
+    * `:block_public_policy` - Reject bucket policies that grant public access. Defaults to `true`.
+    * `:restrict_public_buckets` - Restrict cross-account access to buckets with public policies. Defaults to `true`.
+
+  See the "Shared Options" section in the module documentation for common options.
+
+  ## Examples
+
+      iex> AWS.S3.put_public_access_block("my-bucket")
+      {:ok, %{x_amz_request_id: "...", date: "..."}}
+
+      iex> AWS.S3.put_public_access_block("my-bucket", block_public_acls: false)
+      {:ok, %{x_amz_request_id: "...", date: "..."}}
+  """
+  @spec put_public_access_block(bucket :: binary(), opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def put_public_access_block(bucket, opts \\ []) do
+    if inline_sandbox?(opts) do
+      sandbox_put_public_access_block_response(bucket, opts)
+    else
+      do_put_public_access_block(bucket, opts)
+    end
+  end
+
+  @doc """
+  Sets the default server-side encryption configuration for a bucket.
+
+  ## Permissions
+
+  To execute this request, you must have the following permission:
+
+    - s3:PutEncryptionConfiguration
+
+  ## Arguments
+
+    * `bucket` - The name of the bucket.
+    * `opts` - A keyword list of options.
+
+  ## Options
+
+    * `:sse_algorithm` - The server-side encryption algorithm. One of `"AES256"` (default),
+      `"aws:kms"`, or `"aws:kms:dsse"`.
+    * `:kms_master_key_id` - The KMS key ID or ARN to use for encryption. Required when
+      `:sse_algorithm` is a KMS variant.
+    * `:bucket_key_enabled` - Whether to enable S3 Bucket Keys to reduce KMS request costs.
+
+  See the "Shared Options" section in the module documentation for common options.
+
+  ## Examples
+
+      iex> AWS.S3.put_bucket_encryption("my-bucket")
+      {:ok, %{x_amz_request_id: "...", date: "..."}}
+
+      iex> AWS.S3.put_bucket_encryption("my-bucket",
+      ...>   sse_algorithm: "aws:kms",
+      ...>   kms_master_key_id: "arn:aws:kms:us-east-1:111122223333:key/abcd",
+      ...>   bucket_key_enabled: true
+      ...> )
+      {:ok, %{x_amz_request_id: "...", date: "..."}}
+  """
+  @spec put_bucket_encryption(bucket :: binary(), opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def put_bucket_encryption(bucket, opts \\ []) do
+    if inline_sandbox?(opts) do
+      sandbox_put_bucket_encryption_response(bucket, opts)
+    else
+      do_put_bucket_encryption(bucket, opts)
+    end
+  end
+
+  @doc """
+  Sets the lifecycle configuration for a bucket.
+
+  Replaces any existing lifecycle configuration. Pass an empty list to clear all rules
+  (note that AWS requires at least one rule, so to remove the configuration entirely
+  use the DELETE Bucket lifecycle API instead).
+
+  ## Permissions
+
+  To execute this request, you must have the following permission:
+
+    - s3:PutLifecycleConfiguration
+
+  ## Arguments
+
+    * `bucket` - The name of the bucket.
+    * `rules` - A list of rule maps. Each rule supports the following keys:
+
+      * `:id` - Required. A unique identifier for the rule (max 255 characters).
+      * `:status` - `"Enabled"` (default) or `"Disabled"`.
+      * `:filter` - A map describing which objects the rule applies to. Common shapes:
+        * `%{prefix: "logs/"}` - prefix-only filter
+        * `%{}` - empty filter (applies to all objects)
+        * `%{object_size_greater_than: 1024}` / `%{object_size_less_than: 1_000_000}`
+        * `%{tag: %{key: "k", value: "v"}}` - single tag
+        Defaults to an empty filter.
+      * `:expiration` - A map. Examples: `%{days: 30}`, `%{date: "2026-01-01T00:00:00Z"}`,
+        `%{expired_object_delete_marker: true}`.
+      * `:transitions` - A list of `%{days: N, storage_class: "GLACIER"}` (or `:date`).
+      * `:noncurrent_version_expiration` - `%{noncurrent_days: N}`.
+      * `:noncurrent_version_transitions` - A list of `%{noncurrent_days: N, storage_class: "..."}`.
+      * `:abort_incomplete_multipart_upload` - `%{days_after_initiation: N}`.
+
+    * `opts` - A keyword list of options.
+
+  ## Options
+
+  See the "Shared Options" section in the module documentation for common options.
+
+  ## Examples
+
+      iex> AWS.S3.put_bucket_lifecycle_configuration("my-bucket", [
+      ...>   %{id: "expire-logs", filter: %{prefix: "logs/"}, expiration: %{days: 30}}
+      ...> ])
+      {:ok, %{x_amz_request_id: "...", date: "..."}}
+  """
+  @spec put_bucket_lifecycle_configuration(
+          bucket :: binary(),
+          rules :: list(map()),
+          opts :: keyword()
+        ) :: {:ok, map()} | {:error, term()}
+  def put_bucket_lifecycle_configuration(bucket, rules, opts \\ []) when is_list(rules) do
+    if inline_sandbox?(opts) do
+      sandbox_put_bucket_lifecycle_configuration_response(bucket, rules, opts)
+    else
+      do_put_bucket_lifecycle_configuration(bucket, rules, opts)
+    end
+  end
+
+  @doc false
+  def build_operation(method, bucket, key, opts) do
+    with {:ok, config} <- resolve_config(opts) do
+      user_headers = Keyword.get(opts, :headers, [])
+      query = Keyword.get(opts, :query, %{})
+      body = Keyword.get(opts, :body, "")
+      stream_response? = Keyword.get(opts, :stream_response, false)
+
+      url = build_url(config, bucket, key, query)
+      {payload_hash, stream_upload?} = classify_body(body)
+
+      op = %Operation{
+        method: method,
+        url: url,
+        headers: user_headers,
+        body: body,
+        service: @service,
+        region: config.region,
+        access_key_id: config.access_key_id,
+        secret_access_key: config.secret_access_key,
+        security_token: config.security_token,
+        payload_hash: payload_hash,
+        stream_upload: stream_upload?,
+        stream_response: stream_response?,
+        http: Keyword.get(opts, :http, [])
+      }
+
+      {:ok, apply_overrides(op, opts[:s3] || [])}
+    end
+  end
+
+  @doc """
+  Returns the URL a caller would hit for `{bucket, key, query}` given
+  `opts`. Used by presigning so the SigV4 signature lines up with the
+  URL built by `s3_request/4`.
+  """
+  @spec build_url(keyword | map, binary | nil, binary | nil, map | keyword) :: String.t()
+  def build_url(opts, bucket, key, query) when is_list(opts) do
+    case resolve_config(opts) do
+      {:ok, config} -> build_url(config, bucket, key, query)
+      {:error, reason} -> raise ArgumentError, "cannot build S3 URL: #{inspect(reason)}"
+    end
+  end
+
+  def build_url(config, bucket, key, query) when is_map(config) do
+    {host, path_prefix} = address(config, bucket)
+    base_path = build_base_path(path_prefix, key)
+    port_part = port_suffix(config.scheme, config.port)
+    query_part = build_query_part(query)
+
+    "#{config.scheme}://#{host}#{port_part}#{base_path}#{query_part}"
+  end
+
+  @doc """
+  Resolves the full config map (region, scheme, host, port, creds,
+  path_style) for a given opts keyword. Exposed so presigners can reuse it.
+  """
+  @spec resolve_config(keyword) :: {:ok, map} | {:error, term}
+  def resolve_config(opts) do
+    {sandbox_opts, _} = Keyword.pop(opts, :sandbox, [])
+
+    with {:ok, config} <-
+           Client.resolve_config(:s3, opts, &"s3.#{&1}.amazonaws.com", [:path_style]) do
+      path_style = resolve_path_style(config.path_style, sandbox_opts)
+      {:ok, Map.put(config, :path_style, path_style)}
+    end
+  end
+
+  defp do_list_buckets(opts) do
+    :get
+    |> s3_request(nil, nil, opts)
+    |> deserialize_response(opts, fn %{body: body} ->
+      body
+      |> XMLParser.parse_list_buckets()
+      |> Map.fetch!(:buckets)
+    end)
+  end
+
+  defp do_create_bucket(bucket, opts) do
+    region = opts[:region] || Config.region() || "us-east-1"
+    body = create_bucket_body(region)
+
+    case s3_request(:put, bucket, nil, Keyword.put(opts, :body, body)) do
+      {:error, {:http_error, 409, _resp}} ->
+        {:error,
+         Error.conflict(
+           "bucket already exists",
+           %{bucket: bucket, region: region},
+           opts
+         )}
+
+      result ->
+        deserialize_response(result, opts, fn %{headers: headers} ->
+          headers
+          |> Serializer.deserialize()
+          |> Map.new()
+        end)
+    end
+  end
+
+  defp create_bucket_body("us-east-1"), do: ""
+
+  defp create_bucket_body(region) do
+    "<CreateBucketConfiguration><LocationConstraint>#{region}</LocationConstraint></CreateBucketConfiguration>"
+  end
+
+  defp do_delete_bucket(bucket, opts) do
+    :delete
+    |> s3_request(bucket, nil, opts)
+    |> deserialize_response(opts, fn %{headers: headers} ->
+      headers
+      |> Serializer.deserialize()
+      |> Map.new()
+    end)
+  end
+
+  defp do_head_bucket(bucket, opts) do
+    :head
+    |> s3_request(bucket, nil, opts)
+    |> deserialize_response(opts, fn %{headers: headers} ->
+      headers
+      |> Serializer.deserialize()
+      |> Map.new()
+    end)
+  end
+
+  defp do_put_object(bucket, key, body, opts) do
+    headers = object_headers(opts)
+
+    :put
+    |> s3_request(bucket, key, put_opts(opts, body: body, headers: headers))
+    |> deserialize_response(opts, fn %{headers: headers} ->
+      headers
+      |> Serializer.deserialize()
+      |> Map.new()
+    end)
+  end
+
+  defp do_head_object(bucket, key, opts) do
+    :head
+    |> s3_request(bucket, key, opts)
+    |> deserialize_response(opts, fn %{headers: headers} ->
+      headers
+      |> Serializer.deserialize()
+      |> Map.new()
+    end)
+  end
+
+  defp do_delete_object(bucket, key, opts) do
+    :delete
+    |> s3_request(bucket, key, opts)
+    |> deserialize_response(opts, fn %{body: body} -> body end)
+  end
+
+  defp do_get_object(bucket, key, opts) do
+    :get
+    |> s3_request(bucket, key, opts)
+    |> deserialize_response(opts, fn %{body: body} -> body end)
+  end
+
+  defp do_list_objects(bucket, opts) do
+    query = list_objects_query(opts)
+
+    :get
+    |> s3_request(bucket, nil, Keyword.put(opts, :query, query))
+    |> deserialize_response(opts, fn %{body: body} ->
+      body
+      |> XMLParser.parse_list_objects()
+      |> Map.fetch!(:contents)
+    end)
+  end
+
+  defp list_objects_query(opts) do
+    %{"list-type" => "2"}
+    |> maybe_put_query("prefix", opts[:prefix])
+    |> maybe_put_query("delimiter", opts[:delimiter])
+    |> maybe_put_query("max-keys", opts[:max_keys])
+    |> maybe_put_query("start-after", opts[:start_after])
+    |> maybe_put_query("continuation-token", opts[:continuation_token])
+    |> maybe_put_query("fetch-owner", opts[:fetch_owner])
+    |> maybe_put_query("encoding-type", opts[:encoding_type])
+  end
+
+  defp do_copy_object(dest_bucket, dest_key, src_bucket, src_key, opts) do
+    headers = [{"x-amz-copy-source", copy_source(src_bucket, src_key)}]
+
+    :put
+    |> s3_request(dest_bucket, dest_key, put_opts(opts, body: "", headers: headers))
+    |> deserialize_response(opts, fn %{body: body} ->
+      XMLParser.parse_copy_object_result(body)
+    end)
+  end
+
+  defp do_presign(bucket, http_method, key, opts) do
+    expires_in = opts[:expires_in] || @sixty_seconds
+    {:ok, config} = resolve_config(opts)
+    query_params = Map.new(opts[:query_params] || %{})
+    url = build_url(config, bucket, key, query_params)
+
+    signed_url = Signer.sign_query(http_method, url, [], expires_in, signer_creds(config))
+
+    %{
+      key: key,
+      url: signed_url,
+      expires_in: expires_in,
+      expires_at: DateTime.add(DateTime.utc_now(), expires_in, :second)
+    }
+  end
+
+  defp do_presign_post(bucket, key, opts) do
+    expires_in = opts[:expires_in] || @sixty_seconds
+    min_size = Keyword.get(opts, :min_size, 0)
+    max_size = Keyword.get(opts, :max_size, @one_gib)
+
+    {:ok, config} = resolve_config(opts)
+    url = build_url(config, bucket, nil, %{})
+
+    conditions =
+      maybe_add_content_type_condition(
+        [
+          %{"bucket" => bucket},
+          %{"key" => key},
+          ["content-length-range", min_size, max_size]
+        ],
+        opts[:content_type]
+      )
+
+    result = Signer.presign_post_policy(url, conditions, expires_in, signer_creds(config))
+
+    fields =
+      result.fields
+      |> Map.put("key", key)
+      |> Serializer.deserialize()
+
+    {:ok,
+     %{
+       fields: fields,
+       url: result.url,
+       expires_in: expires_in,
+       expires_at: DateTime.add(DateTime.utc_now(), expires_in, :second)
+     }}
+  end
+
+  defp maybe_add_content_type_condition(conditions, nil), do: conditions
+
+  defp maybe_add_content_type_condition(conditions, content_type) do
+    conditions ++ [["starts-with", "$Content-Type", content_type]]
+  end
+
+  defp do_presign_part(bucket, object, upload_id, part_number, opts) do
+    query_params = %{"uploadId" => upload_id, "partNumber" => to_string(part_number)}
+    opts = Keyword.update(opts, :query_params, query_params, &Map.merge(&1, query_params))
+    presign(bucket, :put, object, opts)
+  end
+
+  defp do_create_multipart_upload(bucket, key, opts) do
+    expires = resolve_expires(opts[:expires])
+    headers = object_headers(opts) ++ maybe_expires_header(expires)
+
+    :post
+    |> s3_request(
+      bucket,
+      key,
+      put_opts(opts, query: %{"uploads" => ""}, body: "", headers: headers)
+    )
+    |> deserialize_response(opts, fn %{body: body} ->
+      XMLParser.parse_initiate_multipart(body)
+    end)
+  end
+
+  defp resolve_expires(nil) do
+    DateTime.utc_now()
+    |> DateTime.add(1, :minute)
+    |> to_http_date()
+  end
+
+  defp resolve_expires(%DateTime{} = datetime), do: to_http_date(datetime)
+  defp resolve_expires(expires) when is_binary(expires), do: expires
+
+  defp maybe_expires_header(nil), do: []
+  defp maybe_expires_header(expires), do: [{"expires", expires}]
+
+  defp do_abort_multipart_upload(bucket, key, upload_id, opts) do
+    :delete
+    |> s3_request(bucket, key, Keyword.put(opts, :query, %{"uploadId" => upload_id}))
+    |> deserialize_response(opts, fn %{headers: headers} ->
+      headers
+      |> Serializer.deserialize()
+      |> Map.new()
+    end)
+  end
+
+  defp do_upload_part(bucket, key, upload_id, part_number, body, opts) do
+    query = %{"uploadId" => upload_id, "partNumber" => to_string(part_number)}
+
+    :put
+    |> s3_request(bucket, key, put_opts(opts, query: query, body: body))
+    |> deserialize_response(opts, fn %{headers: headers} ->
+      headers
+      |> Serializer.deserialize()
+      |> Map.new()
+    end)
+  end
+
+  defp do_list_parts(bucket, key, upload_id, part_number_marker, opts) do
+    query = maybe_put_query(%{"uploadId" => upload_id}, "part-number-marker", part_number_marker)
+
+    :get
+    |> s3_request(bucket, key, Keyword.put(opts, :query, query))
+    |> deserialize_response(opts, fn %{body: body} ->
+      XMLParser.parse_list_parts(body)
+    end)
+  end
+
+  defp do_copy_part(
+         dest_bucket,
+         dest_key,
+         src_bucket,
+         src_key,
+         upload_id,
+         part_number,
+         src_range,
+         opts
+       ) do
+    query = %{"uploadId" => upload_id, "partNumber" => to_string(part_number)}
+
+    headers = [
+      {"x-amz-copy-source", copy_source(src_bucket, src_key)},
+      {"x-amz-copy-source-range", range_header(src_range)}
+    ]
+
+    :put
+    |> s3_request(
+      dest_bucket,
+      dest_key,
+      put_opts(opts, query: query, body: "", headers: headers)
+    )
+    |> deserialize_response(opts, fn %{body: body} ->
+      XMLParser.parse_copy_part(body)
+    end)
+  end
+
+  defp do_copy_parts(
+         dest_bucket,
+         dest_key,
+         src_bucket,
+         src_key,
+         upload_id,
+         content_length,
+         opts
+       ) do
+    content_byte_stream_opts = opts[:content_byte_stream] || []
+    content_byte_range_index = content_byte_stream_opts[:byte_range_index] || 0
+    content_chunk_size = content_byte_stream_opts[:chunk_size] || @sixty_four_mib
+
+    async_stream_opts =
+      content_byte_stream_opts
+      |> Keyword.take([:max_concurrency, :timeout, :on_timeout])
+      |> Keyword.put_new(:max_concurrency, System.schedulers_online())
+      |> Keyword.put(:ordered, false)
+
+    content_byte_range_index
+    |> Multipart.content_byte_stream(content_length, content_chunk_size)
+    |> Stream.with_index(1)
+    |> Task.async_stream(
+      fn {{start_byte, end_byte}, part_num} ->
+        copy_part_range(
+          dest_bucket,
+          dest_key,
+          src_bucket,
+          src_key,
+          upload_id,
+          part_num,
+          {start_byte, end_byte, content_length},
+          opts
+        )
+      end,
+      async_stream_opts
+    )
+    |> handle_async_stream_response()
+  end
+
+  defp do_copy_object_multipart(dest_bucket, dest_key, src_bucket, src_key, opts) do
+    with {:ok, info} <- head_object(src_bucket, src_key, opts),
+         {:ok, mpu} <- create_multipart_upload(dest_bucket, dest_key, opts),
+         content_length = String.to_integer(info.content_length),
+         {:ok, parts} <-
+           copy_parts(
+             dest_bucket,
+             dest_key,
+             src_bucket,
+             src_key,
+             mpu.upload_id,
+             content_length,
+             opts
+           ) do
+      parts =
+        parts
+        |> Enum.map(fn {%{etag: etag}, part_num} -> {part_num, etag} end)
+        |> Enum.sort()
+
+      complete_multipart_upload(
+        dest_bucket,
+        dest_key,
+        mpu.upload_id,
+        parts,
+        opts
+      )
+    end
+  end
+
   defp do_complete_multipart_upload(bucket, key, upload_id, parts, opts) do
     with :ok <- validate_multipart_size(bucket, key, upload_id, opts) do
       xml = build_complete_multipart_xml(validate_parts!(parts))
@@ -1371,27 +1693,6 @@ defmodule AWS.S3 do
     "<CompleteMultipartUpload>#{parts_xml}</CompleteMultipartUpload>"
   end
 
-  # S3 EventBridge notification configuration
-
-  @doc """
-  Enables EventBridge notifications on an S3 bucket.
-
-  Once enabled, all S3 event types are sent to EventBridge. Filtering is done at
-  the EventBridge rule level via event patterns. Existing notification configurations
-  (SNS, SQS, Lambda) are preserved.
-
-  Idempotent — returns `{:ok, %{}}` if EventBridge is already enabled.
-  """
-  @spec enable_event_bridge(bucket :: binary(), opts :: keyword()) ::
-          {:ok, map()} | {:error, term()}
-  def enable_event_bridge(bucket, opts \\ []) do
-    if inline_sandbox?(opts) do
-      sandbox_enable_event_bridge_response(bucket, opts)
-    else
-      do_enable_event_bridge(bucket, opts)
-    end
-  end
-
   defp do_enable_event_bridge(bucket, opts) do
     with {:ok, xml} <- get_raw_notification_xml(bucket, opts) do
       if String.contains?(xml, "EventBridgeConfiguration") do
@@ -1404,23 +1705,6 @@ defmodule AWS.S3 do
     end
   end
 
-  @doc """
-  Disables EventBridge notifications on an S3 bucket.
-
-  Other notification configurations (SNS, SQS, Lambda) are preserved.
-
-  Idempotent — returns `{:ok, %{}}` if EventBridge is not currently enabled.
-  """
-  @spec disable_event_bridge(bucket :: binary(), opts :: keyword()) ::
-          {:ok, map()} | {:error, term()}
-  def disable_event_bridge(bucket, opts \\ []) do
-    if inline_sandbox?(opts) do
-      sandbox_disable_event_bridge_response(bucket, opts)
-    else
-      do_disable_event_bridge(bucket, opts)
-    end
-  end
-
   defp do_disable_event_bridge(bucket, opts) do
     with {:ok, xml} <- get_raw_notification_xml(bucket, opts) do
       if String.contains?(xml, "EventBridgeConfiguration") do
@@ -1429,21 +1713,6 @@ defmodule AWS.S3 do
       else
         {:ok, %{}}
       end
-    end
-  end
-
-  @doc """
-  Returns the notification configuration for an S3 bucket.
-
-  The result includes `:event_bridge_enabled` (boolean) and `:raw_xml` (the original XML).
-  """
-  @spec get_notification_configuration(bucket :: binary(), opts :: keyword()) ::
-          {:ok, map()} | {:error, term()}
-  def get_notification_configuration(bucket, opts \\ []) do
-    if inline_sandbox?(opts) do
-      sandbox_get_notification_configuration_response(bucket, opts)
-    else
-      do_get_notification_configuration(bucket, opts)
     end
   end
 
@@ -1518,410 +1787,38 @@ defmodule AWS.S3 do
     )
   end
 
-  # Sandbox helpers
-
-  defp inline_sandbox?(opts) do
-    sandbox_opts = opts[:sandbox] || []
-    sandbox_enabled = sandbox_opts[:enabled] || Config.sandbox_enabled?()
-    sandbox_mode = sandbox_opts[:mode] || Config.sandbox_mode()
-
-    sandbox_enabled and sandbox_mode === :inline and not sandbox_disabled?()
+  defp do_put_public_access_block(bucket, opts) do
+    xml = XMLBuilder.build_public_access_block(opts)
+    put_bucket_config(bucket, "publicAccessBlock", xml, opts)
   end
 
-  if Code.ensure_loaded?(SandboxRegistry) do
-    @doc false
-    defdelegate sandbox_disabled?, to: AWS.S3.Sandbox
-
-    @doc false
-    defdelegate sandbox_list_buckets_response(opts),
-      to: AWS.S3.Sandbox,
-      as: :list_buckets_response
-
-    @doc false
-    defdelegate sandbox_create_bucket_response(bucket, opts),
-      to: AWS.S3.Sandbox,
-      as: :create_bucket_response
-
-    @doc false
-    defdelegate sandbox_delete_bucket_response(bucket, opts),
-      to: AWS.S3.Sandbox,
-      as: :delete_bucket_response
-
-    @doc false
-    defdelegate sandbox_put_object_response(bucket, key, body, opts),
-      to: AWS.S3.Sandbox,
-      as: :put_object_response
-
-    @doc false
-    defdelegate sandbox_head_object_response(bucket, key, opts),
-      to: AWS.S3.Sandbox,
-      as: :head_object_response
-
-    @doc false
-    defdelegate sandbox_delete_object_response(bucket, key, opts),
-      to: AWS.S3.Sandbox,
-      as: :delete_object_response
-
-    @doc false
-    defdelegate sandbox_get_object_response(bucket, key, opts),
-      to: AWS.S3.Sandbox,
-      as: :get_object_response
-
-    @doc false
-    defdelegate sandbox_list_objects_response(bucket, opts),
-      to: AWS.S3.Sandbox,
-      as: :list_objects_response
-
-    @doc false
-    defdelegate sandbox_copy_object_response(dest_bucket, dest_key, src_bucket, src_key, opts),
-      to: AWS.S3.Sandbox,
-      as: :copy_object_response
-
-    @doc false
-    defdelegate sandbox_presign_response(bucket, http_method, key, opts),
-      to: AWS.S3.Sandbox,
-      as: :presign_response
-
-    @doc false
-    defdelegate sandbox_presign_post_response(bucket, key, opts),
-      to: AWS.S3.Sandbox,
-      as: :presign_post_response
-
-    @doc false
-    defdelegate sandbox_presign_part_response(bucket, object, upload_id, part_number, opts),
-      to: AWS.S3.Sandbox,
-      as: :presign_part_response
-
-    @doc false
-    defdelegate sandbox_create_multipart_upload_response(bucket, key, opts),
-      to: AWS.S3.Sandbox,
-      as: :create_multipart_upload_response
-
-    @doc false
-    defdelegate sandbox_abort_multipart_upload_response(bucket, key, upload_id, opts),
-      to: AWS.S3.Sandbox,
-      as: :abort_multipart_upload_response
-
-    @doc false
-    defdelegate sandbox_upload_part_response(bucket, key, upload_id, part_number, body, opts),
-      to: AWS.S3.Sandbox,
-      as: :upload_part_response
-
-    @doc false
-    defdelegate sandbox_list_parts_response(bucket, key, upload_id, part_number_marker, opts),
-      to: AWS.S3.Sandbox,
-      as: :list_parts_response
-
-    @doc false
-    defdelegate sandbox_copy_part_response(
-                  dest_bucket,
-                  dest_key,
-                  src_bucket,
-                  src_key,
-                  upload_id,
-                  part_number,
-                  src_range,
-                  opts
-                ),
-                to: AWS.S3.Sandbox,
-                as: :copy_part_response
-
-    @doc false
-    defdelegate sandbox_copy_parts_response(
-                  dest_bucket,
-                  dest_key,
-                  src_bucket,
-                  src_key,
-                  upload_id,
-                  content_length,
-                  opts
-                ),
-                to: AWS.S3.Sandbox,
-                as: :copy_parts_response
-
-    @doc false
-    defdelegate sandbox_complete_multipart_upload_response(
-                  bucket,
-                  key,
-                  upload_id,
-                  parts,
-                  opts
-                ),
-                to: AWS.S3.Sandbox,
-                as: :complete_multipart_upload_response
-
-    # S3 EventBridge notification sandbox delegates
-    @doc false
-    defdelegate sandbox_enable_event_bridge_response(bucket, opts),
-      to: AWS.S3.Sandbox,
-      as: :enable_event_bridge_response
-
-    @doc false
-    defdelegate sandbox_disable_event_bridge_response(bucket, opts),
-      to: AWS.S3.Sandbox,
-      as: :disable_event_bridge_response
-
-    @doc false
-    defdelegate sandbox_get_notification_configuration_response(bucket, opts),
-      to: AWS.S3.Sandbox,
-      as: :get_notification_configuration_response
-  else
-    defp sandbox_disabled?, do: true
-
-    defp sandbox_list_buckets_response(opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_create_bucket_response(bucket, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_delete_bucket_response(bucket, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_put_object_response(bucket, key, body, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      body: #{inspect(body)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_head_object_response(bucket, key, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_delete_object_response(bucket, key, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_get_object_response(bucket, key, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_list_objects_response(bucket, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_copy_object_response(dest_bucket, dest_key, src_bucket, src_key, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      dest_bucket: #{inspect(dest_bucket)}
-      dest_key: #{inspect(dest_key)}
-      src_bucket: #{inspect(src_bucket)}
-      src_key: #{inspect(src_key)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_presign_response(bucket, http_method, key, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      http_method: #{inspect(http_method)}
-      key: #{inspect(key)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_presign_post_response(bucket, key, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_presign_part_response(bucket, object, upload_id, part_number, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      object: #{inspect(object)}
-      upload_id: #{inspect(upload_id)}
-      part_number: #{inspect(part_number)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_create_multipart_upload_response(bucket, key, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_abort_multipart_upload_response(bucket, key, upload_id, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      upload_id: #{inspect(upload_id)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_upload_part_response(bucket, key, upload_id, part_number, body, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      upload_id: #{inspect(upload_id)}
-      part_number: #{inspect(part_number)}
-      body: #{inspect(body)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_list_parts_response(bucket, key, upload_id, part_number_marker, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      upload_id: #{inspect(upload_id)}
-      part_number_marker: #{inspect(part_number_marker)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_copy_part_response(
-           dest_bucket,
-           dest_key,
-           src_bucket,
-           src_key,
-           upload_id,
-           part_number,
-           src_range,
-           opts
-         ) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      dest_bucket: #{inspect(dest_bucket)}
-      dest_key: #{inspect(dest_key)}
-      src_bucket: #{inspect(src_bucket)}
-      src_key: #{inspect(src_key)}
-      upload_id: #{inspect(upload_id)}
-      part_number: #{inspect(part_number)}
-      src_range: #{inspect(src_range)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_copy_parts_response(
-           dest_bucket,
-           dest_key,
-           src_bucket,
-           src_key,
-           upload_id,
-           content_length,
-           opts
-         ) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      dest_bucket: #{inspect(dest_bucket)}
-      dest_key: #{inspect(dest_key)}
-      src_bucket: #{inspect(src_bucket)}
-      src_key: #{inspect(src_key)}
-      upload_id: #{inspect(upload_id)}
-      content_length: #{inspect(content_length)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_complete_multipart_upload_response(bucket, key, upload_id, parts, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      upload_id: #{inspect(upload_id)}
-      parts: #{inspect(parts)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_enable_event_bridge_response(bucket, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_disable_event_bridge_response(bucket, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_get_notification_configuration_response(bucket, opts) do
-      raise """
-      Cannot use inline sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      options: #{inspect(opts)}
-      """
-    end
+  defp do_put_bucket_encryption(bucket, opts) do
+    xml = XMLBuilder.build_bucket_encryption(opts)
+    put_bucket_config(bucket, "encryption", xml, opts)
   end
 
-  # --- Private helpers -------------------------------------------------------
+  defp do_put_bucket_lifecycle_configuration(bucket, rules, opts) do
+    xml = XMLBuilder.build_lifecycle_configuration(rules)
+    put_bucket_config(bucket, "lifecycle", xml, opts)
+  end
+
+  defp put_bucket_config(bucket, query_key, xml, opts) do
+    headers = xml_body_headers(xml)
+    request_opts = put_opts(opts, query: %{query_key => ""}, body: xml, headers: headers)
+
+    :put
+    |> s3_request(bucket, nil, request_opts)
+    |> deserialize_response(opts, fn %{headers: headers} ->
+      headers
+      |> Serializer.deserialize()
+      |> Map.new()
+    end)
+  end
+
+  defp xml_body_headers(xml) do
+    md5 = :md5 |> :crypto.hash(xml) |> Base.encode64()
+    [{"content-md5", md5}, {"content-type", "application/xml"}]
+  end
 
   defp deserialize_response({:ok, response}, _opts, func) do
     case func.(response) do
@@ -2179,37 +2076,6 @@ defmodule AWS.S3 do
     }
   end
 
-  @doc false
-  def build_operation(method, bucket, key, opts) do
-    with {:ok, config} <- resolve_config(opts) do
-      user_headers = Keyword.get(opts, :headers, [])
-      query = Keyword.get(opts, :query, %{})
-      body = Keyword.get(opts, :body, "")
-      stream_response? = Keyword.get(opts, :stream_response, false)
-
-      url = build_url(config, bucket, key, query)
-      {payload_hash, stream_upload?} = classify_body(body)
-
-      op = %Operation{
-        method: method,
-        url: url,
-        headers: user_headers,
-        body: body,
-        service: @service,
-        region: config.region,
-        access_key_id: config.access_key_id,
-        secret_access_key: config.secret_access_key,
-        security_token: config.security_token,
-        payload_hash: payload_hash,
-        stream_upload: stream_upload?,
-        stream_response: stream_response?,
-        http: Keyword.get(opts, :http, [])
-      }
-
-      {:ok, apply_overrides(op, opts[:s3] || [])}
-    end
-  end
-
   # -- Operation build + dispatch ---------------------------------------------
 
   defp s3_request(method, bucket, key, opts) do
@@ -2227,42 +2093,9 @@ defmodule AWS.S3 do
     end)
   end
 
-  @doc """
-  Returns the URL a caller would hit for `{bucket, key, query}` given
-  `opts`. Used by presigning so the SigV4 signature lines up with the
-  URL built by `s3_request/4`.
-  """
-  @spec build_url(keyword | map, binary | nil, binary | nil, map | keyword) :: String.t()
-  def build_url(opts, bucket, key, query) when is_list(opts) do
-    case resolve_config(opts) do
-      {:ok, config} -> build_url(config, bucket, key, query)
-      {:error, reason} -> raise ArgumentError, "cannot build S3 URL: #{inspect(reason)}"
-    end
-  end
-
-  def build_url(config, bucket, key, query) when is_map(config) do
-    {host, path_prefix} = address(config, bucket)
-    base_path = build_base_path(path_prefix, key)
-    port_part = port_suffix(config.scheme, config.port)
-    query_part = build_query_part(query)
-
-    "#{config.scheme}://#{host}#{port_part}#{base_path}#{query_part}"
-  end
-
-  @doc """
-  Resolves the full config map (region, scheme, host, port, creds,
-  path_style) for a given opts keyword. Exposed so presigners can reuse it.
-  """
-  @spec resolve_config(keyword) :: {:ok, map} | {:error, term}
-  def resolve_config(opts) do
-    {sandbox_opts, _} = Keyword.pop(opts, :sandbox, [])
-
-    with {:ok, config} <-
-           Client.resolve_config(:s3, opts, &"s3.#{&1}.amazonaws.com", [:path_style]) do
-      path_style = resolve_path_style(config.path_style, sandbox_opts)
-      {:ok, Map.put(config, :path_style, path_style)}
-    end
-  end
+  # ---------------------------------------------------------------------------
+  # PRIVATE HELPERS
+  # ---------------------------------------------------------------------------
 
   defp build_base_path(nil, nil), do: "/"
   defp build_base_path(nil, key), do: "/" <> encode_key(key)
@@ -2333,4 +2166,467 @@ defmodule AWS.S3 do
 
   defp resolve_path_style(nil, sandbox_opts), do: Client.sandbox_local?(sandbox_opts)
   defp resolve_path_style(value, _sandbox_opts), do: value
+
+  # ---------------------------------------------------------------------------
+  # SANDBOX HELPERS
+  # ---------------------------------------------------------------------------
+
+  defp inline_sandbox?(opts) do
+    sandbox_opts = opts[:sandbox] || []
+    cfg = Config.sandbox()
+    sandbox_enabled = sandbox_opts[:enabled] || cfg[:enabled]
+    sandbox_mode = sandbox_opts[:mode] || cfg[:mode]
+
+    sandbox_enabled and sandbox_mode === :inline and not sandbox_disabled?()
+  end
+
+  if Code.ensure_loaded?(SandboxRegistry) do
+    @doc false
+    defdelegate sandbox_disabled?, to: AWS.S3.Sandbox
+
+    @doc false
+    defdelegate sandbox_list_buckets_response(opts),
+      to: AWS.S3.Sandbox,
+      as: :list_buckets_response
+
+    @doc false
+    defdelegate sandbox_create_bucket_response(bucket, opts),
+      to: AWS.S3.Sandbox,
+      as: :create_bucket_response
+
+    @doc false
+    defdelegate sandbox_delete_bucket_response(bucket, opts),
+      to: AWS.S3.Sandbox,
+      as: :delete_bucket_response
+
+    @doc false
+    defdelegate sandbox_put_object_response(bucket, key, body, opts),
+      to: AWS.S3.Sandbox,
+      as: :put_object_response
+
+    @doc false
+    defdelegate sandbox_head_object_response(bucket, key, opts),
+      to: AWS.S3.Sandbox,
+      as: :head_object_response
+
+    @doc false
+    defdelegate sandbox_delete_object_response(bucket, key, opts),
+      to: AWS.S3.Sandbox,
+      as: :delete_object_response
+
+    @doc false
+    defdelegate sandbox_get_object_response(bucket, key, opts),
+      to: AWS.S3.Sandbox,
+      as: :get_object_response
+
+    @doc false
+    defdelegate sandbox_list_objects_response(bucket, opts),
+      to: AWS.S3.Sandbox,
+      as: :list_objects_response
+
+    @doc false
+    defdelegate sandbox_copy_object_response(dest_bucket, dest_key, src_bucket, src_key, opts),
+      to: AWS.S3.Sandbox,
+      as: :copy_object_response
+
+    @doc false
+    defdelegate sandbox_presign_response(bucket, http_method, key, opts),
+      to: AWS.S3.Sandbox,
+      as: :presign_response
+
+    @doc false
+    defdelegate sandbox_presign_post_response(bucket, key, opts),
+      to: AWS.S3.Sandbox,
+      as: :presign_post_response
+
+    @doc false
+    defdelegate sandbox_presign_part_response(bucket, object, upload_id, part_number, opts),
+      to: AWS.S3.Sandbox,
+      as: :presign_part_response
+
+    @doc false
+    defdelegate sandbox_create_multipart_upload_response(bucket, key, opts),
+      to: AWS.S3.Sandbox,
+      as: :create_multipart_upload_response
+
+    @doc false
+    defdelegate sandbox_abort_multipart_upload_response(bucket, key, upload_id, opts),
+      to: AWS.S3.Sandbox,
+      as: :abort_multipart_upload_response
+
+    @doc false
+    defdelegate sandbox_upload_part_response(bucket, key, upload_id, part_number, body, opts),
+      to: AWS.S3.Sandbox,
+      as: :upload_part_response
+
+    @doc false
+    defdelegate sandbox_list_parts_response(bucket, key, upload_id, part_number_marker, opts),
+      to: AWS.S3.Sandbox,
+      as: :list_parts_response
+
+    @doc false
+    defdelegate sandbox_copy_part_response(
+                  dest_bucket,
+                  dest_key,
+                  src_bucket,
+                  src_key,
+                  upload_id,
+                  part_number,
+                  src_range,
+                  opts
+                ),
+                to: AWS.S3.Sandbox,
+                as: :copy_part_response
+
+    @doc false
+    defdelegate sandbox_copy_parts_response(
+                  dest_bucket,
+                  dest_key,
+                  src_bucket,
+                  src_key,
+                  upload_id,
+                  content_length,
+                  opts
+                ),
+                to: AWS.S3.Sandbox,
+                as: :copy_parts_response
+
+    @doc false
+    defdelegate sandbox_complete_multipart_upload_response(
+                  bucket,
+                  key,
+                  upload_id,
+                  parts,
+                  opts
+                ),
+                to: AWS.S3.Sandbox,
+                as: :complete_multipart_upload_response
+
+    # S3 EventBridge notification sandbox delegates
+    @doc false
+    defdelegate sandbox_enable_event_bridge_response(bucket, opts),
+      to: AWS.S3.Sandbox,
+      as: :enable_event_bridge_response
+
+    @doc false
+    defdelegate sandbox_disable_event_bridge_response(bucket, opts),
+      to: AWS.S3.Sandbox,
+      as: :disable_event_bridge_response
+
+    @doc false
+    defdelegate sandbox_get_notification_configuration_response(bucket, opts),
+      to: AWS.S3.Sandbox,
+      as: :get_notification_configuration_response
+
+    @doc false
+    defdelegate sandbox_head_bucket_response(bucket, opts),
+      to: AWS.S3.Sandbox,
+      as: :head_bucket_response
+
+    @doc false
+    defdelegate sandbox_put_public_access_block_response(bucket, opts),
+      to: AWS.S3.Sandbox,
+      as: :put_public_access_block_response
+
+    @doc false
+    defdelegate sandbox_put_bucket_encryption_response(bucket, opts),
+      to: AWS.S3.Sandbox,
+      as: :put_bucket_encryption_response
+
+    @doc false
+    defdelegate sandbox_put_bucket_lifecycle_configuration_response(bucket, rules, opts),
+      to: AWS.S3.Sandbox,
+      as: :put_bucket_lifecycle_configuration_response
+  else
+    defp sandbox_disabled?, do: true
+
+    defp sandbox_list_buckets_response(opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_create_bucket_response(bucket, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_delete_bucket_response(bucket, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_put_object_response(bucket, key, body, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      key: #{inspect(key)}
+      body: #{inspect(body)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_head_object_response(bucket, key, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      key: #{inspect(key)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_delete_object_response(bucket, key, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      key: #{inspect(key)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_get_object_response(bucket, key, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      key: #{inspect(key)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_list_objects_response(bucket, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_copy_object_response(dest_bucket, dest_key, src_bucket, src_key, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      dest_bucket: #{inspect(dest_bucket)}
+      dest_key: #{inspect(dest_key)}
+      src_bucket: #{inspect(src_bucket)}
+      src_key: #{inspect(src_key)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_presign_response(bucket, http_method, key, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      http_method: #{inspect(http_method)}
+      key: #{inspect(key)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_presign_post_response(bucket, key, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      key: #{inspect(key)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_presign_part_response(bucket, object, upload_id, part_number, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      object: #{inspect(object)}
+      upload_id: #{inspect(upload_id)}
+      part_number: #{inspect(part_number)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_create_multipart_upload_response(bucket, key, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      key: #{inspect(key)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_abort_multipart_upload_response(bucket, key, upload_id, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      key: #{inspect(key)}
+      upload_id: #{inspect(upload_id)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_upload_part_response(bucket, key, upload_id, part_number, body, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      key: #{inspect(key)}
+      upload_id: #{inspect(upload_id)}
+      part_number: #{inspect(part_number)}
+      body: #{inspect(body)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_list_parts_response(bucket, key, upload_id, part_number_marker, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      key: #{inspect(key)}
+      upload_id: #{inspect(upload_id)}
+      part_number_marker: #{inspect(part_number_marker)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_copy_part_response(
+           dest_bucket,
+           dest_key,
+           src_bucket,
+           src_key,
+           upload_id,
+           part_number,
+           src_range,
+           opts
+         ) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      dest_bucket: #{inspect(dest_bucket)}
+      dest_key: #{inspect(dest_key)}
+      src_bucket: #{inspect(src_bucket)}
+      src_key: #{inspect(src_key)}
+      upload_id: #{inspect(upload_id)}
+      part_number: #{inspect(part_number)}
+      src_range: #{inspect(src_range)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_copy_parts_response(
+           dest_bucket,
+           dest_key,
+           src_bucket,
+           src_key,
+           upload_id,
+           content_length,
+           opts
+         ) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      dest_bucket: #{inspect(dest_bucket)}
+      dest_key: #{inspect(dest_key)}
+      src_bucket: #{inspect(src_bucket)}
+      src_key: #{inspect(src_key)}
+      upload_id: #{inspect(upload_id)}
+      content_length: #{inspect(content_length)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_complete_multipart_upload_response(bucket, key, upload_id, parts, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      key: #{inspect(key)}
+      upload_id: #{inspect(upload_id)}
+      parts: #{inspect(parts)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_enable_event_bridge_response(bucket, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_disable_event_bridge_response(bucket, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_get_notification_configuration_response(bucket, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_head_bucket_response(bucket, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_put_public_access_block_response(bucket, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_put_bucket_encryption_response(bucket, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_put_bucket_lifecycle_configuration_response(bucket, rules, opts) do
+      raise """
+      Cannot use inline sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      rules: #{inspect(rules)}
+      options: #{inspect(opts)}
+      """
+    end
+  end
 end

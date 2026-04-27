@@ -865,8 +865,9 @@ defmodule AWS.EventBridge do
 
   defp inline_sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
-    sandbox_enabled = sandbox_opts[:enabled] || Config.sandbox_enabled?()
-    sandbox_mode = sandbox_opts[:mode] || Config.sandbox_mode()
+    cfg = Config.sandbox()
+    sandbox_enabled = sandbox_opts[:enabled] || cfg[:enabled]
+    sandbox_mode = sandbox_opts[:mode] || cfg[:mode]
 
     sandbox_enabled and sandbox_mode === :inline and not sandbox_disabled?()
   end
