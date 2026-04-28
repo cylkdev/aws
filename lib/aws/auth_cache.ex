@@ -16,6 +16,14 @@ defmodule AWS.AuthCache do
   enters the refresh window (60s before expiry), after which the
   fetcher runs again.
 
+  Negative results are also cached for `@error_ttl_seconds` (5s) to
+  prevent the credential chain from hammering the underlying fetcher:
+  a single `Config.new/1` call resolves four keys (access key id,
+  secret, token, region) and would otherwise trigger four identical
+  fetches per failure (four `aws configure export-credentials` shell
+  outs, four IMDS timeouts, etc.). The TTL is short enough that
+  transient failures recover quickly on the next request.
+
   `opts[:ttl_seconds]` caps the cache lifetime regardless of
   `:expires_at` (used by `{:awscli, _, ttl}` sources). The remaining
   keys in `opts` are forwarded verbatim to the fetcher (`:http`,
@@ -25,11 +33,14 @@ defmodule AWS.AuthCache do
 
   use GenServer
 
+  require Logger
+
   alias AWS.Credentials.Profile
   alias AWS.Credentials.Providers.{ECS, IMDS}
 
   @table :aws_auth_cache
   @refresh_skew_seconds 60
+  @error_ttl_seconds 5
 
   @type key :: :aws_instance_auth | :aws_ecs_auth | {:awscli, String.t()}
   @type creds :: %{optional(atom) => term}
@@ -54,12 +65,15 @@ defmodule AWS.AuthCache do
 
       {:ok, entry} ->
         if fresh?(entry, opts[:ttl_seconds]) do
-          {:ok, entry.creds}
+          replay(entry)
         else
           refresh(key, opts)
         end
     end
   end
+
+  defp replay(%{error: reason}), do: {:error, reason}
+  defp replay(%{creds: creds}), do: {:ok, creds}
 
   @doc "Evicts the entry for `key`."
   @spec invalidate(key) :: :ok
@@ -86,6 +100,10 @@ defmodule AWS.AuthCache do
     end
   end
 
+  defp fresh?(%{error: _, cached_at: cached_at}, _ttl_seconds) do
+    System.monotonic_time(:second) - cached_at < @error_ttl_seconds
+  end
+
   defp fresh?(%{expires_at: %DateTime{} = expires_at}, _ttl_seconds) do
     DateTime.diff(expires_at, DateTime.utc_now(), :second) > @refresh_skew_seconds
   end
@@ -99,22 +117,53 @@ defmodule AWS.AuthCache do
   defp refresh(key, opts) do
     case fetch(key, opts) do
       {:ok, creds} ->
-        with :ok <- put(key, creds) do
+        with :ok <- put_creds(key, creds) do
           {:ok, creds}
         end
 
       {:error, reason} ->
+        log_failure(key, reason)
+        _ = put_error(key, reason)
         {:error, reason}
 
       :skip ->
+        _ = put_error(key, :unavailable)
         {:error, :unavailable}
     end
   end
 
-  defp put(key, creds) do
+  # Logs once per cache miss + real failure. `:skip` is intentionally
+  # silent: it just means a provider doesn't apply (no profile, no
+  # IMDS, no ECS env vars). Benign per-source failure shapes are
+  # filtered out so a non-EC2 dev box doesn't spam the log every time
+  # IMDS times out.
+  defp log_failure(key, reason) do
+    if loggable?(key, reason) do
+      Logger.warning(
+        "[AWS.AuthCache] credential source #{inspect(key)} failed: " <>
+          "#{inspect(reason)} — continuing chain"
+      )
+    end
+  end
+
+  defp loggable?({:awscli, _}, {:profile_not_found, _}), do: false
+  defp loggable?(:aws_instance_auth, {:imds_transport_error, _}), do: false
+  defp loggable?(:aws_instance_auth, :imds_no_role), do: false
+  defp loggable?(_key, _reason), do: true
+
+  defp put_creds(key, creds) do
     entry = %{
       creds: creds,
       expires_at: Map.get(creds, :expires_at),
+      cached_at: System.monotonic_time(:second)
+    }
+
+    GenServer.call(__MODULE__, {:put, key, entry})
+  end
+
+  defp put_error(key, reason) do
+    entry = %{
+      error: reason,
       cached_at: System.monotonic_time(:second)
     }
 

@@ -23,6 +23,7 @@ defmodule AWS.Credentials.Profile do
   alias AWS.Credentials.Providers.{
     AssumeRole,
     CredentialProcess,
+    LoginSession,
     SSO,
     StaticProfile
   }
@@ -97,8 +98,12 @@ defmodule AWS.Credentials.Profile do
 
     1. `sso_session` or `sso_start_url` → `AWS.Credentials.Providers.SSO`
     2. `credential_process` → `AWS.Credentials.Providers.CredentialProcess`
-    3. `role_arn` → `AWS.Credentials.Providers.AssumeRole`
-    4. `aws_access_key_id` → `AWS.Credentials.Providers.StaticProfile`
+    3. `login_session` → `AWS.Credentials.Providers.LoginSession`
+    4. `role_arn` → `AWS.Credentials.Providers.AssumeRole`
+    5. `aws_access_key_id` → `AWS.Credentials.Providers.StaticProfile`
+
+  `credential_process` wins over `login_session` when both are present
+  so an explicit override is always respected.
 
   Returns `{:ok, creds}` where `creds` is a map with at least
   `:access_key_id` and `:secret_access_key`, plus `:security_token`,
@@ -130,6 +135,9 @@ defmodule AWS.Credentials.Profile do
 
       is_binary(profile["credential_process"]) ->
         CredentialProcess.resolve(opts)
+
+      is_binary(profile["login_session"]) ->
+        LoginSession.resolve(opts)
 
       is_binary(profile["role_arn"]) ->
         AssumeRole.resolve(opts)

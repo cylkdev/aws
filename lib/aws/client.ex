@@ -30,6 +30,7 @@ defmodule AWS.Client do
   """
 
   alias AWS.{Config, HTTP, Signer}
+  alias AWS.Credentials.Profile
 
   @type method :: :get | :post | :put | :delete | :head
   @type header :: {String.t(), String.t()}
@@ -143,7 +144,7 @@ defmodule AWS.Client do
 
     resolved = Config.new(cred_opts)
 
-    with {:ok, ak, sk, st} <- extract_creds(resolved) do
+    with {:ok, ak, sk, st} <- extract_creds(resolved, cred_opts) do
       region = resolved[:region]
       {scheme, host, port} = resolve_endpoint(svc_opts, sandbox_opts, default_host_fn, region)
 
@@ -161,14 +162,58 @@ defmodule AWS.Client do
     end
   end
 
-  defp extract_creds(resolved) do
+  defp extract_creds(resolved, opts) do
     ak = resolved[:access_key_id]
     sk = resolved[:secret_access_key]
 
     if is_binary(ak) and is_binary(sk) do
       {:ok, ak, sk, resolved[:security_token]}
     else
-      {:error, :missing_credentials}
+      {:error, missing_credentials_error(opts)}
+    end
+  end
+
+  # When the chain resolved no creds, do a focused diagnostic: load
+  # the active profile and, if it exists, surface its key shape and a
+  # hint about which provider was expected to handle it. This turns
+  # an opaque `:missing_credentials` into an actionable
+  # `{:missing_credentials, %{profile: ..., profile_keys: ...,
+  # hint: ...}}` whenever the user has a profile configured but no
+  # provider could resolve it.
+  defp missing_credentials_error(opts) do
+    profile_name = Profile.default()
+
+    case Profile.load(profile_name, opts) do
+      nil ->
+        :missing_credentials
+
+      profile when is_map(profile) ->
+        {:missing_credentials,
+         %{
+           profile: profile_name,
+           profile_keys: profile |> Map.keys() |> Enum.sort(),
+           hint: hint_for(profile)
+         }}
+    end
+  end
+
+  defp hint_for(profile) do
+    cond do
+      is_binary(profile["sso_session"]) or is_binary(profile["sso_start_url"]) ->
+        "profile is configured for SSO; run `aws sso login --profile <name>`"
+
+      is_binary(profile["credential_process"]) ->
+        "profile uses credential_process; verify the command exits 0 with a Version 1 JSON body"
+
+      is_binary(profile["login_session"]) ->
+        "profile is configured for `aws login`; ensure AWS CLI ≥ 2.32.0 is on PATH and the session is valid"
+
+      is_binary(profile["role_arn"]) ->
+        "profile assumes a role; verify the source_profile resolves"
+
+      true ->
+        "profile shape not recognized by any provider " <>
+          "(no sso_session/sso_start_url/credential_process/login_session/role_arn/aws_access_key_id)"
     end
   end
 
