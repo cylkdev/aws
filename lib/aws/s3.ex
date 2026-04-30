@@ -287,6 +287,13 @@ defmodule AWS.S3 do
     * `:content_type` - Explicit `content-type` header for the object.
     * `:acl` - Canned ACL (maps to `x-amz-acl`).
     * `:headers` - Additional raw request headers.
+    * `:if_none_match` - When `true`, adds an `if-none-match` header so S3
+      rejects the request (with HTTP 412 Precondition Failed) if an object
+      already exists at `key`. The 412 is translated to an
+      `ErrorMessage` struct with `code: :conflict`. Skipped when the caller
+      already supplied an `if-none-match` header in `:headers`.
+    * `:if_none_match_pattern` - Overrides the value sent with `:if_none_match`.
+      Defaults to `"*"` (matches any existing object).
 
   See the "Shared Options" section in the module documentation for common options.
 
@@ -294,6 +301,9 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.put_object("my-bucket", "my-key", "hello world")
       {:ok, %{etag: "...", x_amz_request_id: "..."}}
+
+      iex> AWS.S3.put_object("my-bucket", "existing-key", "hello", if_none_match: true)
+      {:error, %ErrorMessage{code: :conflict, message: "object already exists", ...}}
   """
   @spec put_object(
           bucket :: binary(),
@@ -1335,11 +1345,11 @@ defmodule AWS.S3 do
     body = create_bucket_body(region)
 
     case s3_request(:put, bucket, nil, Keyword.put(opts, :body, body)) do
-      {:error, {:http_error, 409, _resp}} ->
+      {:error, {:http_error, 409, resp}} ->
         {:error,
          Error.conflict(
            "bucket already exists",
-           %{bucket: bucket, region: region},
+           %{bucket: bucket, region: region, response: resp},
            opts
          )}
 
@@ -1379,15 +1389,25 @@ defmodule AWS.S3 do
   end
 
   defp do_put_object(bucket, key, body, opts) do
-    headers = object_headers(opts)
+    headers = opts |> object_headers() |> maybe_add_if_none_match(opts)
+    if_none_match? = Keyword.get(opts, :if_none_match, false)
 
-    :put
-    |> s3_request(bucket, key, put_opts(opts, body: body, headers: headers))
-    |> deserialize_response(opts, fn %{headers: headers} ->
-      headers
-      |> Serializer.deserialize()
-      |> Map.new()
-    end)
+    case s3_request(:put, bucket, key, put_opts(opts, body: body, headers: headers)) do
+      {:error, {:http_error, 412, resp}} when if_none_match? ->
+        {:error,
+         Error.conflict(
+           "object already exists",
+           %{bucket: bucket, key: key, response: resp},
+           opts
+         )}
+
+      result ->
+        deserialize_response(result, opts, fn %{headers: headers} ->
+          headers
+          |> Serializer.deserialize()
+          |> Map.new()
+        end)
+    end
   end
 
   defp do_head_object(bucket, key, opts) do
@@ -1531,8 +1551,9 @@ defmodule AWS.S3 do
   defp resolve_expires(%DateTime{} = datetime), do: to_http_date(datetime)
   defp resolve_expires(expires) when is_binary(expires), do: expires
 
-  defp maybe_expires_header(nil), do: []
-  defp maybe_expires_header(expires), do: [{"expires", expires}]
+  defp maybe_expires_header(expires) when is_binary(expires) do
+    [{"expires", expires}]
+  end
 
   defp do_abort_multipart_upload(bucket, key, upload_id, opts) do
     :delete
@@ -2056,6 +2077,14 @@ defmodule AWS.S3 do
 
   defp maybe_add_header(headers, _key, nil), do: headers
   defp maybe_add_header(headers, key, value), do: [{key, to_string(value)} | headers]
+
+  defp maybe_add_if_none_match(headers, opts) do
+    cond do
+      not Keyword.get(opts, :if_none_match, false) -> headers
+      List.keymember?(headers, "if-none-match", 0) -> headers
+      true -> headers ++ [{"if-none-match", Keyword.get(opts, :if_none_match_pattern, "*")}]
+    end
+  end
 
   defp copy_source(src_bucket, src_key) do
     "/" <> src_bucket <> "/" <> src_key
