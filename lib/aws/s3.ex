@@ -1427,9 +1427,13 @@ defmodule AWS.S3 do
   end
 
   defp do_get_object(bucket, key, opts) do
+    decode_json? = Keyword.get(opts, :decode_json, false)
+
     :get
     |> s3_request(bucket, key, opts)
-    |> deserialize_response(opts, fn %{body: body} -> body end)
+    |> deserialize_response(opts, fn %{body: body} ->
+      if decode_json?, do: Jason.decode!(body), else: body
+    end)
   end
 
   defp do_list_objects(bucket, opts) do

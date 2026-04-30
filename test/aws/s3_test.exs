@@ -104,6 +104,20 @@ defmodule AWS.S3Test do
       assert {:error, %ErrorMessage{code: :not_found}} =
                S3.get_object(bucket, key, @sandbox_opts)
     end
+
+    test "decodes the body as JSON when decode_json: true" do
+      bucket = random_bucket()
+      key = "get-object-json-#{random_id()}"
+      body = Jason.encode!(%{"hello" => "world", "n" => 42})
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+      assert {:ok, _} = S3.put_object(bucket, key, body, @sandbox_opts)
+
+      assert {:ok, %{"hello" => "world", "n" => 42}} =
+               S3.get_object(bucket, key, [decode_json: true] ++ @sandbox_opts)
+
+      assert {:ok, ^body} = S3.get_object(bucket, key, @sandbox_opts)
+    end
   end
 
   describe "delete_object/3" do
