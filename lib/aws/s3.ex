@@ -355,6 +355,44 @@ defmodule AWS.S3 do
   end
 
   @doc """
+  Returns whether an object exists in a bucket.
+
+  Wraps `head_object/3`: returns `true` when the request succeeds and `false`
+  for any error (missing object, denied access, transport failure).
+
+  ## Permissions
+
+  To execute this request, you must have the following permission:
+
+    - s3:GetObject
+
+  ## Arguments
+
+    * `bucket` - The name of the bucket containing the object.
+    * `key` - The key of the object to check.
+    * `opts` - A keyword list of options.
+
+  ## Options
+
+  See the "Shared Options" section in the module documentation for common options.
+
+  ## Examples
+
+      iex> AWS.S3.object_exists?("my-bucket", "my-key")
+      true
+
+      iex> AWS.S3.object_exists?("my-bucket", "missing-key")
+      false
+  """
+  @spec object_exists?(bucket :: binary(), key :: binary(), opts :: keyword()) :: boolean()
+  def object_exists?(bucket, key, opts \\ []) do
+    case head_object(bucket, key, opts) do
+      {:ok, _} -> true
+      {:error, _} -> false
+    end
+  end
+
+  @doc """
   Deletes an object from a bucket.
 
   ## Permissions

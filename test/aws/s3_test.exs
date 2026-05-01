@@ -120,6 +120,27 @@ defmodule AWS.S3Test do
     end
   end
 
+  describe "object_exists?/3" do
+    test "returns true for an existing object" do
+      bucket = random_bucket()
+      key = "exists-#{random_id()}"
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+      assert {:ok, _} = S3.put_object(bucket, key, "hello", @sandbox_opts)
+
+      assert S3.object_exists?(bucket, key, @sandbox_opts)
+    end
+
+    test "returns false for a missing object" do
+      bucket = random_bucket()
+      key = "missing-#{random_id()}"
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+
+      refute S3.object_exists?(bucket, key, @sandbox_opts)
+    end
+  end
+
   describe "delete_object/3" do
     test "deletes an object" do
       bucket = random_bucket()

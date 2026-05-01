@@ -122,6 +122,27 @@ defmodule AWS.S3.SandboxTest do
     end
   end
 
+  describe "object_exists?/3" do
+    test "returns true when head_object succeeds" do
+      Sandbox.set_head_object_responses([
+        {@bucket, fn -> {:ok, %{content_length: 1}} end}
+      ])
+
+      assert S3.object_exists?(@bucket, @object, @sandbox_opts)
+    end
+
+    test "returns false when head_object errors" do
+      Sandbox.set_head_object_responses([
+        {@bucket,
+         fn ->
+           {:error, %ErrorMessage{code: :not_found, message: "missing", details: %{}}}
+         end}
+      ])
+
+      refute S3.object_exists?(@bucket, "missing.txt", @sandbox_opts)
+    end
+  end
+
   describe "delete_object/3" do
     test "returns mocked response" do
       Sandbox.set_delete_object_responses([
