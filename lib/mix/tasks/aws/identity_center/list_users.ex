@@ -21,10 +21,18 @@ defmodule Mix.Tasks.AWS.IdentityCenter.ListUsers do
   use Mix.Task
   alias Mix.Tasks.AWS.Helpers
 
+  # @requirements declares the Mix tasks that must run before this task.
+  #
+  # When this task is invoked, Mix runs each requirement once with Mix.Task.run/2
+  # before calling this task's run/1 function.
+  #
+  # This makes task dependencies explicit in the task definition instead of
+  # requiring run/1 to start dependencies manually or requiring callers to compose
+  # tasks themselves.
+  @requirements ["app.start"]
+
   @impl Mix.Task
   def run(argv) do
-    Mix.Task.run("app.start")
-
     {parsed, _args, _} = Helpers.parse_opts(argv, identity_store_id: :string)
 
     identity_store_id = parsed[:identity_store_id] || Mix.raise("--identity-store-id is required")
