@@ -39,12 +39,11 @@ defmodule AWS.ElasticLoadBalancingV2 do
       are not read from this sub-list; use the top-level keys above.
 
     - `:sandbox` - A keyword list to override sandbox configuration
-      (`:enabled`, `:mode` (`:inline`), `:scheme`, `:host`, `:port`).
-      Only `:inline` is supported here; there is no `:local` mode.
+      (`:enabled`).
 
   ## Sandbox
 
-  Set `sandbox: [enabled: true, mode: :inline]` to activate inline sandbox
+  Set `sandbox: [enabled: true]` to activate inline sandbox
   mode.
 
   Add the following to your `test_helper.exs`:
@@ -97,7 +96,7 @@ defmodule AWS.ElasticLoadBalancingV2 do
   """
   @spec describe_target_groups(keyword) :: {:ok, map} | {:error, term}
   def describe_target_groups(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_target_groups_response(opts)
     else
       do_describe_target_groups(opts)
@@ -131,7 +130,7 @@ defmodule AWS.ElasticLoadBalancingV2 do
   def describe_target_health(opts \\ []) do
     require_opts!(opts, [:target_group_arn])
 
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_target_health_response(opts)
     else
       do_describe_target_health(opts)
@@ -278,13 +277,12 @@ defmodule AWS.ElasticLoadBalancingV2 do
   # Sandbox delegation
   # ---------------------------------------------------------------------------
 
-  defp inline_sandbox?(opts) do
+  defp sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
     cfg = Config.sandbox()
     enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
 
-    enabled and mode === :inline and not sandbox_disabled?()
+    enabled and not sandbox_disabled?()
   end
 
   if Code.ensure_loaded?(SandboxRegistry) do

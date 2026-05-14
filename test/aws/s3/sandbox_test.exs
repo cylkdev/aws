@@ -6,7 +6,7 @@ defmodule AWS.S3.SandboxTest do
 
   @bucket "test-bucket"
   @object "test-object"
-  @sandbox_opts [sandbox: [enabled: true, mode: :inline]]
+  @sandbox_opts [sandbox: [enabled: true]]
 
   describe "list_buckets/1" do
     test "returns mocked bucket list" do

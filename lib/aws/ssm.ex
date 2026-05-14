@@ -37,14 +37,13 @@ defmodule AWS.SSM do
 
     - `:sandbox` - A keyword list to override sandbox configuration.
         - `:enabled` - Whether sandbox mode is enabled.
-        - `:mode` - `:local` or `:inline`.
         - `:scheme` - The sandbox scheme.
         - `:host` - The sandbox host.
         - `:port` - The sandbox port.
 
   ## Sandbox
 
-  Set `sandbox: [enabled: true, mode: :inline]` to activate inline sandbox mode.
+  Set `sandbox: [enabled: true]` to activate sandbox mode.
 
   ### Setup
 
@@ -64,7 +63,7 @@ defmodule AWS.SSM do
       test "reads a parameter" do
         assert {:ok, %{parameter: %{value: "db.internal"}}} =
                  AWS.SSM.get_parameter("/app/db/host",
-                   sandbox: [enabled: true, mode: :inline]
+                   sandbox: [enabled: true]
                  )
       end
   """
@@ -95,7 +94,7 @@ defmodule AWS.SSM do
   @spec get_parameter(name :: String.t(), opts :: keyword()) ::
           {:ok, %{parameter: map()}} | {:error, term()}
   def get_parameter(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_get_parameter_response(name, opts)
     else
       do_get_parameter(name, opts)
@@ -124,7 +123,7 @@ defmodule AWS.SSM do
   @spec get_parameters(names :: [String.t()], opts :: keyword()) ::
           {:ok, %{parameters: [map()], invalid_parameters: [String.t()]}} | {:error, term()}
   def get_parameters(names, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_get_parameters_response(names, opts)
     else
       do_get_parameters(names, opts)
@@ -159,7 +158,7 @@ defmodule AWS.SSM do
   @spec get_parameters_by_path(path :: String.t(), opts :: keyword()) ::
           {:ok, %{parameters: [map()], next_token: String.t() | nil}} | {:error, term()}
   def get_parameters_by_path(path, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_get_parameters_by_path_response(path, opts)
     else
       do_get_parameters_by_path(path, opts)
@@ -204,7 +203,7 @@ defmodule AWS.SSM do
   @spec put_parameter(name :: String.t(), value :: String.t(), opts :: keyword()) ::
           {:ok, %{version: integer(), tier: String.t()}} | {:error, term()}
   def put_parameter(name, value, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_put_parameter_response(name, value, opts)
     else
       do_put_parameter(name, value, opts)
@@ -236,7 +235,7 @@ defmodule AWS.SSM do
   @spec delete_parameter(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def delete_parameter(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_parameter_response(name, opts)
     else
       do_delete_parameter(name, opts)
@@ -257,7 +256,7 @@ defmodule AWS.SSM do
           {:ok, %{deleted_parameters: [String.t()], invalid_parameters: [String.t()]}}
           | {:error, term()}
   def delete_parameters(names, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_parameters_response(names, opts)
     else
       do_delete_parameters(names, opts)
@@ -285,7 +284,7 @@ defmodule AWS.SSM do
   @spec describe_parameters(opts :: keyword()) ::
           {:ok, %{parameters: [map()], next_token: String.t() | nil}} | {:error, term()}
   def describe_parameters(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_parameters_response(opts)
     else
       do_describe_parameters(opts)
@@ -329,7 +328,7 @@ defmodule AWS.SSM do
           {:ok, %{instance_information_list: [map()], next_token: String.t() | nil}}
           | {:error, term()}
   def describe_instance_information(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_instance_information_response(opts)
     else
       do_describe_instance_information(opts)
@@ -454,13 +453,12 @@ defmodule AWS.SSM do
   # Sandbox delegation
   # ---------------------------------------------------------------------------
 
-  defp inline_sandbox?(opts) do
+  defp sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
     cfg = Config.sandbox()
     enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
 
-    enabled and mode === :inline and not sandbox_disabled?()
+    enabled and not sandbox_disabled?()
   end
 
   if Code.ensure_loaded?(SandboxRegistry) do

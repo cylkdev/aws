@@ -32,14 +32,13 @@ defmodule AWS.IdentityCenter do
 
     - `:sandbox` - A keyword list to override sandbox configuration.
         - `:enabled` - Whether sandbox mode is enabled.
-        - `:mode` - `:local` or `:inline`.
         - `:scheme` - The sandbox scheme.
         - `:host` - The sandbox host.
         - `:port` - The sandbox port.
 
   ## Sandbox
 
-  Set `sandbox: [enabled: true, mode: :inline]` to activate inline sandbox mode.
+  Set `sandbox: [enabled: true]` to activate sandbox mode.
 
   ### Setup
 
@@ -57,7 +56,7 @@ defmodule AWS.IdentityCenter do
 
       test "lists instances" do
         assert {:ok, %{instances: [%{instance_arn: _}]}} =
-                 AWS.IdentityCenter.list_instances(sandbox: [enabled: true, mode: :inline])
+                 AWS.IdentityCenter.list_instances(sandbox: [enabled: true])
       end
   """
 
@@ -87,7 +86,7 @@ defmodule AWS.IdentityCenter do
   @spec list_instances(opts :: keyword()) ::
           {:ok, %{instances: list(map())}} | {:error, term()}
   def list_instances(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_instances_response(opts)
     else
       do_list_instances(opts)
@@ -119,7 +118,7 @@ defmodule AWS.IdentityCenter do
   @spec create_permission_set(instance_arn :: String.t(), name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def create_permission_set(instance_arn, name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_permission_set_response(name, opts)
     else
       do_create_permission_set(instance_arn, name, opts)
@@ -156,7 +155,7 @@ defmodule AWS.IdentityCenter do
         ) ::
           {:ok, %{}} | {:error, term()}
   def delete_permission_set(instance_arn, permission_set_arn, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_permission_set_response(permission_set_arn, opts)
     else
       do_delete_permission_set(instance_arn, permission_set_arn, opts)
@@ -188,7 +187,7 @@ defmodule AWS.IdentityCenter do
           {:ok, %{permission_sets: list(String.t()), next_token: String.t() | nil}}
           | {:error, term()}
   def list_permission_sets(instance_arn, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_permission_sets_response(instance_arn, opts)
     else
       do_list_permission_sets(instance_arn, opts)
@@ -235,7 +234,7 @@ defmodule AWS.IdentityCenter do
         managed_policy_arn,
         opts \\ []
       ) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_attach_managed_policy_to_permission_set_response(permission_set_arn, opts)
     else
       do_attach_managed_policy_to_permission_set(
@@ -485,7 +484,7 @@ defmodule AWS.IdentityCenter do
         managed_policy_arn,
         opts \\ []
       ) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_detach_managed_policy_from_permission_set_response(permission_set_arn, opts)
     else
       do_detach_managed_policy_from_permission_set(
@@ -542,7 +541,7 @@ defmodule AWS.IdentityCenter do
         ) ::
           {:ok, map()} | {:error, term()}
   def create_account_assignment(instance_arn, assignment, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_account_assignment_response(instance_arn, opts)
     else
       do_create_account_assignment(instance_arn, assignment, opts)
@@ -584,7 +583,7 @@ defmodule AWS.IdentityCenter do
         ) ::
           {:ok, map()} | {:error, term()}
   def delete_account_assignment(instance_arn, assignment, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_account_assignment_response(instance_arn, opts)
     else
       do_delete_account_assignment(instance_arn, assignment, opts)
@@ -631,7 +630,7 @@ defmodule AWS.IdentityCenter do
           opts :: keyword()
         ) :: {:ok, map()} | {:error, term()}
   def provision_permission_set(instance_arn, permission_set_arn, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_provision_permission_set_response(permission_set_arn, opts)
     else
       do_provision_permission_set(instance_arn, permission_set_arn, opts)
@@ -678,7 +677,7 @@ defmodule AWS.IdentityCenter do
         ) ::
           {:ok, %{user_id: String.t()}} | {:error, term()}
   def create_identity_store_user(identity_store_id, username, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_identity_store_user_response(username, opts)
     else
       do_create_identity_store_user(identity_store_id, username, opts)
@@ -715,7 +714,7 @@ defmodule AWS.IdentityCenter do
         ) ::
           {:ok, %{}} | {:error, term()}
   def delete_identity_store_user(identity_store_id, user_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_identity_store_user_response(user_id, opts)
     else
       do_delete_identity_store_user(identity_store_id, user_id, opts)
@@ -752,7 +751,7 @@ defmodule AWS.IdentityCenter do
           opts :: keyword()
         ) :: {:ok, map()} | {:error, term()}
   def describe_identity_store_user(identity_store_id, user_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_identity_store_user_response(user_id, opts)
     else
       do_describe_identity_store_user(identity_store_id, user_id, opts)
@@ -792,7 +791,7 @@ defmodule AWS.IdentityCenter do
         ) ::
           {:ok, %{}} | {:error, term()}
   def update_identity_store_user(identity_store_id, user_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_update_identity_store_user_response(user_id, opts)
     else
       do_update_identity_store_user(identity_store_id, user_id, opts)
@@ -829,7 +828,7 @@ defmodule AWS.IdentityCenter do
   @spec list_identity_store_users(identity_store_id :: String.t(), opts :: keyword()) ::
           {:ok, %{users: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def list_identity_store_users(identity_store_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_identity_store_users_response(identity_store_id, opts)
     else
       do_list_identity_store_users(identity_store_id, opts)
@@ -869,7 +868,7 @@ defmodule AWS.IdentityCenter do
         ) ::
           {:ok, %{group_id: String.t()}} | {:error, term()}
   def create_identity_store_group(identity_store_id, display_name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_identity_store_group_response(display_name, opts)
     else
       do_create_identity_store_group(identity_store_id, display_name, opts)
@@ -907,7 +906,7 @@ defmodule AWS.IdentityCenter do
         ) ::
           {:ok, %{}} | {:error, term()}
   def delete_identity_store_group(identity_store_id, group_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_identity_store_group_response(group_id, opts)
     else
       do_delete_identity_store_group(identity_store_id, group_id, opts)
@@ -944,7 +943,7 @@ defmodule AWS.IdentityCenter do
           opts :: keyword()
         ) :: {:ok, map()} | {:error, term()}
   def describe_identity_store_group(identity_store_id, group_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_identity_store_group_response(group_id, opts)
     else
       do_describe_identity_store_group(identity_store_id, group_id, opts)
@@ -974,7 +973,7 @@ defmodule AWS.IdentityCenter do
   @spec list_identity_store_groups(identity_store_id :: String.t(), opts :: keyword()) ::
           {:ok, %{groups: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def list_identity_store_groups(identity_store_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_identity_store_groups_response(identity_store_id, opts)
     else
       do_list_identity_store_groups(identity_store_id, opts)
@@ -1011,7 +1010,7 @@ defmodule AWS.IdentityCenter do
           opts :: keyword()
         ) :: {:ok, %{membership_id: String.t()}} | {:error, term()}
   def create_group_membership(identity_store_id, group_id, user_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_group_membership_response(group_id, opts)
     else
       do_create_group_membership(identity_store_id, group_id, user_id, opts)
@@ -1053,7 +1052,7 @@ defmodule AWS.IdentityCenter do
         ) ::
           {:ok, %{}} | {:error, term()}
   def delete_group_membership(identity_store_id, membership_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_group_membership_response(membership_id, opts)
     else
       do_delete_group_membership(identity_store_id, membership_id, opts)
@@ -1213,13 +1212,12 @@ defmodule AWS.IdentityCenter do
   # Sandbox delegation
   # ---------------------------------------------------------------------------
 
-  defp inline_sandbox?(opts) do
+  defp sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
     cfg = Config.sandbox()
     enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
 
-    enabled and mode === :inline and not sandbox_disabled?()
+    enabled and not sandbox_disabled?()
   end
 
   if Code.ensure_loaded?(SandboxRegistry) do

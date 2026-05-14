@@ -4,7 +4,7 @@ defmodule AWS.EventBridge.SandboxTest do
   alias AWS.EventBridge
   alias AWS.EventBridge.Sandbox
 
-  @sandbox_opts [sandbox: [enabled: true, mode: :inline]]
+  @sandbox_opts [sandbox: [enabled: true]]
 
   # Rule management
 

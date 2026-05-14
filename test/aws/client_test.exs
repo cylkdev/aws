@@ -245,24 +245,13 @@ defmodule AWS.ClientTest do
                )
     end
 
-    test "applies sandbox endpoint only when mode: :local" do
-      # non-local: host comes from default_host_fn
+    test "host always comes from default_host_fn regardless of sandbox opts" do
       assert {:ok, %{host: "explicit.example.com"}} =
                Client.resolve_config(
                  :events,
-                 @static_creds ++ [sandbox: [enabled: true, mode: :inline]],
+                 @static_creds ++ [sandbox: [enabled: true]],
                  fn _ -> "explicit.example.com" end
                )
-
-      # local: host falls back to Config.sandbox()[:host]
-      assert {:ok, %{host: sandbox_host}} =
-               Client.resolve_config(
-                 :events,
-                 [sandbox: [enabled: true, mode: :local]],
-                 fn _ -> "should-not-be-used.example" end
-               )
-
-      assert sandbox_host === Keyword.fetch!(AWS.Config.sandbox(), :host)
     end
 
     test "extra keys are merged from namespace opts" do
@@ -289,15 +278,6 @@ defmodule AWS.ClientTest do
     test "emits :{port} for non-default ports" do
       assert Client.simple_url(%{scheme: "http", host: "h", port: 4566}) === "http://h:4566/"
       assert Client.simple_url(%{scheme: "https", host: "h", port: 8443}) === "https://h:8443/"
-    end
-  end
-
-  describe "sandbox_local?/1" do
-    test "true only when enabled and mode: :local" do
-      assert Client.sandbox_local?(enabled: true, mode: :local)
-      refute Client.sandbox_local?(enabled: true, mode: :inline)
-      refute Client.sandbox_local?(enabled: false, mode: :local)
-      refute Client.sandbox_local?([])
     end
   end
 end

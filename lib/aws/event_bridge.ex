@@ -28,14 +28,13 @@ defmodule AWS.EventBridge do
 
     - `:sandbox` - A keyword list to override sandbox configuration.
         - `:enabled` - Whether sandbox mode is enabled.
-        - `:mode` - `:local` or `:inline`.
         - `:scheme` - The sandbox scheme.
         - `:host` - The sandbox host.
         - `:port` - The sandbox port.
 
   ## Sandbox
 
-  Set `sandbox: [enabled: true, mode: :inline]` to activate inline sandbox mode.
+  Set `sandbox: [enabled: true]` to activate sandbox mode.
 
   ### Setup
 
@@ -55,7 +54,7 @@ defmodule AWS.EventBridge do
         assert {:ok, %{rule_arn: _}} =
                  AWS.EventBridge.put_rule("my-rule",
                    event_pattern: %{"source" => ["aws.s3"]},
-                   sandbox: [enabled: true, mode: :inline]
+                   sandbox: [enabled: true]
                  )
       end
   """
@@ -84,7 +83,7 @@ defmodule AWS.EventBridge do
   @spec put_rule(name :: String.t(), opts :: keyword()) ::
           {:ok, %{rule_arn: String.t()}} | {:error, term()}
   def put_rule(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_put_rule_response(name, opts)
     else
       do_put_rule(name, opts)
@@ -113,7 +112,7 @@ defmodule AWS.EventBridge do
   @spec describe_rule(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def describe_rule(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_rule_response(name, opts)
     else
       do_describe_rule(name, opts)
@@ -135,7 +134,7 @@ defmodule AWS.EventBridge do
   @spec list_rules(opts :: keyword()) ::
           {:ok, %{rules: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def list_rules(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_rules_response(opts)
     else
       do_list_rules(opts)
@@ -162,7 +161,7 @@ defmodule AWS.EventBridge do
   @spec delete_rule(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def delete_rule(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_rule_response(name, opts)
     else
       do_delete_rule(name, opts)
@@ -195,7 +194,7 @@ defmodule AWS.EventBridge do
   @spec put_targets(rule :: String.t(), targets :: list(map()), opts :: keyword()) ::
           {:ok, %{failed_entry_count: integer(), failed_entries: list()}} | {:error, term()}
   def put_targets(rule, targets, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_put_targets_response(rule, targets, opts)
     else
       do_put_targets(rule, targets, opts)
@@ -222,7 +221,7 @@ defmodule AWS.EventBridge do
   @spec list_targets_by_rule(rule :: String.t(), opts :: keyword()) ::
           {:ok, %{targets: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def list_targets_by_rule(rule, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_targets_by_rule_response(rule, opts)
     else
       do_list_targets_by_rule(rule, opts)
@@ -248,7 +247,7 @@ defmodule AWS.EventBridge do
   @spec remove_targets(rule :: String.t(), ids :: list(String.t()), opts :: keyword()) ::
           {:ok, %{failed_entry_count: integer(), failed_entries: list()}} | {:error, term()}
   def remove_targets(rule, ids, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_remove_targets_response(rule, ids, opts)
     else
       do_remove_targets(rule, ids, opts)
@@ -288,7 +287,7 @@ defmodule AWS.EventBridge do
         ) ::
           {:ok, map()} | {:error, term()}
   def create_connection(name, authorization_type, auth_parameters, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_connection_response(name, authorization_type, auth_parameters, opts)
     else
       do_create_connection(name, authorization_type, auth_parameters, opts)
@@ -319,7 +318,7 @@ defmodule AWS.EventBridge do
   @spec describe_connection(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def describe_connection(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_connection_response(name, opts)
     else
       do_describe_connection(name, opts)
@@ -345,7 +344,7 @@ defmodule AWS.EventBridge do
   @spec update_connection(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def update_connection(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_update_connection_response(name, opts)
     else
       do_update_connection(name, opts)
@@ -371,7 +370,7 @@ defmodule AWS.EventBridge do
   @spec delete_connection(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def delete_connection(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_connection_response(name, opts)
     else
       do_delete_connection(name, opts)
@@ -391,7 +390,7 @@ defmodule AWS.EventBridge do
   @spec list_connections(opts :: keyword()) ::
           {:ok, %{connections: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def list_connections(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_connections_response(opts)
     else
       do_list_connections(opts)
@@ -434,7 +433,7 @@ defmodule AWS.EventBridge do
         ) ::
           {:ok, map()} | {:error, term()}
   def create_api_destination(name, connection_arn, invocation_endpoint, http_method, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_api_destination_response(
         name,
         connection_arn,
@@ -470,7 +469,7 @@ defmodule AWS.EventBridge do
   @spec describe_api_destination(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def describe_api_destination(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_api_destination_response(name, opts)
     else
       do_describe_api_destination(name, opts)
@@ -498,7 +497,7 @@ defmodule AWS.EventBridge do
   @spec update_api_destination(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def update_api_destination(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_update_api_destination_response(name, opts)
     else
       do_update_api_destination(name, opts)
@@ -526,7 +525,7 @@ defmodule AWS.EventBridge do
   @spec delete_api_destination(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def delete_api_destination(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_api_destination_response(name, opts)
     else
       do_delete_api_destination(name, opts)
@@ -546,7 +545,7 @@ defmodule AWS.EventBridge do
   @spec list_api_destinations(opts :: keyword()) ::
           {:ok, %{api_destinations: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def list_api_destinations(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_api_destinations_response(opts)
     else
       do_list_api_destinations(opts)
@@ -575,7 +574,7 @@ defmodule AWS.EventBridge do
   @spec create_event_bus(name :: String.t(), opts :: keyword()) ::
           {:ok, %{event_bus_arn: String.t()}} | {:error, term()}
   def create_event_bus(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_event_bus_response(name, opts)
     else
       do_create_event_bus(name, opts)
@@ -597,7 +596,7 @@ defmodule AWS.EventBridge do
   @spec describe_event_bus(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def describe_event_bus(name \\ "default", opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_event_bus_response(name, opts)
     else
       do_describe_event_bus(name, opts)
@@ -617,7 +616,7 @@ defmodule AWS.EventBridge do
   @spec delete_event_bus(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def delete_event_bus(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_event_bus_response(name, opts)
     else
       do_delete_event_bus(name, opts)
@@ -637,7 +636,7 @@ defmodule AWS.EventBridge do
   @spec list_event_buses(opts :: keyword()) ::
           {:ok, %{event_buses: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def list_event_buses(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_event_buses_response(opts)
     else
       do_list_event_buses(opts)
@@ -671,7 +670,7 @@ defmodule AWS.EventBridge do
   @spec put_events(entries :: list(map()), opts :: keyword()) ::
           {:ok, %{entries: list(map()), failed_entry_count: integer()}} | {:error, term()}
   def put_events(entries, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_put_events_response(entries, opts)
     else
       do_put_events(entries, opts)
@@ -695,7 +694,7 @@ defmodule AWS.EventBridge do
   @spec enable_rule(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def enable_rule(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_enable_rule_response(name, opts)
     else
       do_enable_rule(name, opts)
@@ -717,7 +716,7 @@ defmodule AWS.EventBridge do
   @spec disable_rule(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def disable_rule(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_disable_rule_response(name, opts)
     else
       do_disable_rule(name, opts)
@@ -922,13 +921,12 @@ defmodule AWS.EventBridge do
   # Sandbox delegation
   # ---------------------------------------------------------------------------
 
-  defp inline_sandbox?(opts) do
+  defp sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
     cfg = Config.sandbox()
     enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
 
-    enabled and mode === :inline and not sandbox_disabled?()
+    enabled and not sandbox_disabled?()
   end
 
   if Code.ensure_loaded?(SandboxRegistry) do

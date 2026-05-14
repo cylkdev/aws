@@ -243,28 +243,18 @@ defmodule AWS.ConfigTest do
       sandbox = Config.sandbox()
 
       assert sandbox[:enabled] === false
-      assert sandbox[:mode] === :local
-      assert sandbox[:scheme] === "http://"
-      assert sandbox[:host] === "localhost"
-      assert sandbox[:port] === 4566
     end
 
     test "app env overrides defaults" do
-      Application.put_env(:aws, :sandbox, host: "sandbox.local", port: 9999)
+      Application.put_env(:aws, :sandbox, enabled: true)
 
-      sandbox = Config.sandbox()
-
-      assert sandbox[:host] === "sandbox.local"
-      assert sandbox[:port] === 9999
-      assert sandbox[:scheme] === "http://"
+      assert Config.sandbox()[:enabled] === true
     end
 
     test "caller opts override app env" do
-      Application.put_env(:aws, :sandbox, host: "from-app-env")
+      Application.put_env(:aws, :sandbox, enabled: false)
 
-      sandbox = Config.sandbox(sandbox: [host: "from-call"])
-
-      assert sandbox[:host] === "from-call"
+      assert Config.sandbox(sandbox: [enabled: true])[:enabled] === true
     end
   end
 

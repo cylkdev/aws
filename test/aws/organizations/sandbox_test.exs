@@ -4,7 +4,7 @@ defmodule AWS.Organizations.SandboxTest do
   alias AWS.Organizations
   alias AWS.Organizations.Sandbox
 
-  @sandbox_opts [sandbox: [enabled: true, mode: :inline]]
+  @sandbox_opts [sandbox: [enabled: true]]
 
   # Organization
 

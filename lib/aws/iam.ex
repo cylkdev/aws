@@ -40,14 +40,13 @@ defmodule AWS.IAM do
 
     - `:sandbox` - A keyword list to override sandbox configuration.
         - `:enabled` - Whether sandbox mode is enabled.
-        - `:mode` - `:local` or `:inline`.
         - `:scheme` - The sandbox scheme.
         - `:host` - The sandbox host.
         - `:port` - The sandbox port.
 
   ## Sandbox
 
-  Set `sandbox: [enabled: true, mode: :inline]` to activate inline sandbox mode.
+  Set `sandbox: [enabled: true]` to activate sandbox mode.
 
   ### Setup
 
@@ -65,7 +64,7 @@ defmodule AWS.IAM do
 
       test "creates a user" do
         assert {:ok, %{user_name: "alice"}} =
-                 AWS.IAM.create_user("alice", sandbox: [enabled: true, mode: :inline])
+                 AWS.IAM.create_user("alice", sandbox: [enabled: true])
       end
   """
 
@@ -97,7 +96,7 @@ defmodule AWS.IAM do
   @spec create_user(username :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def create_user(username, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_user_response(username, opts)
     else
       do_create_user(username, opts)
@@ -128,7 +127,7 @@ defmodule AWS.IAM do
   @spec get_user(username :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def get_user(username, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_get_user_response(username, opts)
     else
       do_get_user(username, opts)
@@ -156,7 +155,7 @@ defmodule AWS.IAM do
           {:ok, %{users: list(map()), is_truncated: boolean(), marker: String.t() | nil}}
           | {:error, term()}
   def list_users(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_users_response(opts)
     else
       do_list_users(opts)
@@ -207,7 +206,7 @@ defmodule AWS.IAM do
   @spec delete_user(username :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def delete_user(username, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_user_response(username, opts)
     else
       do_delete_user(username, opts)
@@ -237,7 +236,7 @@ defmodule AWS.IAM do
   @spec create_access_key(username :: String.t(), opts :: keyword()) ::
           {:ok, %{access_key_id: String.t(), secret_access_key: String.t()}} | {:error, term()}
   def create_access_key(username, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_access_key_response(username, opts)
     else
       do_create_access_key(username, opts)
@@ -263,7 +262,7 @@ defmodule AWS.IAM do
   @spec list_access_keys(username :: String.t(), opts :: keyword()) ::
           {:ok, %{access_keys: list(map())}} | {:error, term()}
   def list_access_keys(username, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_access_keys_response(username, opts)
     else
       do_list_access_keys(username, opts)
@@ -298,7 +297,7 @@ defmodule AWS.IAM do
   @spec delete_access_key(access_key_id :: String.t(), username :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def delete_access_key(access_key_id, username, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_access_key_response(access_key_id, username, opts)
     else
       do_delete_access_key(access_key_id, username, opts)
@@ -326,7 +325,7 @@ defmodule AWS.IAM do
   @spec create_group(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def create_group(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_group_response(name, opts)
     else
       do_create_group(name, opts)
@@ -353,7 +352,7 @@ defmodule AWS.IAM do
   @spec list_groups(opts :: keyword()) ::
           {:ok, %{groups: list(map())}} | {:error, term()}
   def list_groups(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_groups_response(opts)
     else
       do_list_groups(opts)
@@ -394,7 +393,7 @@ defmodule AWS.IAM do
   @spec delete_group(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def delete_group(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_group_response(name, opts)
     else
       do_delete_group(name, opts)
@@ -423,7 +422,7 @@ defmodule AWS.IAM do
   @spec add_user_to_group(group_name :: String.t(), username :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def add_user_to_group(group_name, username, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_add_user_to_group_response(group_name, username, opts)
     else
       do_add_user_to_group(group_name, username, opts)
@@ -452,7 +451,7 @@ defmodule AWS.IAM do
         ) ::
           {:ok, %{}} | {:error, term()}
   def remove_user_from_group(group_name, username, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_remove_user_from_group_response(group_name, username, opts)
     else
       do_remove_user_from_group(group_name, username, opts)
@@ -483,7 +482,7 @@ defmodule AWS.IAM do
   @spec create_role(name :: String.t(), trust_policy :: map(), opts :: keyword()) ::
           {:ok, %{role_name: String.t(), role_id: String.t(), arn: String.t()}} | {:error, term()}
   def create_role(name, trust_policy, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_role_response(name, opts)
     else
       do_create_role(name, trust_policy, opts)
@@ -518,7 +517,7 @@ defmodule AWS.IAM do
   @spec get_role(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def get_role(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_get_role_response(name, opts)
     else
       do_get_role(name, opts)
@@ -545,7 +544,7 @@ defmodule AWS.IAM do
   @spec list_roles(opts :: keyword()) ::
           {:ok, %{roles: list(map())}} | {:error, term()}
   def list_roles(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_roles_response(opts)
     else
       do_list_roles(opts)
@@ -586,7 +585,7 @@ defmodule AWS.IAM do
   @spec delete_role(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def delete_role(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_role_response(name, opts)
     else
       do_delete_role(name, opts)
@@ -614,7 +613,7 @@ defmodule AWS.IAM do
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
   def update_assume_role_policy(role_name, policy_document, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_update_assume_role_policy_response(role_name, opts)
     else
       do_update_assume_role_policy(role_name, policy_document, opts)
@@ -653,7 +652,7 @@ defmodule AWS.IAM do
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
   def put_role_policy(role_name, policy_name, document, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_put_role_policy_response(role_name, policy_name, opts)
     else
       do_put_role_policy(role_name, policy_name, document, opts)
@@ -693,7 +692,7 @@ defmodule AWS.IAM do
           {:ok, %{role_name: String.t(), policy_name: String.t(), policy_document: map()}}
           | {:error, term()}
   def get_role_policy(role_name, policy_name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_get_role_policy_response(role_name, policy_name, opts)
     else
       do_get_role_policy(role_name, policy_name, opts)
@@ -737,7 +736,7 @@ defmodule AWS.IAM do
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
   def delete_role_policy(role_name, policy_name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_role_policy_response(role_name, policy_name, opts)
     else
       do_delete_role_policy(role_name, policy_name, opts)
@@ -769,7 +768,7 @@ defmodule AWS.IAM do
            }}
           | {:error, term()}
   def list_role_policies(role_name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_role_policies_response(role_name, opts)
     else
       do_list_role_policies(role_name, opts)
@@ -815,7 +814,7 @@ defmodule AWS.IAM do
           {:ok, %{policy_name: String.t(), policy_id: String.t(), arn: String.t()}}
           | {:error, term()}
   def create_policy(name, policy_document, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_policy_response(name, opts)
     else
       do_create_policy(name, policy_document, opts)
@@ -849,7 +848,7 @@ defmodule AWS.IAM do
   @spec get_policy(policy_arn :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def get_policy(policy_arn, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_get_policy_response(policy_arn, opts)
     else
       do_get_policy(policy_arn, opts)
@@ -886,7 +885,7 @@ defmodule AWS.IAM do
            }}
           | {:error, term()}
   def get_policy_version(policy_arn, version_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_get_policy_version_response(policy_arn, version_id, opts)
     else
       do_get_policy_version(policy_arn, version_id, opts)
@@ -934,7 +933,7 @@ defmodule AWS.IAM do
   @spec list_policies(opts :: keyword()) ::
           {:ok, %{policies: list(map())}} | {:error, term()}
   def list_policies(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_policies_response(opts)
     else
       do_list_policies(opts)
@@ -978,7 +977,7 @@ defmodule AWS.IAM do
   @spec delete_policy(policy_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def delete_policy(policy_arn, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_policy_response(policy_arn, opts)
     else
       do_delete_policy(policy_arn, opts)
@@ -1008,7 +1007,7 @@ defmodule AWS.IAM do
           opts :: keyword()
         ) :: {:ok, %{policy_version: map()}} | {:error, term()}
   def create_policy_version(policy_arn, document, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_policy_version_response(policy_arn, opts)
     else
       do_create_policy_version(policy_arn, document, opts)
@@ -1059,7 +1058,7 @@ defmodule AWS.IAM do
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
   def set_default_policy_version(policy_arn, version_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_set_default_policy_version_response(policy_arn, version_id, opts)
     else
       do_set_default_policy_version(policy_arn, version_id, opts)
@@ -1087,7 +1086,7 @@ defmodule AWS.IAM do
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
   def delete_policy_version(policy_arn, version_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_policy_version_response(policy_arn, version_id, opts)
     else
       do_delete_policy_version(policy_arn, version_id, opts)
@@ -1120,7 +1119,7 @@ defmodule AWS.IAM do
            }}
           | {:error, term()}
   def list_policy_versions(policy_arn, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_policy_versions_response(policy_arn, opts)
     else
       do_list_policy_versions(policy_arn, opts)
@@ -1166,7 +1165,7 @@ defmodule AWS.IAM do
   @spec attach_role_policy(role_name :: String.t(), policy_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def attach_role_policy(role_name, policy_arn, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_attach_role_policy_response(role_name, policy_arn, opts)
     else
       do_attach_role_policy(role_name, policy_arn, opts)
@@ -1185,7 +1184,7 @@ defmodule AWS.IAM do
   @spec detach_role_policy(role_name :: String.t(), policy_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def detach_role_policy(role_name, policy_arn, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_detach_role_policy_response(role_name, policy_arn, opts)
     else
       do_detach_role_policy(role_name, policy_arn, opts)
@@ -1204,7 +1203,7 @@ defmodule AWS.IAM do
   @spec list_attached_role_policies(role_name :: String.t(), opts :: keyword()) ::
           {:ok, %{policies: list(map())}} | {:error, term()}
   def list_attached_role_policies(role_name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_attached_role_policies_response(role_name, opts)
     else
       do_list_attached_role_policies(role_name, opts)
@@ -1231,7 +1230,7 @@ defmodule AWS.IAM do
   @spec attach_user_policy(username :: String.t(), policy_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def attach_user_policy(username, policy_arn, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_attach_user_policy_response(username, policy_arn, opts)
     else
       do_attach_user_policy(username, policy_arn, opts)
@@ -1250,7 +1249,7 @@ defmodule AWS.IAM do
   @spec detach_user_policy(username :: String.t(), policy_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def detach_user_policy(username, policy_arn, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_detach_user_policy_response(username, policy_arn, opts)
     else
       do_detach_user_policy(username, policy_arn, opts)
@@ -1269,7 +1268,7 @@ defmodule AWS.IAM do
   @spec attach_group_policy(group_name :: String.t(), policy_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def attach_group_policy(group_name, policy_arn, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_attach_group_policy_response(group_name, policy_arn, opts)
     else
       do_attach_group_policy(group_name, policy_arn, opts)
@@ -1288,7 +1287,7 @@ defmodule AWS.IAM do
   @spec detach_group_policy(group_name :: String.t(), policy_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def detach_group_policy(group_name, policy_arn, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_detach_group_policy_response(group_name, policy_arn, opts)
     else
       do_detach_group_policy(group_name, policy_arn, opts)
@@ -1326,7 +1325,7 @@ defmodule AWS.IAM do
            }}
           | {:error, term()}
   def list_mfa_devices(username, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_mfa_devices_response(username, opts)
     else
       do_list_mfa_devices(username, opts)
@@ -1383,7 +1382,7 @@ defmodule AWS.IAM do
           opts :: keyword()
         ) :: {:ok, %{open_id_connect_provider_arn: String.t()}} | {:error, term()}
   def create_open_id_connect_provider(url, client_id_list, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_open_id_connect_provider_response(url, opts)
     else
       do_create_open_id_connect_provider(url, client_id_list, opts)
@@ -1422,7 +1421,7 @@ defmodule AWS.IAM do
            }}
           | {:error, term()}
   def get_open_id_connect_provider(provider_arn, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_get_open_id_connect_provider_response(provider_arn, opts)
     else
       do_get_open_id_connect_provider(provider_arn, opts)
@@ -1452,7 +1451,7 @@ defmodule AWS.IAM do
           {:ok, %{open_id_connect_provider_list: list(%{arn: String.t()})}}
           | {:error, term()}
   def list_open_id_connect_providers(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_open_id_connect_providers_response(opts)
     else
       do_list_open_id_connect_providers(opts)
@@ -1481,7 +1480,7 @@ defmodule AWS.IAM do
   @spec delete_open_id_connect_provider(provider_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def delete_open_id_connect_provider(provider_arn, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_open_id_connect_provider_response(provider_arn, opts)
     else
       do_delete_open_id_connect_provider(provider_arn, opts)
@@ -1509,7 +1508,7 @@ defmodule AWS.IAM do
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
   def update_open_id_connect_provider_thumbprint(provider_arn, thumbprint_list, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_update_open_id_connect_provider_thumbprint_response(provider_arn, opts)
     else
       do_update_open_id_connect_provider_thumbprint(provider_arn, thumbprint_list, opts)
@@ -1541,7 +1540,7 @@ defmodule AWS.IAM do
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
   def add_client_id_to_open_id_connect_provider(provider_arn, client_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_add_client_id_to_open_id_connect_provider_response(provider_arn, opts)
     else
       do_add_client_id_to_open_id_connect_provider(provider_arn, client_id, opts)
@@ -1572,7 +1571,7 @@ defmodule AWS.IAM do
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
   def remove_client_id_from_open_id_connect_provider(provider_arn, client_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_remove_client_id_from_open_id_connect_provider_response(provider_arn, opts)
     else
       do_remove_client_id_from_open_id_connect_provider(provider_arn, client_id, opts)
@@ -1622,13 +1621,12 @@ defmodule AWS.IAM do
   # Sandbox delegation
   # ---------------------------------------------------------------------------
 
-  defp inline_sandbox?(opts) do
+  defp sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
     cfg = Config.sandbox()
     enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
 
-    enabled and mode === :inline and not sandbox_disabled?()
+    enabled and not sandbox_disabled?()
   end
 
   if Code.ensure_loaded?(SandboxRegistry) do

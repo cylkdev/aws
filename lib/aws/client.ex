@@ -133,20 +133,13 @@ defmodule AWS.Client do
           {:ok, map} | {:error, term}
   def resolve_config(namespace, opts, default_host_fn, extra \\ []) do
     {svc_opts, cred_opts} = Keyword.pop(opts, namespace, [])
-    {sandbox_opts, cred_opts} = Keyword.pop(cred_opts, :sandbox, [])
-
-    cred_opts =
-      if sandbox_local?(sandbox_opts) do
-        merge_new(cred_opts, sandbox_cred_overrides())
-      else
-        cred_opts
-      end
+    {_sandbox_opts, cred_opts} = Keyword.pop(cred_opts, :sandbox, [])
 
     resolved = Config.new(cred_opts)
 
     with {:ok, ak, sk, st} <- extract_creds(resolved, cred_opts) do
       region = resolved[:region]
-      {scheme, host, port} = resolve_endpoint(svc_opts, sandbox_opts, default_host_fn, region)
+      {scheme, host, port} = resolve_endpoint(svc_opts, default_host_fn, region)
 
       base = %{
         region: region,
@@ -217,14 +210,6 @@ defmodule AWS.Client do
     end
   end
 
-  defp sandbox_cred_overrides do
-    [access_key_id: "test", secret_access_key: "test", security_token: "test"]
-  end
-
-  defp merge_new(opts, extras) do
-    Enum.reduce(extras, opts, fn {k, v}, acc -> Keyword.put_new(acc, k, v) end)
-  end
-
   @doc """
   Builds a `"{scheme}://{host}{maybe_port}/"` URL for services that
   always POST to root (everyone except S3).
@@ -232,19 +217,6 @@ defmodule AWS.Client do
   @spec simple_url(map) :: String.t()
   def simple_url(%{scheme: scheme, host: host, port: port}) do
     "#{scheme}://#{host}#{port_suffix(scheme, port)}/"
-  end
-
-  @doc """
-  Returns `true` when the sandbox opts indicate `local` mode.
-  Consumed by per-service clients that need to know whether to apply
-  sandbox endpoint/credential overrides outside of `resolve_config/4`.
-  """
-  @spec sandbox_local?(keyword) :: boolean
-  def sandbox_local?(sandbox_opts) do
-    cfg = Config.sandbox()
-    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
-    enabled and mode === :local
   end
 
   # -- dispatch ---------------------------------------------------------------
@@ -307,26 +279,14 @@ defmodule AWS.Client do
 
   # -- endpoint + credential resolution --------------------------------------
 
-  defp resolve_endpoint(svc_opts, sandbox_opts, default_host_fn, region) do
-    if sandbox_local?(sandbox_opts) do
-      cfg = Config.sandbox()
-
-      {
-        strip_scheme(svc_opts[:scheme] || cfg[:scheme]),
-        svc_opts[:host] || cfg[:host],
-        svc_opts[:port] || cfg[:port]
-      }
-    else
-      {
-        strip_scheme(svc_opts[:scheme] || "https"),
-        svc_opts[:host] || default_host_fn.(region),
-        svc_opts[:port]
-      }
-    end
+  defp resolve_endpoint(svc_opts, default_host_fn, region) do
+    {
+      strip_scheme(svc_opts[:scheme] || "https"),
+      svc_opts[:host] || default_host_fn.(region),
+      svc_opts[:port]
+    }
   end
 
-  # Config.sandbox() returns "http://" for sandbox scheme; strip trailing
-  # "://" so we can URI-compose cleanly.
   defp strip_scheme(scheme) do
     scheme
     |> to_string()

@@ -4,7 +4,7 @@ defmodule AWS.Logs.SandboxTest do
   alias AWS.Logs
   alias AWS.Logs.Sandbox
 
-  @sandbox_opts [sandbox: [enabled: true, mode: :inline]]
+  @sandbox_opts [sandbox: [enabled: true]]
 
   # Log Groups
 

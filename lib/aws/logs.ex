@@ -31,14 +31,13 @@ defmodule AWS.Logs do
 
     - `:sandbox` - A keyword list to override sandbox configuration.
         - `:enabled` - Whether sandbox mode is enabled.
-        - `:mode` - `:local` or `:inline`.
         - `:scheme` - The sandbox scheme.
         - `:host` - The sandbox host.
         - `:port` - The sandbox port.
 
   ## Sandbox
 
-  Set `sandbox: [enabled: true, mode: :inline]` to activate inline sandbox mode.
+  Set `sandbox: [enabled: true]` to activate sandbox mode.
 
   ### Setup
 
@@ -57,7 +56,7 @@ defmodule AWS.Logs do
       test "creates a log group" do
         assert {:ok, %{}} =
                  AWS.Logs.create_log_group("my-group",
-                   sandbox: [enabled: true, mode: :inline]
+                   sandbox: [enabled: true]
                  )
       end
   """
@@ -85,7 +84,7 @@ defmodule AWS.Logs do
   @spec create_log_group(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def create_log_group(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_log_group_response(name, opts)
     else
       do_create_log_group(name, opts)
@@ -110,7 +109,7 @@ defmodule AWS.Logs do
   @spec delete_log_group(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def delete_log_group(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_log_group_response(name, opts)
     else
       do_delete_log_group(name, opts)
@@ -136,7 +135,7 @@ defmodule AWS.Logs do
   @spec describe_log_groups(opts :: keyword()) ::
           {:ok, %{log_groups: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def describe_log_groups(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_log_groups_response(opts)
     else
       do_describe_log_groups(opts)
@@ -162,7 +161,7 @@ defmodule AWS.Logs do
   @spec put_retention_policy(name :: String.t(), days :: pos_integer(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def put_retention_policy(name, days, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_put_retention_policy_response(name, days, opts)
     else
       do_put_retention_policy(name, days, opts)
@@ -184,7 +183,7 @@ defmodule AWS.Logs do
   @spec delete_retention_policy(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def delete_retention_policy(name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_retention_policy_response(name, opts)
     else
       do_delete_retention_policy(name, opts)
@@ -206,7 +205,7 @@ defmodule AWS.Logs do
   @spec create_log_stream(group :: String.t(), stream :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def create_log_stream(group, stream, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_log_stream_response(group, stream, opts)
     else
       do_create_log_stream(group, stream, opts)
@@ -228,7 +227,7 @@ defmodule AWS.Logs do
   @spec delete_log_stream(group :: String.t(), stream :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def delete_log_stream(group, stream, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_log_stream_response(group, stream, opts)
     else
       do_delete_log_stream(group, stream, opts)
@@ -258,7 +257,7 @@ defmodule AWS.Logs do
   @spec describe_log_streams(group :: String.t(), opts :: keyword()) ::
           {:ok, %{log_streams: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def describe_log_streams(group, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_log_streams_response(group, opts)
     else
       do_describe_log_streams(group, opts)
@@ -300,7 +299,7 @@ defmodule AWS.Logs do
         ) ::
           {:ok, map()} | {:error, term()}
   def put_log_events(group, stream, events, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_put_log_events_response(group, stream, events, opts)
     else
       do_put_log_events(group, stream, events, opts)
@@ -333,7 +332,7 @@ defmodule AWS.Logs do
   @spec get_log_events(group :: String.t(), stream :: String.t(), opts :: keyword()) ::
           {:ok, %{events: list(map()), next_forward_token: String.t() | nil}} | {:error, term()}
   def get_log_events(group, stream, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_get_log_events_response(group, stream, opts)
     else
       do_get_log_events(group, stream, opts)
@@ -369,7 +368,7 @@ defmodule AWS.Logs do
   @spec filter_log_events(group :: String.t(), opts :: keyword()) ::
           {:ok, %{events: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def filter_log_events(group, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_filter_log_events_response(group, opts)
     else
       do_filter_log_events(group, opts)
@@ -413,7 +412,7 @@ defmodule AWS.Logs do
         ) ::
           {:ok, %{query_id: String.t()}} | {:error, term()}
   def start_query(group, start_time, end_time, query, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_start_query_response(group, start_time, end_time, query, opts)
     else
       do_start_query(group, start_time, end_time, query, opts)
@@ -442,7 +441,7 @@ defmodule AWS.Logs do
   @spec get_query_results(query_id :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def get_query_results(query_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_get_query_results_response(query_id, opts)
     else
       do_get_query_results(query_id, opts)
@@ -462,7 +461,7 @@ defmodule AWS.Logs do
   @spec stop_query(query_id :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def stop_query(query_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_stop_query_response(query_id, opts)
     else
       do_stop_query(query_id, opts)
@@ -590,13 +589,12 @@ defmodule AWS.Logs do
   # Sandbox delegation
   # ---------------------------------------------------------------------------
 
-  defp inline_sandbox?(opts) do
+  defp sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
     cfg = Config.sandbox()
     enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
 
-    enabled and mode === :inline and not sandbox_disabled?()
+    enabled and not sandbox_disabled?()
   end
 
   if Code.ensure_loaded?(SandboxRegistry) do

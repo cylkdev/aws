@@ -33,10 +33,4 @@ config :aws,
     {:system, "AWS_DEFAULT_REGION"},
     "us-east-1"
   ],
-  sandbox: [
-    enabled: false,
-    mode: :local,
-    scheme: "http://",
-    host: "localhost",
-    port: 4566
-  ]
+  sandbox: [enabled: false]

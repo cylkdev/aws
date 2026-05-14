@@ -28,7 +28,7 @@ defmodule AWS.EC2 do
 
   ## Sandbox
 
-  Set `sandbox: [enabled: true, mode: :inline]` and register responses
+  Set `sandbox: [enabled: true]` and register responses
   via `AWS.EC2.Sandbox`.
   """
 
@@ -64,7 +64,7 @@ defmodule AWS.EC2 do
           opts :: keyword()
         ) :: {:ok, %{group_id: String.t()}} | {:error, term()}
   def create_security_group(name, description, vpc_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_security_group_response(name, opts)
     else
       do_create_security_group(name, description, vpc_id, opts)
@@ -97,7 +97,7 @@ defmodule AWS.EC2 do
   @spec describe_security_groups(opts :: keyword()) ::
           {:ok, %{security_groups: list(map())}} | {:error, term()}
   def describe_security_groups(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_security_groups_response(opts)
     else
       do_describe_security_groups(opts)
@@ -133,7 +133,7 @@ defmodule AWS.EC2 do
   @spec delete_security_group(group_id :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def delete_security_group(group_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_security_group_response(group_id, opts)
     else
       do_delete_security_group(group_id, opts)
@@ -159,7 +159,7 @@ defmodule AWS.EC2 do
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
   def authorize_security_group_ingress(group_id, ip_permissions, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_authorize_security_group_ingress_response(group_id, opts)
     else
       do_sg_rule_op("AuthorizeSecurityGroupIngress", group_id, ip_permissions, opts)
@@ -175,7 +175,7 @@ defmodule AWS.EC2 do
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
   def revoke_security_group_ingress(group_id, ip_permissions, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_revoke_security_group_ingress_response(group_id, opts)
     else
       do_sg_rule_op("RevokeSecurityGroupIngress", group_id, ip_permissions, opts)
@@ -191,7 +191,7 @@ defmodule AWS.EC2 do
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
   def authorize_security_group_egress(group_id, ip_permissions, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_authorize_security_group_egress_response(group_id, opts)
     else
       do_sg_rule_op("AuthorizeSecurityGroupEgress", group_id, ip_permissions, opts)
@@ -207,7 +207,7 @@ defmodule AWS.EC2 do
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
   def revoke_security_group_egress(group_id, ip_permissions, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_revoke_security_group_egress_response(group_id, opts)
     else
       do_sg_rule_op("RevokeSecurityGroupEgress", group_id, ip_permissions, opts)
@@ -239,7 +239,7 @@ defmodule AWS.EC2 do
   @spec describe_vpcs(opts :: keyword()) ::
           {:ok, %{vpcs: list(map())}} | {:error, term()}
   def describe_vpcs(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_vpcs_response(opts)
     else
       do_describe_vpcs(opts)
@@ -282,7 +282,7 @@ defmodule AWS.EC2 do
   @spec describe_subnets(opts :: keyword()) ::
           {:ok, %{subnets: list(map())}} | {:error, term()}
   def describe_subnets(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_subnets_response(opts)
     else
       do_describe_subnets(opts)
@@ -330,7 +330,7 @@ defmodule AWS.EC2 do
   @spec describe_instances(opts :: keyword()) ::
           {:ok, %{reservations: list(map())}} | {:error, term()}
   def describe_instances(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_instances_response(opts)
     else
       do_describe_instances(opts)
@@ -394,7 +394,7 @@ defmodule AWS.EC2 do
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
   def create_tags(resource_ids, tags, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_tags_response(resource_ids, opts)
     else
       do_create_tags(resource_ids, tags, opts)
@@ -426,7 +426,7 @@ defmodule AWS.EC2 do
   @spec describe_tags(opts :: keyword()) ::
           {:ok, %{tags: list(map())}} | {:error, term()}
   def describe_tags(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_tags_response(opts)
     else
       do_describe_tags(opts)
@@ -455,13 +455,12 @@ defmodule AWS.EC2 do
   # Sandbox delegation
   # ---------------------------------------------------------------------------
 
-  defp inline_sandbox?(opts) do
+  defp sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
     cfg = Config.sandbox()
     enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
 
-    enabled and mode === :inline and not sandbox_disabled?()
+    enabled and not sandbox_disabled?()
   end
 
   if Code.ensure_loaded?(SandboxRegistry) do

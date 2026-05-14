@@ -4,7 +4,7 @@ defmodule AWS.ElasticLoadBalancingV2.SandboxTest do
   alias AWS.ElasticLoadBalancingV2
   alias AWS.ElasticLoadBalancingV2.Sandbox
 
-  @sandbox_opts [sandbox: [enabled: true, mode: :inline]]
+  @sandbox_opts [sandbox: [enabled: true]]
 
   describe "describe_target_groups/1" do
     test "returns a registered list (no key needed; auto-wraps as wildcard)" do

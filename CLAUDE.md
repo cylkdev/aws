@@ -20,7 +20,7 @@ This library wraps AWS services (S3, EventBridge, CloudWatch Logs, IAM, IAM Iden
 
 Each service (`AWS.S3`, `AWS.EventBridge`, `AWS.Logs`, `AWS.IAM`, `AWS.IdentityCenter`, `AWS.Organizations`) follows the same structure:
 
-- Public functions check `inline_sandbox?/1` first; if true, delegate to the `Sandbox` module
+- Public functions check `sandbox?/1` first; if true, delegate to the `Sandbox` module
 - Otherwise call `do_*` private functions that dispatch through the service's `Client` module, then pipe through `deserialize_response/3`
 - Every service's `Client` module is a thin wrapper over `AWS.Client`, the shared dispatcher that owns SigV4 signing, HTTP dispatch (`AWS.HTTP`), credential/endpoint/sandbox resolution, and status-code branching. Per-service clients contribute only the protocol-specific pieces: body encoding (JSON / form-urlencoded / passthrough), request headers (X-Amz-Target for JSON 1.1; Action+Version for Query; per-operation for REST/XML), and URL composition (only S3 needs custom addressing). There is no ExAws integration.
 - Wire protocols per service (these are AWS's protocols, not this library's choice — see each module's `@moduledoc` for the authoritative botocore model reference):
@@ -35,11 +35,9 @@ Each service (`AWS.S3`, `AWS.EventBridge`, `AWS.Logs`, `AWS.IAM`, `AWS.IdentityC
 
 Each service has a `Sandbox` module backed by `SandboxRegistry` (optional dep, `:dev`/`:test` only). Responses are stored as lists of functions keyed by test PID. Sandbox functions support variable arity: `fn -> result end`, `fn key -> result end`, etc.
 
-Two sandbox modes (passed via `sandbox: [enabled: true, mode: :inline | :local]`):
-- `:inline` — in-process Registry mock, no HTTP
-- `:local` — routes HTTP calls to a local service (e.g., LocalStack on port 4566)
+Activate with `sandbox: [enabled: true]` on any per-call opts (or set `config :aws, :sandbox, enabled: true`). When enabled, the public function delegates to the service's `Sandbox` module instead of making an HTTP call. There is no other sandbox mode.
 
-`test/test_helper.exs` starts all three sandboxes and `AWS.Counter` (ETS-based call counter for test assertions).
+`test/test_helper.exs` starts the sandboxes and `AWS.Counter` (ETS-based call counter for test assertions).
 
 ### Serialization
 
@@ -51,7 +49,7 @@ Response deserialization is delegated to `ExUtils.Serializer.deserialize/1` (fro
 
 ### Configuration
 
-`AWS.Config` reads from the application environment (`:aws`). Key config keys: `:region`, `:access_key_id`, `:secret_access_key`, `:sandbox_enabled`, `:sandbox_mode`, `:sandbox_host`, `:sandbox_port`, `:sandbox_scheme`.
+`AWS.Config` reads from the application environment (`:aws`). Key config keys: `:region`, `:access_key_id`, `:secret_access_key`, `:sandbox` (a keyword list with `:enabled`).
 
 ### S3 specifics
 

@@ -4,7 +4,7 @@ defmodule AWS.AutoScaling.SandboxTest do
   alias AWS.AutoScaling
   alias AWS.AutoScaling.Sandbox
 
-  @sandbox_opts [sandbox: [enabled: true, mode: :inline]]
+  @sandbox_opts [sandbox: [enabled: true]]
 
   describe "describe_auto_scaling_groups/1" do
     test "returns a registered list (no key needed; auto-wraps as wildcard)" do

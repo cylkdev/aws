@@ -4,7 +4,7 @@ defmodule AWS.IAM.SandboxTest do
   alias AWS.IAM
   alias AWS.IAM.Sandbox
 
-  @sandbox_opts [sandbox: [enabled: true, mode: :inline]]
+  @sandbox_opts [sandbox: [enabled: true]]
 
   # Users
 
@@ -455,7 +455,7 @@ defmodule AWS.IAM.SandboxTest do
 
       assert {:ok, %{}} =
                IAM.put_role_policy("role-1", "inline-1", %{"Version" => "2012-10-17"},
-                 sandbox: [enabled: true, mode: :inline]
+                 sandbox: [enabled: true]
                )
     end
   end

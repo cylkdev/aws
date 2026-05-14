@@ -67,13 +67,7 @@ defmodule AWS.Config do
     "us-east-1"
   ]
 
-  @sandbox [
-    enabled: false,
-    mode: :local,
-    scheme: "http://",
-    host: "localhost",
-    port: 4566
-  ]
+  @sandbox [enabled: false]
 
   @doc """
   Aggregates every per-key resolver into a single keyword list. Caller

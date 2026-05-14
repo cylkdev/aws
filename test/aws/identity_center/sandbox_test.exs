@@ -4,7 +4,7 @@ defmodule AWS.IdentityCenter.SandboxTest do
   alias AWS.IdentityCenter
   alias AWS.IdentityCenter.Sandbox
 
-  @sandbox_opts [sandbox: [enabled: true, mode: :inline]]
+  @sandbox_opts [sandbox: [enabled: true]]
 
   # Instances
 

@@ -58,19 +58,13 @@ defmodule AWS.S3 do
     - `:sandbox` - A keyword list to override sandbox configuration. Each
       key falls back to the corresponding entry in `AWS.Config.sandbox/0`.
         - `:enabled` - Whether sandbox mode is enabled.
-        - `:mode` - Controls whether the sandbox uses an emulated service or an OTP process.
-          - When the mode is `:local`, the sandbox makes HTTP calls to a sandboxed service such as localstack.
-          - When the mode is `:inline`, the sandbox uses an OTP process to handle requests.
-        - `:scheme` - The sandbox scheme.
-        - `:host` - The sandbox host.
-        - `:port` - The sandbox port.
 
   ## Sandbox
 
   This API provides a sandbox that you can use during development and testing
   to mock S3 operations without making real HTTP calls.
 
-  Set `sandbox: [enabled: true, mode: :inline]` to activate inline sandbox mode.
+  Set `sandbox: [enabled: true]` to activate sandbox mode.
 
   ### Setup
 
@@ -81,7 +75,7 @@ defmodule AWS.S3 do
   ### Usage
 
   Register mock responses in your test `setup` block, then pass
-  `sandbox: [enabled: true, mode: :inline]` to any S3 function:
+  `sandbox: [enabled: true]` to any S3 function:
 
       setup do
         AWS.S3.Sandbox.set_get_object_responses([
@@ -92,7 +86,7 @@ defmodule AWS.S3 do
       test "gets an object" do
         assert {:ok, "content for my-key"} =
                  AWS.S3.get_object("my-bucket", "my-key",
-                   sandbox: [enabled: true, mode: :inline]
+                   sandbox: [enabled: true]
                  )
       end
 
@@ -159,7 +153,7 @@ defmodule AWS.S3 do
   """
   @spec list_buckets(opts :: keyword()) :: {:ok, list()} | {:error, term()}
   def list_buckets(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_buckets_response(opts)
     else
       do_list_buckets(opts)
@@ -192,7 +186,7 @@ defmodule AWS.S3 do
   @spec create_bucket(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def create_bucket(bucket, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_bucket_response(bucket, opts)
     else
       do_create_bucket(bucket, opts)
@@ -222,7 +216,7 @@ defmodule AWS.S3 do
   @spec delete_bucket(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def delete_bucket(bucket, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_bucket_response(bucket, opts)
     else
       do_delete_bucket(bucket, opts)
@@ -260,7 +254,7 @@ defmodule AWS.S3 do
   @spec head_bucket(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def head_bucket(bucket, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_head_bucket_response(bucket, opts)
     else
       do_head_bucket(bucket, opts)
@@ -331,7 +325,7 @@ defmodule AWS.S3 do
         ) ::
           {:ok, map()} | {:error, term()}
   def put_object(bucket, key, body, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_put_object_response(bucket, key, body, opts)
     else
       do_put_object(bucket, key, body, opts)
@@ -365,7 +359,7 @@ defmodule AWS.S3 do
   @spec head_object(bucket :: binary(), key :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def head_object(bucket, key, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_head_object_response(bucket, key, opts)
     else
       do_head_object(bucket, key, opts)
@@ -437,7 +431,7 @@ defmodule AWS.S3 do
   @spec delete_object(bucket :: binary(), key :: binary(), opts :: keyword()) ::
           {:ok, term()} | {:error, term()}
   def delete_object(bucket, key, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_object_response(bucket, key, opts)
     else
       do_delete_object(bucket, key, opts)
@@ -471,7 +465,7 @@ defmodule AWS.S3 do
   @spec get_object(bucket :: binary(), key :: binary(), opts :: keyword()) ::
           {:ok, binary()} | {:error, term()}
   def get_object(bucket, key, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_get_object_response(bucket, key, opts)
     else
       do_get_object(bucket, key, opts)
@@ -512,7 +506,7 @@ defmodule AWS.S3 do
   @spec list_objects(bucket :: binary(), opts :: keyword()) ::
           {:ok, list()} | {:error, term()}
   def list_objects(bucket, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_objects_response(bucket, opts)
     else
       do_list_objects(bucket, opts)
@@ -554,7 +548,7 @@ defmodule AWS.S3 do
           opts :: keyword()
         ) :: {:ok, map()} | {:error, term()}
   def copy_object(dest_bucket, dest_key, src_bucket, src_key, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_copy_object_response(dest_bucket, dest_key, src_bucket, src_key, opts)
     else
       do_copy_object(dest_bucket, dest_key, src_bucket, src_key, opts)
@@ -599,7 +593,7 @@ defmodule AWS.S3 do
   @spec presign(bucket :: binary(), http_method :: atom(), key :: binary(), opts :: keyword()) ::
           map()
   def presign(bucket, http_method, key, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_presign_response(bucket, http_method, key, opts)
     else
       do_presign(bucket, http_method, key, opts)
@@ -641,7 +635,7 @@ defmodule AWS.S3 do
   @spec presign_post(bucket :: binary(), key :: binary(), opts :: keyword()) ::
           {:ok, map()}
   def presign_post(bucket, key, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_presign_post_response(bucket, key, opts)
     else
       do_presign_post(bucket, key, opts)
@@ -685,7 +679,7 @@ defmodule AWS.S3 do
           opts :: keyword()
         ) :: map()
   def presign_part(bucket, object, upload_id, part_number, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_presign_part_response(bucket, object, upload_id, part_number, opts)
     else
       do_presign_part(bucket, object, upload_id, part_number, opts)
@@ -722,7 +716,7 @@ defmodule AWS.S3 do
   @spec create_multipart_upload(bucket :: binary(), key :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def create_multipart_upload(bucket, key, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_multipart_upload_response(bucket, key, opts)
     else
       do_create_multipart_upload(bucket, key, opts)
@@ -764,7 +758,7 @@ defmodule AWS.S3 do
           opts :: keyword()
         ) :: {:ok, map()} | {:error, term()}
   def abort_multipart_upload(bucket, key, upload_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_abort_multipart_upload_response(bucket, key, upload_id, opts)
     else
       do_abort_multipart_upload(bucket, key, upload_id, opts)
@@ -807,7 +801,7 @@ defmodule AWS.S3 do
           opts :: keyword()
         ) :: {:ok, map()} | {:error, term()}
   def upload_part(bucket, key, upload_id, part_number, body, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_upload_part_response(bucket, key, upload_id, part_number, body, opts)
     else
       do_upload_part(bucket, key, upload_id, part_number, body, opts)
@@ -848,7 +842,7 @@ defmodule AWS.S3 do
           opts :: keyword()
         ) :: {:ok, map()} | {:error, term()}
   def list_parts(bucket, key, upload_id, part_number_marker \\ nil, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_parts_response(bucket, key, upload_id, part_number_marker, opts)
     else
       do_list_parts(bucket, key, upload_id, part_number_marker, opts)
@@ -905,7 +899,7 @@ defmodule AWS.S3 do
         src_range,
         opts
       ) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_copy_part_response(
         dest_bucket,
         dest_key,
@@ -988,7 +982,7 @@ defmodule AWS.S3 do
         content_length,
         opts \\ []
       ) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_copy_parts_response(
         dest_bucket,
         dest_key,
@@ -1107,7 +1101,7 @@ defmodule AWS.S3 do
           opts :: keyword()
         ) :: {:ok, map()} | {:error, term()}
   def complete_multipart_upload(bucket, key, upload_id, parts, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_complete_multipart_upload_response(bucket, key, upload_id, parts, opts)
     else
       do_complete_multipart_upload(bucket, key, upload_id, parts, opts)
@@ -1128,7 +1122,7 @@ defmodule AWS.S3 do
   @spec enable_event_bridge(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def enable_event_bridge(bucket, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_enable_event_bridge_response(bucket, opts)
     else
       do_enable_event_bridge(bucket, opts)
@@ -1145,7 +1139,7 @@ defmodule AWS.S3 do
   @spec disable_event_bridge(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def disable_event_bridge(bucket, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_disable_event_bridge_response(bucket, opts)
     else
       do_disable_event_bridge(bucket, opts)
@@ -1160,7 +1154,7 @@ defmodule AWS.S3 do
   @spec get_notification_configuration(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def get_notification_configuration(bucket, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_get_notification_configuration_response(bucket, opts)
     else
       do_get_notification_configuration(bucket, opts)
@@ -1206,7 +1200,7 @@ defmodule AWS.S3 do
   @spec put_public_access_block(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def put_public_access_block(bucket, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_put_public_access_block_response(bucket, opts)
     else
       do_put_public_access_block(bucket, opts)
@@ -1252,7 +1246,7 @@ defmodule AWS.S3 do
   @spec put_bucket_encryption(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
   def put_bucket_encryption(bucket, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_put_bucket_encryption_response(bucket, opts)
     else
       do_put_bucket_encryption(bucket, opts)
@@ -1311,7 +1305,7 @@ defmodule AWS.S3 do
           opts :: keyword()
         ) :: {:ok, map()} | {:error, term()}
   def put_bucket_lifecycle_configuration(bucket, rules, opts \\ []) when is_list(rules) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_put_bucket_lifecycle_configuration_response(bucket, rules, opts)
     else
       do_put_bucket_lifecycle_configuration(bucket, rules, opts)
@@ -2407,7 +2401,7 @@ defmodule AWS.S3 do
     _ -> false
   end
 
-  defp resolve_path_style(nil, sandbox_opts), do: Client.sandbox_local?(sandbox_opts)
+  defp resolve_path_style(nil, _sandbox_opts), do: false
   defp resolve_path_style(value, _sandbox_opts), do: value
 
   # ---------------------------------------------------------------------------
@@ -2657,13 +2651,12 @@ defmodule AWS.S3 do
   # SANDBOX HELPERS
   # ---------------------------------------------------------------------------
 
-  defp inline_sandbox?(opts) do
+  defp sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
     cfg = Config.sandbox()
     enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
 
-    enabled and mode === :inline and not sandbox_disabled?()
+    enabled and not sandbox_disabled?()
   end
 
   if Code.ensure_loaded?(SandboxRegistry) do
@@ -2828,7 +2821,7 @@ defmodule AWS.S3 do
 
     defp sandbox_list_buckets_response(opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       options: #{inspect(opts)}
       """
@@ -2836,7 +2829,7 @@ defmodule AWS.S3 do
 
     defp sandbox_create_bucket_response(bucket, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       options: #{inspect(opts)}
@@ -2845,7 +2838,7 @@ defmodule AWS.S3 do
 
     defp sandbox_delete_bucket_response(bucket, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       options: #{inspect(opts)}
@@ -2854,7 +2847,7 @@ defmodule AWS.S3 do
 
     defp sandbox_put_object_response(bucket, key, body, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       key: #{inspect(key)}
@@ -2865,7 +2858,7 @@ defmodule AWS.S3 do
 
     defp sandbox_head_object_response(bucket, key, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       key: #{inspect(key)}
@@ -2875,7 +2868,7 @@ defmodule AWS.S3 do
 
     defp sandbox_delete_object_response(bucket, key, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       key: #{inspect(key)}
@@ -2885,7 +2878,7 @@ defmodule AWS.S3 do
 
     defp sandbox_get_object_response(bucket, key, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       key: #{inspect(key)}
@@ -2895,7 +2888,7 @@ defmodule AWS.S3 do
 
     defp sandbox_list_objects_response(bucket, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       options: #{inspect(opts)}
@@ -2904,7 +2897,7 @@ defmodule AWS.S3 do
 
     defp sandbox_copy_object_response(dest_bucket, dest_key, src_bucket, src_key, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       dest_bucket: #{inspect(dest_bucket)}
       dest_key: #{inspect(dest_key)}
@@ -2916,7 +2909,7 @@ defmodule AWS.S3 do
 
     defp sandbox_presign_response(bucket, http_method, key, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       http_method: #{inspect(http_method)}
@@ -2927,7 +2920,7 @@ defmodule AWS.S3 do
 
     defp sandbox_presign_post_response(bucket, key, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       key: #{inspect(key)}
@@ -2937,7 +2930,7 @@ defmodule AWS.S3 do
 
     defp sandbox_presign_part_response(bucket, object, upload_id, part_number, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       object: #{inspect(object)}
@@ -2949,7 +2942,7 @@ defmodule AWS.S3 do
 
     defp sandbox_create_multipart_upload_response(bucket, key, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       key: #{inspect(key)}
@@ -2959,7 +2952,7 @@ defmodule AWS.S3 do
 
     defp sandbox_abort_multipart_upload_response(bucket, key, upload_id, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       key: #{inspect(key)}
@@ -2970,7 +2963,7 @@ defmodule AWS.S3 do
 
     defp sandbox_upload_part_response(bucket, key, upload_id, part_number, body, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       key: #{inspect(key)}
@@ -2983,7 +2976,7 @@ defmodule AWS.S3 do
 
     defp sandbox_list_parts_response(bucket, key, upload_id, part_number_marker, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       key: #{inspect(key)}
@@ -3004,7 +2997,7 @@ defmodule AWS.S3 do
            opts
          ) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       dest_bucket: #{inspect(dest_bucket)}
       dest_key: #{inspect(dest_key)}
@@ -3027,7 +3020,7 @@ defmodule AWS.S3 do
            opts
          ) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       dest_bucket: #{inspect(dest_bucket)}
       dest_key: #{inspect(dest_key)}
@@ -3041,7 +3034,7 @@ defmodule AWS.S3 do
 
     defp sandbox_complete_multipart_upload_response(bucket, key, upload_id, parts, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       key: #{inspect(key)}
@@ -3053,7 +3046,7 @@ defmodule AWS.S3 do
 
     defp sandbox_enable_event_bridge_response(bucket, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       options: #{inspect(opts)}
@@ -3062,7 +3055,7 @@ defmodule AWS.S3 do
 
     defp sandbox_disable_event_bridge_response(bucket, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       options: #{inspect(opts)}
@@ -3071,7 +3064,7 @@ defmodule AWS.S3 do
 
     defp sandbox_get_notification_configuration_response(bucket, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       options: #{inspect(opts)}
@@ -3080,7 +3073,7 @@ defmodule AWS.S3 do
 
     defp sandbox_head_bucket_response(bucket, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       options: #{inspect(opts)}
@@ -3089,7 +3082,7 @@ defmodule AWS.S3 do
 
     defp sandbox_put_public_access_block_response(bucket, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       options: #{inspect(opts)}
@@ -3098,7 +3091,7 @@ defmodule AWS.S3 do
 
     defp sandbox_put_bucket_encryption_response(bucket, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       options: #{inspect(opts)}
@@ -3107,7 +3100,7 @@ defmodule AWS.S3 do
 
     defp sandbox_put_bucket_lifecycle_configuration_response(bucket, rules, opts) do
       raise """
-      Cannot use inline sandbox mode outside of test environment.
+      Cannot use sandbox mode outside of test environment.
 
       bucket: #{inspect(bucket)}
       rules: #{inspect(rules)}

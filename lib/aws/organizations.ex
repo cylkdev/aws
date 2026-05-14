@@ -32,14 +32,13 @@ defmodule AWS.Organizations do
 
     - `:sandbox` - A keyword list to override sandbox configuration.
         - `:enabled` - Whether sandbox mode is enabled.
-        - `:mode` - `:local` or `:inline`.
         - `:scheme` - The sandbox scheme.
         - `:host` - The sandbox host.
         - `:port` - The sandbox port.
 
   ## Sandbox
 
-  Set `sandbox: [enabled: true, mode: :inline]` to activate inline sandbox mode.
+  Set `sandbox: [enabled: true]` to activate sandbox mode.
 
   ### Setup
 
@@ -57,7 +56,7 @@ defmodule AWS.Organizations do
 
       test "lists accounts" do
         assert {:ok, %{accounts: [%{id: "111122223333"}]}} =
-                 AWS.Organizations.list_accounts(sandbox: [enabled: true, mode: :inline])
+                 AWS.Organizations.list_accounts(sandbox: [enabled: true])
       end
   """
 
@@ -90,7 +89,7 @@ defmodule AWS.Organizations do
   """
   @spec create_organization(opts :: keyword()) :: {:ok, %{organization: map()}} | {:error, term()}
   def create_organization(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_organization_response(opts)
     else
       do_create_organization(opts)
@@ -126,7 +125,7 @@ defmodule AWS.Organizations do
   @spec create_organizational_unit(parent_id :: String.t(), name :: String.t(), opts :: keyword()) ::
           {:ok, %{organizational_unit: map()}} | {:error, term()}
   def create_organizational_unit(parent_id, name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_organizational_unit_response(name, opts)
     else
       do_create_organizational_unit(parent_id, name, opts)
@@ -161,7 +160,7 @@ defmodule AWS.Organizations do
   @spec create_account(name :: String.t(), email :: String.t(), opts :: keyword()) ::
           {:ok, %{create_account_status: map()}} | {:error, term()}
   def create_account(name, email, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_create_account_response(name, opts)
     else
       do_create_account(name, email, opts)
@@ -199,7 +198,7 @@ defmodule AWS.Organizations do
   @spec describe_create_account_status(request_id :: String.t(), opts :: keyword()) ::
           {:ok, %{create_account_status: map()}} | {:error, term()}
   def describe_create_account_status(request_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_create_account_status_response(request_id, opts)
     else
       do_describe_create_account_status(request_id, opts)
@@ -236,7 +235,7 @@ defmodule AWS.Organizations do
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
   def move_account(account_id, source_parent_id, destination_parent_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_move_account_response(account_id, opts)
     else
       do_move_account(account_id, source_parent_id, destination_parent_id, opts)
@@ -268,7 +267,7 @@ defmodule AWS.Organizations do
   """
   @spec delete_organization(opts :: keyword()) :: {:ok, %{}} | {:error, term()}
   def delete_organization(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_organization_response(opts)
     else
       do_delete_organization(opts)
@@ -295,7 +294,7 @@ defmodule AWS.Organizations do
   @spec delete_organizational_unit(ou_id :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def delete_organizational_unit(ou_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_delete_organizational_unit_response(ou_id, opts)
     else
       do_delete_organizational_unit(ou_id, opts)
@@ -326,7 +325,7 @@ defmodule AWS.Organizations do
   @spec close_account(account_id :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def close_account(account_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_close_account_response(account_id, opts)
     else
       do_close_account(account_id, opts)
@@ -365,7 +364,7 @@ defmodule AWS.Organizations do
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
   def register_delegated_administrator(account_id, service_principal, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_register_delegated_administrator_response(account_id, opts)
     else
       do_register_delegated_administrator(account_id, service_principal, opts)
@@ -399,7 +398,7 @@ defmodule AWS.Organizations do
   @spec enable_aws_service_access(service_principal :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def enable_aws_service_access(service_principal, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_enable_aws_service_access_response(service_principal, opts)
     else
       do_enable_aws_service_access(service_principal, opts)
@@ -423,7 +422,7 @@ defmodule AWS.Organizations do
   @spec describe_organization(opts :: keyword()) ::
           {:ok, %{organization: map()}} | {:error, term()}
   def describe_organization(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_organization_response(opts)
     else
       do_describe_organization(opts)
@@ -462,7 +461,7 @@ defmodule AWS.Organizations do
   @spec list_roots(opts :: keyword()) ::
           {:ok, %{roots: list(map())}} | {:error, term()}
   def list_roots(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_roots_response(opts)
     else
       do_list_roots(opts)
@@ -495,7 +494,7 @@ defmodule AWS.Organizations do
   @spec list_organizational_units_for_parent(parent_id :: String.t(), opts :: keyword()) ::
           {:ok, %{organizational_units: list(map())}} | {:error, term()}
   def list_organizational_units_for_parent(parent_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_organizational_units_for_parent_response(parent_id, opts)
     else
       do_list_organizational_units_for_parent(parent_id, opts)
@@ -529,7 +528,7 @@ defmodule AWS.Organizations do
   @spec list_accounts(opts :: keyword()) ::
           {:ok, %{accounts: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def list_accounts(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_accounts_response(opts)
     else
       do_list_accounts(opts)
@@ -569,7 +568,7 @@ defmodule AWS.Organizations do
   @spec list_delegated_administrators(opts :: keyword()) ::
           {:ok, %{delegated_administrators: list(map())}} | {:error, term()}
   def list_delegated_administrators(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_delegated_administrators_response(opts)
     else
       do_list_delegated_administrators(opts)
@@ -607,7 +606,7 @@ defmodule AWS.Organizations do
           {:ok, %{enabled_service_principals: list(map()), next_token: String.t() | nil}}
           | {:error, term()}
   def list_aws_service_access_for_organization(opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_aws_service_access_for_organization_response(opts)
     else
       do_list_aws_service_access_for_organization(opts)
@@ -647,7 +646,7 @@ defmodule AWS.Organizations do
   @spec list_parents(child_id :: String.t(), opts :: keyword()) ::
           {:ok, %{parents: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def list_parents(child_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_parents_response(child_id, opts)
     else
       do_list_parents(child_id, opts)
@@ -686,7 +685,7 @@ defmodule AWS.Organizations do
   @spec describe_account(account_id :: String.t(), opts :: keyword()) ::
           {:ok, %{account: map()}} | {:error, term()}
   def describe_account(account_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_account_response(account_id, opts)
     else
       do_describe_account(account_id, opts)
@@ -716,7 +715,7 @@ defmodule AWS.Organizations do
   @spec describe_organizational_unit(ou_id :: String.t(), opts :: keyword()) ::
           {:ok, %{organizational_unit: map()}} | {:error, term()}
   def describe_organizational_unit(ou_id, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_describe_organizational_unit_response(ou_id, opts)
     else
       do_describe_organizational_unit(ou_id, opts)
@@ -747,7 +746,7 @@ defmodule AWS.Organizations do
           opts :: keyword()
         ) :: {:ok, %{organizational_unit: map()}} | {:error, term()}
   def update_organizational_unit(ou_id, name, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_update_organizational_unit_response(ou_id, opts)
     else
       do_update_organizational_unit(ou_id, name, opts)
@@ -774,7 +773,7 @@ defmodule AWS.Organizations do
   @spec disable_aws_service_access(service_principal :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
   def disable_aws_service_access(service_principal, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_disable_aws_service_access_response(service_principal, opts)
     else
       do_disable_aws_service_access(service_principal, opts)
@@ -802,7 +801,7 @@ defmodule AWS.Organizations do
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
   def deregister_delegated_administrator(account_id, service_principal, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_deregister_delegated_administrator_response(account_id, opts)
     else
       do_deregister_delegated_administrator(account_id, service_principal, opts)
@@ -836,7 +835,7 @@ defmodule AWS.Organizations do
           opts :: keyword()
         ) :: {:ok, %{children: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def list_children(parent_id, child_type, opts \\ []) do
-    if inline_sandbox?(opts) do
+    if sandbox?(opts) do
       sandbox_list_children_response(parent_id, opts)
     else
       do_list_children(parent_id, child_type, opts)
@@ -861,13 +860,12 @@ defmodule AWS.Organizations do
   # Sandbox delegation
   # ---------------------------------------------------------------------------
 
-  defp inline_sandbox?(opts) do
+  defp sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
     cfg = Config.sandbox()
     enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
 
-    enabled and mode === :inline and not sandbox_disabled?()
+    enabled and not sandbox_disabled?()
   end
 
   if Code.ensure_loaded?(SandboxRegistry) do

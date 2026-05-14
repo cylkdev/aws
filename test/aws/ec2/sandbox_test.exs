@@ -4,7 +4,7 @@ defmodule AWS.EC2.SandboxTest do
   alias AWS.EC2
   alias AWS.EC2.Sandbox
 
-  @sandbox_opts [sandbox: [enabled: true, mode: :inline]]
+  @sandbox_opts [sandbox: [enabled: true]]
 
   # Security Groups
 

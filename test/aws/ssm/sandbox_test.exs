@@ -4,7 +4,7 @@ defmodule AWS.SSM.SandboxTest do
   alias AWS.SSM
   alias AWS.SSM.Sandbox
 
-  @sandbox_opts [sandbox: [enabled: true, mode: :inline]]
+  @sandbox_opts [sandbox: [enabled: true]]
 
   describe "get_parameter/2" do
     test "returns mocked parameter" do
@@ -162,7 +162,11 @@ defmodule AWS.SSM.SandboxTest do
           {:ok,
            %{
              instance_information_list: [
-               %{instance_id: "i-1234567890abcdef0", ping_status: "Online", platform_type: "Linux"}
+               %{
+                 instance_id: "i-1234567890abcdef0",
+                 ping_status: "Online",
+                 platform_type: "Linux"
+               }
              ],
              next_token: nil
            }}
