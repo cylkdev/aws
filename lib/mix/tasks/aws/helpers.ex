@@ -149,6 +149,128 @@ defmodule Mix.Tasks.AWS.Helpers do
   def maybe_put(opts, _key, nil), do: opts
   def maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 
+  @filter_prefix "--filter-"
+
+  @doc """
+  Splits client-side `--filter-<field>` flags out of `argv` so they can be
+  applied to the parsed response after the API call returns.
+
+  Recognised forms:
+
+    * `--filter-some-field=value`
+    * `--filter-some-field value`
+
+  Field names are converted from kebab-case to snake_case atoms (so
+  `--filter-lifecycle-state` becomes `:lifecycle_state`). Repeating the same
+  filter flag with different values OR-combines those values; using different
+  filter keys AND-combines them (handled in `apply_filters/2`).
+
+  Returns `{remaining_argv, filters}` where `filters` is a keyword list
+  shaped like `[{field, [value1, value2, ...]}, ...]`.
+  """
+  @spec extract_filters([String.t()]) :: {[String.t()], keyword([String.t()])}
+  def extract_filters(argv) do
+    {remaining, pairs} = do_extract(argv, [], [])
+    {Enum.reverse(remaining), group_filter_pairs(Enum.reverse(pairs))}
+  end
+
+  defp do_extract([], remaining, pairs), do: {remaining, pairs}
+
+  defp do_extract([@filter_prefix <> rest = flag | tail], remaining, pairs) do
+    case String.split(rest, "=", parts: 2) do
+      [key, value] ->
+        do_extract(tail, remaining, [{normalize_filter_key(key), value} | pairs])
+
+      [key] ->
+        case tail do
+          [value | tail2] when is_binary(value) and value != "" ->
+            if String.starts_with?(value, "--") do
+              Mix.raise("filter flag #{flag} requires a value")
+            else
+              do_extract(tail2, remaining, [{normalize_filter_key(key), value} | pairs])
+            end
+
+          _ ->
+            Mix.raise("filter flag #{flag} requires a value")
+        end
+    end
+  end
+
+  defp do_extract([head | tail], remaining, pairs) do
+    do_extract(tail, [head | remaining], pairs)
+  end
+
+  defp normalize_filter_key(key) do
+    key |> String.replace("-", "_") |> String.to_atom()
+  end
+
+  defp group_filter_pairs(pairs) do
+    pairs
+    |> Enum.reduce([], fn {key, value}, acc ->
+      case Keyword.fetch(acc, key) do
+        {:ok, values} -> Keyword.put(acc, key, values ++ [value])
+        :error -> Keyword.put(acc, key, [value])
+      end
+    end)
+    |> Enum.reverse()
+  end
+
+  @doc """
+  Applies client-side filters extracted by `extract_filters/1` to a parsed
+  AWS response.
+
+  The filter walker is generic and AWS-API-agnostic: it traverses the result
+  tree, and at every list of maps it encounters, narrows the list to elements
+  matching the filters whose keys appear on those elements. Filters with keys
+  that don't appear on a given list pass that list through untouched, so a
+  filter targets exactly the level(s) of the response where that field exists.
+
+  Comparison is string-based after `to_string/1` on both sides, so values like
+  integers, booleans, and atoms compare against their textual form.
+  """
+  @spec apply_filters({:ok, term} | {:error, term} | term, keyword([String.t()])) ::
+          {:ok, term} | {:error, term} | term
+  def apply_filters(result, filters)
+  def apply_filters(result, []), do: result
+  def apply_filters({:ok, value}, filters), do: {:ok, walk(value, filters)}
+  def apply_filters({:error, _} = error, _filters), do: error
+  def apply_filters(other, filters), do: walk(other, filters)
+
+  defp walk(value, filters) when is_map(value) and not is_struct(value) do
+    Map.new(value, fn {k, v} -> {k, walk(v, filters)} end)
+  end
+
+  defp walk(list, filters) when is_list(list) do
+    list
+    |> filter_list(filters)
+    |> Enum.map(&walk(&1, filters))
+  end
+
+  defp walk(other, _filters), do: other
+
+  defp filter_list(list, filters) do
+    if list_of_plain_maps?(list) do
+      Enum.reduce(filters, list, fn {key, accepted_values}, acc ->
+        if Enum.any?(acc, &Map.has_key?(&1, key)) do
+          Enum.filter(acc, fn elem ->
+            actual = to_string(Map.get(elem, key, ""))
+            Enum.any?(accepted_values, &(&1 == actual))
+          end)
+        else
+          acc
+        end
+      end)
+    else
+      list
+    end
+  end
+
+  defp list_of_plain_maps?([]), do: false
+
+  defp list_of_plain_maps?(list) do
+    Enum.all?(list, fn elem -> is_map(elem) and not is_struct(elem) end)
+  end
+
   defp print_result(result) when result === %{} do
     Mix.shell().info("OK")
   end

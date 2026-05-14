@@ -43,7 +43,7 @@ Two sandbox modes (passed via `sandbox: [enabled: true, mode: :inline | :local]`
 
 ### Serialization
 
-`AWS.Serializer.deserialize/1` recursively transforms all map keys to snake_case atoms via `Recase`. One special case is inlined: `"e_tag"` normalizes to `"etag"` before snake-casing. `AWS.Utils.transform_keys/2` handles the recursive traversal over maps and lists.
+Response deserialization is delegated to `ExUtils.Serializer.deserialize/1` (from the `:ex_utils` git dep), which recursively transforms map keys to snake_case atoms. `ExUtils.Strings` is configured with `to_existing_atom: false, strict: false` in `config/config.exs`, which disables atom-safety so unknown response keys are converted via `String.to_atom/1` rather than `String.to_existing_atom/1`. This matches the previous `AWS.Serializer` behavior; tightening it would require an explicit `:allowed_keys` allowlist.
 
 ### Error handling
 

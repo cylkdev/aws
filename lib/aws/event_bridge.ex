@@ -60,8 +60,9 @@ defmodule AWS.EventBridge do
       end
   """
 
-  alias AWS.{Client, Config, Error, Serializer}
+  alias AWS.{Client, Config}
   alias AWS.EventBridge.Operation
+  alias ExUtils.Serializer
 
   @service "events"
   @content_type "application/x-amz-json-1.1"
@@ -101,7 +102,9 @@ defmodule AWS.EventBridge do
       |> maybe_put("EventBusName", opts[:event_bus_name])
 
     perform("PutRule", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -121,7 +124,9 @@ defmodule AWS.EventBridge do
     data = maybe_put(%{"Name" => name}, "EventBusName", opts[:event_bus_name])
 
     perform("DescribeRule", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -146,7 +151,9 @@ defmodule AWS.EventBridge do
       |> maybe_put("NextToken", opts[:next_token])
 
     perform("ListRules", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -169,7 +176,9 @@ defmodule AWS.EventBridge do
       |> maybe_put("Force", opts[:force])
 
     perform("DeleteRule", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   # Target management
@@ -202,7 +211,9 @@ defmodule AWS.EventBridge do
       )
 
     perform("PutTargets", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -226,7 +237,9 @@ defmodule AWS.EventBridge do
       |> maybe_put("NextToken", opts[:next_token])
 
     perform("ListTargetsByRule", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -249,7 +262,9 @@ defmodule AWS.EventBridge do
       |> maybe_put("Force", opts[:force])
 
     perform("RemoveTargets", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   # Connection management
@@ -293,7 +308,9 @@ defmodule AWS.EventBridge do
       )
 
     perform("CreateConnection", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -311,7 +328,9 @@ defmodule AWS.EventBridge do
 
   defp do_describe_connection(name, opts) do
     perform("DescribeConnection", %{"Name" => name}, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -341,7 +360,9 @@ defmodule AWS.EventBridge do
       |> maybe_put("Description", opts[:description])
 
     perform("UpdateConnection", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -359,7 +380,9 @@ defmodule AWS.EventBridge do
 
   defp do_delete_connection(name, opts) do
     perform("DeleteConnection", %{"Name" => name}, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -384,7 +407,9 @@ defmodule AWS.EventBridge do
       |> maybe_put("NextToken", opts[:next_token])
 
     perform("ListConnections", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   # API Destination management
@@ -434,7 +459,9 @@ defmodule AWS.EventBridge do
       |> maybe_put("InvocationRateLimitPerSecond", opts[:invocation_rate_limit_per_second])
 
     perform("CreateApiDestination", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -452,7 +479,9 @@ defmodule AWS.EventBridge do
 
   defp do_describe_api_destination(name, opts) do
     perform("DescribeApiDestination", %{"Name" => name}, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -486,7 +515,9 @@ defmodule AWS.EventBridge do
       |> maybe_put("InvocationRateLimitPerSecond", opts[:invocation_rate_limit_per_second])
 
     perform("UpdateApiDestination", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -504,7 +535,9 @@ defmodule AWS.EventBridge do
 
   defp do_delete_api_destination(name, opts) do
     perform("DeleteApiDestination", %{"Name" => name}, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -529,7 +562,9 @@ defmodule AWS.EventBridge do
       |> maybe_put("NextToken", opts[:next_token])
 
     perform("ListApiDestinations", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   # Event Bus management
@@ -551,7 +586,9 @@ defmodule AWS.EventBridge do
     data = maybe_put(%{"Name" => name}, "EventSourceName", opts[:event_source_name])
 
     perform("CreateEventBus", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -569,7 +606,9 @@ defmodule AWS.EventBridge do
 
   defp do_describe_event_bus(name, opts) do
     perform("DescribeEventBus", %{"Name" => name}, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -587,7 +626,9 @@ defmodule AWS.EventBridge do
 
   defp do_delete_event_bus(name, opts) do
     perform("DeleteEventBus", %{"Name" => name}, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -611,7 +652,9 @@ defmodule AWS.EventBridge do
       |> maybe_put("NextToken", opts[:next_token])
 
     perform("ListEventBuses", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   # Event publishing
@@ -639,7 +682,9 @@ defmodule AWS.EventBridge do
     data = %{"Entries" => Enum.map(entries, &camelize_keys/1)}
 
     perform("PutEvents", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   # Rule control
@@ -661,7 +706,9 @@ defmodule AWS.EventBridge do
     data = maybe_put(%{"Name" => name}, "EventBusName", opts[:event_bus_name])
 
     perform("EnableRule", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -681,7 +728,9 @@ defmodule AWS.EventBridge do
     data = maybe_put(%{"Name" => name}, "EventBusName", opts[:event_bus_name])
 
     perform("DisableRule", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   # Pattern helpers
@@ -819,6 +868,16 @@ defmodule AWS.EventBridge do
     _ -> binary
   end
 
+  # AWS owns the response-body namespace and adds new fields over time.
+  # `Serializer.deserialize/2`'s default is `to_existing_atom: true, strict: true`,
+  # which crashes on any field whose snake-cased atom hasn't been referenced
+  # elsewhere in the project. Bodies must round-trip without crashing, so
+  # atom-safety is relaxed here by default. Callers can still override any of
+  # these options by passing their own `opts` -- caller-supplied keys win the merge.
+  @deserialize_defaults [to_existing_atom: false, strict: false]
+
+  defp deserialize_opts(opts), do: Keyword.merge(@deserialize_defaults, opts)
+
   defp deserialize_response({:ok, response}, _opts, func) do
     case func.(response) do
       {:error, _} = error -> error
@@ -827,19 +886,19 @@ defmodule AWS.EventBridge do
     end
   end
 
-  defp deserialize_response({:error, {:http_error, status_code, response}}, opts, _func)
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
        when status_code in 400..499 do
-    {:error, Error.not_found("resource not found.", %{response: response}, opts)}
+    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
   end
 
-  defp deserialize_response({:error, {:http_error, status_code, response}}, opts, _func)
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
        when status_code >= 500 do
     {:error,
-     Error.service_unavailable("service temporarily unavailable", %{response: response}, opts)}
+     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
   end
 
-  defp deserialize_response({:error, reason}, opts, _func) do
-    {:error, Error.internal_server_error("internal server error", %{reason: reason}, opts)}
+  defp deserialize_response({:error, reason}, _opts, _func) do
+    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 
   defp maybe_put(map, _key, nil), do: map
@@ -866,10 +925,10 @@ defmodule AWS.EventBridge do
   defp inline_sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
     cfg = Config.sandbox()
-    sandbox_enabled = sandbox_opts[:enabled] || cfg[:enabled]
-    sandbox_mode = sandbox_opts[:mode] || cfg[:mode]
+    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
+    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
 
-    sandbox_enabled and sandbox_mode === :inline and not sandbox_disabled?()
+    enabled and mode === :inline and not sandbox_disabled?()
   end
 
   if Code.ensure_loaded?(SandboxRegistry) do

@@ -61,8 +61,9 @@ defmodule AWS.Organizations do
       end
   """
 
-  alias AWS.{Client, Config, Error, Serializer}
+  alias AWS.{Client, Config}
   alias AWS.Organizations.Operation
+  alias ExUtils.Serializer
 
   @service "organizations"
   @content_type "application/x-amz-json-1.1"
@@ -102,7 +103,7 @@ defmodule AWS.Organizations do
     "CreateOrganization"
     |> perform(data, opts)
     |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body)}
+      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
     end)
   end
 
@@ -136,7 +137,7 @@ defmodule AWS.Organizations do
     "CreateOrganizationalUnit"
     |> perform(%{"ParentId" => parent_id, "Name" => name}, opts)
     |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body)}
+      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
     end)
   end
 
@@ -178,7 +179,7 @@ defmodule AWS.Organizations do
     "CreateAccount"
     |> perform(data, opts)
     |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body)}
+      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
     end)
   end
 
@@ -209,7 +210,7 @@ defmodule AWS.Organizations do
     "DescribeCreateAccountStatus"
     |> perform(%{"CreateAccountRequestId" => request_id}, opts)
     |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body)}
+      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
     end)
   end
 
@@ -252,7 +253,9 @@ defmodule AWS.Organizations do
       },
       opts
     )
-    |> deserialize_response(opts, fn body -> {:ok, Serializer.deserialize(body)} end)
+    |> deserialize_response(opts, fn body ->
+      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
+    end)
   end
 
   @doc """
@@ -275,7 +278,9 @@ defmodule AWS.Organizations do
   defp do_delete_organization(opts) do
     "DeleteOrganization"
     |> perform(%{}, opts)
-    |> deserialize_response(opts, fn body -> {:ok, Serializer.deserialize(body)} end)
+    |> deserialize_response(opts, fn body ->
+      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
+    end)
   end
 
   @doc """
@@ -300,7 +305,9 @@ defmodule AWS.Organizations do
   defp do_delete_organizational_unit(ou_id, opts) do
     "DeleteOrganizationalUnit"
     |> perform(%{"OrganizationalUnitId" => ou_id}, opts)
-    |> deserialize_response(opts, fn body -> {:ok, Serializer.deserialize(body)} end)
+    |> deserialize_response(opts, fn body ->
+      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
+    end)
   end
 
   @doc """
@@ -329,7 +336,9 @@ defmodule AWS.Organizations do
   defp do_close_account(account_id, opts) do
     "CloseAccount"
     |> perform(%{"AccountId" => account_id}, opts)
-    |> deserialize_response(opts, fn body -> {:ok, Serializer.deserialize(body)} end)
+    |> deserialize_response(opts, fn body ->
+      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
+    end)
   end
 
   @doc """
@@ -369,7 +378,9 @@ defmodule AWS.Organizations do
       %{"AccountId" => account_id, "ServicePrincipal" => service_principal},
       opts
     )
-    |> deserialize_response(opts, fn body -> {:ok, Serializer.deserialize(body)} end)
+    |> deserialize_response(opts, fn body ->
+      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
+    end)
   end
 
   @doc """
@@ -398,7 +409,9 @@ defmodule AWS.Organizations do
   defp do_enable_aws_service_access(service_principal, opts) do
     "EnableAWSServiceAccess"
     |> perform(%{"ServicePrincipal" => service_principal}, opts)
-    |> deserialize_response(opts, fn body -> {:ok, Serializer.deserialize(body)} end)
+    |> deserialize_response(opts, fn body ->
+      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
+    end)
   end
 
   @doc """
@@ -421,7 +434,7 @@ defmodule AWS.Organizations do
     "DescribeOrganization"
     |> perform(%{}, opts)
     |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body)}
+      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
     end)
   end
 
@@ -460,7 +473,7 @@ defmodule AWS.Organizations do
     "ListRoots"
     |> perform(%{}, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{roots: result[:roots] || []}}
     end)
   end
@@ -498,7 +511,7 @@ defmodule AWS.Organizations do
     "ListOrganizationalUnitsForParent"
     |> perform(data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{organizational_units: result[:organizational_units] || []}}
     end)
   end
@@ -532,7 +545,7 @@ defmodule AWS.Organizations do
     "ListAccounts"
     |> perform(data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{accounts: result[:accounts] || [], next_token: result[:next_token]}}
     end)
   end
@@ -573,7 +586,7 @@ defmodule AWS.Organizations do
     "ListDelegatedAdministrators"
     |> perform(data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{delegated_administrators: result[:delegated_administrators] || []}}
     end)
   end
@@ -610,7 +623,7 @@ defmodule AWS.Organizations do
     "ListAWSServiceAccessForOrganization"
     |> perform(data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
 
       {:ok,
        %{
@@ -650,7 +663,7 @@ defmodule AWS.Organizations do
     "ListParents"
     |> perform(data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{parents: result[:parents] || [], next_token: result[:next_token]}}
     end)
   end
@@ -684,7 +697,7 @@ defmodule AWS.Organizations do
     "DescribeAccount"
     |> perform(%{"AccountId" => account_id}, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{account: result[:account]}}
     end)
   end
@@ -714,7 +727,7 @@ defmodule AWS.Organizations do
     "DescribeOrganizationalUnit"
     |> perform(%{"OrganizationalUnitId" => ou_id}, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{organizational_unit: result[:organizational_unit]}}
     end)
   end
@@ -745,7 +758,7 @@ defmodule AWS.Organizations do
     "UpdateOrganizationalUnit"
     |> perform(%{"OrganizationalUnitId" => ou_id, "Name" => name}, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{organizational_unit: result[:organizational_unit]}}
     end)
   end
@@ -839,7 +852,7 @@ defmodule AWS.Organizations do
     "ListChildren"
     |> perform(data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{children: result[:children] || [], next_token: result[:next_token]}}
     end)
   end
@@ -851,10 +864,10 @@ defmodule AWS.Organizations do
   defp inline_sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
     cfg = Config.sandbox()
-    sandbox_enabled = sandbox_opts[:enabled] || cfg[:enabled]
-    sandbox_mode = sandbox_opts[:mode] || cfg[:mode]
+    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
+    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
 
-    sandbox_enabled and sandbox_mode === :inline and not sandbox_disabled?()
+    enabled and mode === :inline and not sandbox_disabled?()
   end
 
   if Code.ensure_loaded?(SandboxRegistry) do
@@ -1090,6 +1103,16 @@ defmodule AWS.Organizations do
     _ -> binary
   end
 
+  # AWS owns the response-body namespace and adds new fields over time.
+  # `Serializer.deserialize/2`'s default is `to_existing_atom: true, strict: true`,
+  # which crashes on any field whose snake-cased atom hasn't been referenced
+  # elsewhere in the project. Bodies must round-trip without crashing, so
+  # atom-safety is relaxed here by default. Callers can still override any of
+  # these options by passing their own `opts` -- caller-supplied keys win the merge.
+  @deserialize_defaults [to_existing_atom: false, strict: false]
+
+  defp deserialize_opts(opts), do: Keyword.merge(@deserialize_defaults, opts)
+
   defp deserialize_response({:ok, response}, _opts, func) do
     case func.(response) do
       {:error, _} = error -> error
@@ -1098,19 +1121,19 @@ defmodule AWS.Organizations do
     end
   end
 
-  defp deserialize_response({:error, {:http_error, status_code, response}}, opts, _func)
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
        when status_code in 400..499 do
-    {:error, Error.not_found("resource not found.", %{response: response}, opts)}
+    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
   end
 
-  defp deserialize_response({:error, {:http_error, status_code, response}}, opts, _func)
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
        when status_code >= 500 do
     {:error,
-     Error.service_unavailable("service temporarily unavailable", %{response: response}, opts)}
+     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
   end
 
-  defp deserialize_response({:error, reason}, opts, _func) do
-    {:error, Error.internal_server_error("internal server error", %{reason: reason}, opts)}
+  defp deserialize_response({:error, reason}, _opts, _func) do
+    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 
   defp maybe_put(map, _key, nil), do: map

@@ -70,7 +70,7 @@ defmodule AWS.IAM do
   """
 
   import SweetXml, only: [xpath: 2, xpath: 3, sigil_x: 2]
-  alias AWS.{Client, Config, Error}
+  alias AWS.{Client, Config}
   alias AWS.IAM.Operation
 
   @service "iam"
@@ -1625,10 +1625,10 @@ defmodule AWS.IAM do
   defp inline_sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
     cfg = Config.sandbox()
-    sandbox_enabled = sandbox_opts[:enabled] || cfg[:enabled]
-    sandbox_mode = sandbox_opts[:mode] || cfg[:mode]
+    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
+    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
 
-    sandbox_enabled and sandbox_mode === :inline and not sandbox_disabled?()
+    enabled and mode === :inline and not sandbox_disabled?()
   end
 
   if Code.ensure_loaded?(SandboxRegistry) do
@@ -1994,19 +1994,19 @@ defmodule AWS.IAM do
     end
   end
 
-  defp deserialize_response({:error, {:http_error, status_code, response}}, opts, _func)
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
        when status_code in 400..499 do
-    {:error, Error.not_found("resource not found.", %{response: response}, opts)}
+    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
   end
 
-  defp deserialize_response({:error, {:http_error, status_code, response}}, opts, _func)
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
        when status_code >= 500 do
     {:error,
-     Error.service_unavailable("service temporarily unavailable", %{response: response}, opts)}
+     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
   end
 
-  defp deserialize_response({:error, reason}, opts, _func) do
-    {:error, Error.internal_server_error("internal server error", %{reason: reason}, opts)}
+  defp deserialize_response({:error, reason}, _opts, _func) do
+    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 
   defp maybe_put(map, _key, nil), do: map

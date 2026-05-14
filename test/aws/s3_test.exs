@@ -104,6 +104,41 @@ defmodule AWS.S3Test do
       assert {:error, %ErrorMessage{code: :not_found}} =
                S3.get_object(bucket, key, @sandbox_opts)
     end
+
+    test "decodes the body as JSON when decode_json: true" do
+      bucket = random_bucket()
+      key = "get-object-json-#{random_id()}"
+      body = Jason.encode!(%{"hello" => "world", "n" => 42})
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+      assert {:ok, _} = S3.put_object(bucket, key, body, @sandbox_opts)
+
+      assert {:ok, %{"hello" => "world", "n" => 42}} =
+               S3.get_object(bucket, key, [decode_json: true] ++ @sandbox_opts)
+
+      assert {:ok, ^body} = S3.get_object(bucket, key, @sandbox_opts)
+    end
+  end
+
+  describe "object_exists?/3" do
+    test "returns true for an existing object" do
+      bucket = random_bucket()
+      key = "exists-#{random_id()}"
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+      assert {:ok, _} = S3.put_object(bucket, key, "hello", @sandbox_opts)
+
+      assert S3.object_exists?(bucket, key, @sandbox_opts)
+    end
+
+    test "returns false for a missing object" do
+      bucket = random_bucket()
+      key = "missing-#{random_id()}"
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+
+      refute S3.object_exists?(bucket, key, @sandbox_opts)
+    end
   end
 
   describe "delete_object/3" do
@@ -659,6 +694,148 @@ defmodule AWS.S3Test do
       ]
 
       assert {:ok, _} = S3.put_bucket_lifecycle_configuration(bucket, rules, @sandbox_opts)
+    end
+  end
+
+  describe "acquire_lock/3" do
+    test "writes a lockfile and returns the lock id" do
+      bucket = random_bucket()
+      key = "lock-#{random_id()}.tflock"
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+
+      assert {:ok, %{lock_id: lock_id, key: ^key, etag: etag, body: body}} =
+               S3.acquire_lock(bucket, key, @sandbox_opts)
+
+      assert is_binary(lock_id)
+      assert is_binary(etag)
+
+      assert %{"ID" => ^lock_id, "Created" => _, "Path" => path} = Jason.decode!(body)
+      assert path == "#{bucket}/#{key}"
+    end
+
+    test "respects an explicit lock_id" do
+      bucket = random_bucket()
+      key = "lock-#{random_id()}.tflock"
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+
+      assert {:ok, %{lock_id: "my-lock-id", body: body}} =
+               S3.acquire_lock(bucket, key, [lock_id: "my-lock-id"] ++ @sandbox_opts)
+
+      assert %{"ID" => "my-lock-id"} = Jason.decode!(body)
+    end
+
+    test "accepts an arbitrary :body override" do
+      bucket = random_bucket()
+      key = "lock-#{random_id()}.tflock"
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+
+      assert {:ok, %{body: "raw lock body"}} =
+               S3.acquire_lock(bucket, key, [body: "raw lock body"] ++ @sandbox_opts)
+
+      assert {:ok, "raw lock body"} = S3.get_object(bucket, key, @sandbox_opts)
+    end
+
+    test "returns conflict when the lockfile already exists" do
+      bucket = random_bucket()
+      key = "lock-#{random_id()}.tflock"
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+      assert {:ok, _} = S3.acquire_lock(bucket, key, @sandbox_opts)
+
+      assert {:error, %ErrorMessage{code: :conflict}} =
+               S3.acquire_lock(bucket, key, @sandbox_opts)
+    end
+  end
+
+  describe "release_lock/3" do
+    test "deletes the lockfile" do
+      bucket = random_bucket()
+      key = "lock-#{random_id()}.tflock"
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+      assert {:ok, _} = S3.acquire_lock(bucket, key, @sandbox_opts)
+
+      assert {:ok, _} = S3.release_lock(bucket, key, @sandbox_opts)
+      refute S3.object_exists?(bucket, key, @sandbox_opts)
+    end
+
+    test "deletes when lock_id matches" do
+      bucket = random_bucket()
+      key = "lock-#{random_id()}.tflock"
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+      assert {:ok, %{lock_id: lock_id}} = S3.acquire_lock(bucket, key, @sandbox_opts)
+
+      assert {:ok, _} = S3.release_lock(bucket, key, [lock_id: lock_id] ++ @sandbox_opts)
+      refute S3.object_exists?(bucket, key, @sandbox_opts)
+    end
+
+    test "refuses to delete when lock_id does not match" do
+      bucket = random_bucket()
+      key = "lock-#{random_id()}.tflock"
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+      assert {:ok, _} = S3.acquire_lock(bucket, key, @sandbox_opts)
+
+      assert {:error, %ErrorMessage{code: :conflict}} =
+               S3.release_lock(bucket, key, [lock_id: "wrong-id"] ++ @sandbox_opts)
+
+      assert S3.object_exists?(bucket, key, @sandbox_opts)
+    end
+  end
+
+  describe "with_lock/4" do
+    test "runs the function while holding the lock and releases after" do
+      bucket = random_bucket()
+      key = "lock-#{random_id()}.tflock"
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+
+      result =
+        S3.with_lock(
+          bucket,
+          key,
+          fn lock ->
+            assert is_binary(lock.lock_id)
+            assert S3.object_exists?(bucket, key, @sandbox_opts)
+            :did_work
+          end,
+          @sandbox_opts
+        )
+
+      assert result === :did_work
+      refute S3.object_exists?(bucket, key, @sandbox_opts)
+    end
+
+    test "releases the lock if the function raises" do
+      bucket = random_bucket()
+      key = "lock-#{random_id()}.tflock"
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+
+      assert_raise RuntimeError, "boom", fn ->
+        S3.with_lock(bucket, key, fn _lock -> raise "boom" end, @sandbox_opts)
+      end
+
+      refute S3.object_exists?(bucket, key, @sandbox_opts)
+    end
+
+    test "returns the acquisition error without invoking the function" do
+      bucket = random_bucket()
+      key = "lock-#{random_id()}.tflock"
+
+      assert {:ok, _} = S3.create_bucket(bucket, @sandbox_opts)
+      assert {:ok, _} = S3.acquire_lock(bucket, key, @sandbox_opts)
+
+      pid = self()
+
+      assert {:error, %ErrorMessage{code: :conflict}} =
+               S3.with_lock(bucket, key, fn _ -> send(pid, :ran) end, @sandbox_opts)
+
+      refute_received :ran
     end
   end
 

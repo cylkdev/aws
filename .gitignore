@@ -29,3 +29,7 @@ aws-*.tar
 
 # Claude Code config (symlinked from claude-copilot)
 .claude
+
+dialyzer/
+*.plt
+*.plt.*

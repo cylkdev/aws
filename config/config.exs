@@ -1,5 +1,9 @@
 import Config
 
+config :ex_utils, ExUtils.Strings,
+  to_existing_atom: false,
+  strict: false
+
 config :aws,
   access_key_id: [
     {:awscli, {:system, "AWS_PROFILE"}, 30},
@@ -30,7 +34,7 @@ config :aws,
     "us-east-1"
   ],
   sandbox: [
-    enabled: Mix.env() === :test,
+    enabled: false,
     mode: :local,
     scheme: "http://",
     host: "localhost",

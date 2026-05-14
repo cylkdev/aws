@@ -84,6 +84,9 @@ defmodule AWS.MixProject do
         Logs: [
           AWS.Logs
         ],
+        SSM: [
+          AWS.SSM
+        ],
         IAM: [
           AWS.IAM
         ],
@@ -102,14 +105,16 @@ defmodule AWS.MixProject do
       {:blitz_credo_checks, "~> 0.1.5", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.13", only: :test, runtime: false},
-      {:sandbox_registry, ">= 0.0.0", only: [:dev, :test]},
-      # dev dependencies
+      # ---
+      {:sandbox_registry, ">= 0.0.0", optional: true},
+      # ---
       {:sweet_xml, "~> 0.7.5"},
       {:finch, "~> 0.19"},
       {:req, "~> 0.5"},
       {:cowboy, "~> 2.10", only: :test},
       {:error_message, "~> 0.3.3"},
-      {:recase, "~> 0.9.1"}
+      {:recase, "~> 0.9.1"},
+      {:ex_utils, git: "https://github.com/cylkdev/ex_utils.git", branch: "main"}
     ]
   end
 end

@@ -242,8 +242,8 @@ defmodule AWS.Client do
   @spec sandbox_local?(keyword) :: boolean
   def sandbox_local?(sandbox_opts) do
     cfg = Config.sandbox()
-    enabled = sandbox_opts[:enabled] || cfg[:enabled]
-    mode = sandbox_opts[:mode] || cfg[:mode]
+    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
+    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
     enabled and mode === :local
   end
 

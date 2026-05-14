@@ -122,6 +122,27 @@ defmodule AWS.S3.SandboxTest do
     end
   end
 
+  describe "object_exists?/3" do
+    test "returns true when head_object succeeds" do
+      Sandbox.set_head_object_responses([
+        {@bucket, fn -> {:ok, %{content_length: 1}} end}
+      ])
+
+      assert S3.object_exists?(@bucket, @object, @sandbox_opts)
+    end
+
+    test "returns false when head_object errors" do
+      Sandbox.set_head_object_responses([
+        {@bucket,
+         fn ->
+           {:error, %ErrorMessage{code: :not_found, message: "missing", details: %{}}}
+         end}
+      ])
+
+      refute S3.object_exists?(@bucket, "missing.txt", @sandbox_opts)
+    end
+  end
+
   describe "delete_object/3" do
     test "returns mocked response" do
       Sandbox.set_delete_object_responses([
@@ -670,6 +691,171 @@ defmodule AWS.S3.SandboxTest do
 
       assert {:ok, %{rule_count: 1}} =
                S3.put_bucket_lifecycle_configuration(@bucket, rules, @sandbox_opts)
+    end
+  end
+
+  describe "acquire_lock/3" do
+    test "writes lockfile via put_new_object and returns lock metadata" do
+      Sandbox.set_put_object_responses([
+        {@bucket,
+         fn _key, body, opts ->
+           assert opts[:if_none_match] === true
+
+           assert %{"ID" => _, "Created" => _, "Path" => path} = Jason.decode!(body)
+           assert path == "#{@bucket}/lock.tflock"
+
+           {:ok, %{etag: "etag-1"}}
+         end}
+      ])
+
+      assert {:ok, %{lock_id: lock_id, key: "lock.tflock", etag: "etag-1", body: body}} =
+               S3.acquire_lock(@bucket, "lock.tflock", @sandbox_opts)
+
+      assert is_binary(lock_id) and byte_size(lock_id) === 32
+      assert %{"ID" => ^lock_id} = Jason.decode!(body)
+    end
+
+    test "respects an explicit lock_id and arbitrary body" do
+      Sandbox.set_put_object_responses([
+        {@bucket,
+         fn _key, body, _opts ->
+           assert body === "raw"
+           {:ok, %{etag: "x"}}
+         end}
+      ])
+
+      assert {:ok, %{lock_id: "fixed", body: "raw"}} =
+               S3.acquire_lock(
+                 @bucket,
+                 "k",
+                 [lock_id: "fixed", body: "raw"] ++ @sandbox_opts
+               )
+    end
+
+    test "returns conflict when S3 reports the object already exists" do
+      Sandbox.set_put_object_responses([
+        {@bucket,
+         fn ->
+           {:error, ErrorMessage.conflict("object already exists", %{bucket: @bucket, key: "k"})}
+         end}
+      ])
+
+      assert {:error, %ErrorMessage{code: :conflict}} =
+               S3.acquire_lock(@bucket, "k.tflock", @sandbox_opts)
+    end
+  end
+
+  describe "release_lock/3" do
+    test "deletes the lockfile when no lock_id is given" do
+      Sandbox.set_delete_object_responses([
+        {@bucket, fn _key, _opts -> {:ok, ""} end}
+      ])
+
+      assert {:ok, ""} = S3.release_lock(@bucket, "k.tflock", @sandbox_opts)
+    end
+
+    test "verifies lock_id from the body before deleting" do
+      Sandbox.set_get_object_responses([
+        {@bucket, fn _key -> {:ok, Jason.encode!(%{"ID" => "abc"})} end}
+      ])
+
+      Sandbox.set_delete_object_responses([
+        {@bucket, fn _key, _opts -> {:ok, ""} end}
+      ])
+
+      assert {:ok, ""} =
+               S3.release_lock(@bucket, "k.tflock", [lock_id: "abc"] ++ @sandbox_opts)
+    end
+
+    test "returns conflict when the body's lock id does not match" do
+      Sandbox.set_get_object_responses([
+        {@bucket, fn _key -> {:ok, Jason.encode!(%{"ID" => "other"})} end}
+      ])
+
+      assert {:error, %ErrorMessage{code: :conflict, message: "lock id does not match"}} =
+               S3.release_lock(@bucket, "k.tflock", [lock_id: "abc"] ++ @sandbox_opts)
+    end
+  end
+
+  describe "with_lock/4" do
+    test "acquires, runs the function, and releases" do
+      Sandbox.set_put_object_responses([
+        {@bucket, fn _key, _body, _opts -> {:ok, %{etag: "e"}} end}
+      ])
+
+      Sandbox.set_get_object_responses([
+        {@bucket, fn _key -> {:ok, Process.get(:lock_body)} end}
+      ])
+
+      Sandbox.set_delete_object_responses([
+        {@bucket,
+         fn _key, _opts ->
+           send(self(), :released)
+           {:ok, ""}
+         end}
+      ])
+
+      result =
+        S3.with_lock(
+          @bucket,
+          "k.tflock",
+          fn lock ->
+            Process.put(:lock_body, lock.body)
+            {:got, lock.lock_id}
+          end,
+          @sandbox_opts
+        )
+
+      assert {:got, _id} = result
+      assert_received :released
+    end
+
+    test "releases the lock when the function raises" do
+      Sandbox.set_put_object_responses([
+        {@bucket, fn _key, _body, _opts -> {:ok, %{etag: "e"}} end}
+      ])
+
+      Sandbox.set_get_object_responses([
+        {@bucket, fn _key -> {:ok, Process.get(:lock_body)} end}
+      ])
+
+      Sandbox.set_delete_object_responses([
+        {@bucket,
+         fn _key, _opts ->
+           send(self(), :released)
+           {:ok, ""}
+         end}
+      ])
+
+      assert_raise RuntimeError, "boom", fn ->
+        S3.with_lock(
+          @bucket,
+          "k.tflock",
+          fn lock ->
+            Process.put(:lock_body, lock.body)
+            raise "boom"
+          end,
+          @sandbox_opts
+        )
+      end
+
+      assert_received :released
+    end
+
+    test "skips the function when acquisition fails" do
+      Sandbox.set_put_object_responses([
+        {@bucket,
+         fn _key, _body, _opts ->
+           {:error, ErrorMessage.conflict("object already exists", %{})}
+         end}
+      ])
+
+      pid = self()
+
+      assert {:error, %ErrorMessage{code: :conflict}} =
+               S3.with_lock(@bucket, "k.tflock", fn _ -> send(pid, :ran) end, @sandbox_opts)
+
+      refute_received :ran
     end
   end
 end

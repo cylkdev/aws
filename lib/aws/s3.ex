@@ -15,7 +15,7 @@ defmodule AWS.S3 do
   operation HTTP shapes (path, method, headers), XML response bodies
   for list/describe-style calls, and header-only response payloads for
   write-style calls. XPath extraction runs in `AWS.S3.XMLParser`;
-  response-header-to-map conversion runs in `AWS.Serializer`.
+  response-header-to-map conversion runs in `ExUtils.Serializer`.
 
   It is also the only service with first-class support for **presigned
   URLs** (via `presign/4` and `presign_part/5`), **presigned POST form
@@ -118,14 +118,15 @@ defmodule AWS.S3 do
   alias AWS.{
     Client,
     Config,
-    Error,
+    S3.Lock,
     S3.Multipart,
     S3.Operation,
     S3.XMLBuilder,
     S3.XMLParser,
-    Serializer,
     Signer
   }
+
+  alias ExUtils.Serializer
 
   @override_keys [:headers, :body, :http, :url, :stream_upload, :stream_response, :payload_hash]
 
@@ -267,6 +268,23 @@ defmodule AWS.S3 do
   end
 
   @doc """
+  Convenience wrapper for `put_object/4` that sets `:if_none_match` to `true`
+  to ensure the object does not already exist.
+
+  See `put_object/4` for details.
+  """
+  @spec put_new_object(
+          bucket :: binary(),
+          key :: binary(),
+          body :: iodata() | Enumerable.t(),
+          opts :: keyword()
+        ) ::
+          {:ok, map()} | {:error, term()}
+  def put_new_object(bucket, key, body, opts \\ []) do
+    put_object(bucket, key, body, Keyword.put(opts, :if_none_match, true))
+  end
+
+  @doc """
   Uploads an object to a bucket.
 
   ## Permissions
@@ -351,6 +369,44 @@ defmodule AWS.S3 do
       sandbox_head_object_response(bucket, key, opts)
     else
       do_head_object(bucket, key, opts)
+    end
+  end
+
+  @doc """
+  Returns whether an object exists in a bucket.
+
+  Wraps `head_object/3`: returns `true` when the request succeeds and `false`
+  for any error (missing object, denied access, transport failure).
+
+  ## Permissions
+
+  To execute this request, you must have the following permission:
+
+    - s3:GetObject
+
+  ## Arguments
+
+    * `bucket` - The name of the bucket containing the object.
+    * `key` - The key of the object to check.
+    * `opts` - A keyword list of options.
+
+  ## Options
+
+  See the "Shared Options" section in the module documentation for common options.
+
+  ## Examples
+
+      iex> AWS.S3.object_exists?("my-bucket", "my-key")
+      true
+
+      iex> AWS.S3.object_exists?("my-bucket", "missing-key")
+      false
+  """
+  @spec object_exists?(bucket :: binary(), key :: binary(), opts :: keyword()) :: boolean()
+  def object_exists?(bucket, key, opts \\ []) do
+    case head_object(bucket, key, opts) do
+      {:ok, _} -> true
+      {:error, _} -> false
     end
   end
 
@@ -1262,6 +1318,163 @@ defmodule AWS.S3 do
     end
   end
 
+  @doc """
+  Acquires a lock on `key` in `bucket` by writing a lockfile via a conditional
+  PUT (`If-None-Match: *`).
+
+  This implements S3-native locking using strongly-consistent conditional
+  writes — the same mechanism Terraform's S3 backend uses when configured with
+  `use_lockfile = true`. No DynamoDB table is required.
+
+  Acquisition succeeds only if the lockfile does not already exist; otherwise
+  S3 returns 412 Precondition Failed and this function returns
+  `{:error, %ErrorMessage{code: :conflict}}`.
+
+  The default body is JSON shaped to match Terraform's lock-info document
+  (`"ID"`, `"Created"`, `"Who"`, `"Path"`, ...) so the same lockfile can be
+  observed or released by Terraform if desired.
+
+  ## Permissions
+
+    - s3:PutObject
+
+  ## Arguments
+
+    * `bucket` - The name of the bucket to write the lockfile into.
+    * `key` - The full key for the lockfile (e.g. `"path/to/state.tfstate.tflock"`).
+    * `opts` - A keyword list of options.
+
+  ## Options
+
+    * `:lock_id` - The lock ID to embed in the body. Defaults to a generated
+      32-character hex string.
+    * `:operation`, `:info`, `:who`, `:version`, `:path` - Optional string
+      fields embedded in the default JSON body. `:who` defaults to
+      `"<USER>@<hostname>"`; `:path` defaults to `"<bucket>/<key>"`.
+    * `:body` - Override the lockfile body entirely. When provided, the
+      lock-info fields above are ignored for body construction (but
+      `:lock_id` is still returned in the result).
+
+  See the "Shared Options" section in the module documentation for common options.
+
+  ## Examples
+
+      iex> AWS.S3.acquire_lock("my-bucket", "state.tfstate.tflock")
+      {:ok, %{lock_id: "abc...", key: "state.tfstate.tflock", etag: "...", body: "..."}}
+
+      iex> AWS.S3.acquire_lock("my-bucket", "state.tfstate.tflock")
+      {:error, %ErrorMessage{code: :conflict, message: "object already exists", ...}}
+  """
+  @spec acquire_lock(bucket :: binary(), key :: binary(), opts :: keyword()) ::
+          {:ok,
+           %{
+             lock_id: binary(),
+             key: binary(),
+             etag: binary() | nil,
+             body: binary()
+           }}
+          | {:error, term()}
+  def acquire_lock(bucket, key, opts \\ []) do
+    {lock_id, body, put_opts} = Lock.build(bucket, key, opts)
+
+    case put_new_object(bucket, key, body, put_opts) do
+      {:ok, headers} ->
+        {:ok, %{lock_id: lock_id, key: key, etag: headers[:etag], body: body}}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  @doc """
+  Releases a lock previously acquired with `acquire_lock/3` by deleting the
+  lockfile.
+
+  When `:lock_id` is provided, the existing lockfile body is fetched first and
+  must contain that ID before the deletion proceeds. This prevents one caller
+  from accidentally releasing another caller's lock. Without `:lock_id`, the
+  lockfile is deleted unconditionally.
+
+  ## Permissions
+
+    - s3:DeleteObject
+    - s3:GetObject (only when `:lock_id` is provided)
+
+  ## Arguments
+
+    * `bucket` - The name of the bucket containing the lockfile.
+    * `key` - The lockfile key.
+    * `opts` - A keyword list of options.
+
+  ## Options
+
+    * `:lock_id` - When provided, the lockfile body is read and must contain
+      this ID for release to proceed. Returns
+      `{:error, %ErrorMessage{code: :conflict}}` on mismatch.
+
+  See the "Shared Options" section in the module documentation for common options.
+
+  ## Examples
+
+      iex> AWS.S3.release_lock("my-bucket", "state.tfstate.tflock", lock_id: "abc...")
+      {:ok, ""}
+  """
+  @spec release_lock(bucket :: binary(), key :: binary(), opts :: keyword()) ::
+          {:ok, term()} | {:error, term()}
+  def release_lock(bucket, key, opts \\ []) do
+    {expected_id, delete_opts} = Keyword.pop(opts, :lock_id)
+
+    case expected_id do
+      nil ->
+        delete_object(bucket, key, delete_opts)
+
+      _ ->
+        with {:ok, body} <- get_object(bucket, key, delete_opts),
+             :ok <- Lock.verify_id(body, expected_id, bucket, key) do
+          delete_object(bucket, key, delete_opts)
+        end
+    end
+  end
+
+  @doc """
+  Acquires a lock, runs `fun` with the lock info, and releases the lock,
+  even if `fun` raises.
+
+  Returns whatever `fun` returns on successful acquisition. On acquisition
+  failure, returns `{:error, reason}` without invoking `fun`.
+
+  Release errors are not propagated; if you need to observe them, use
+  `acquire_lock/3` and `release_lock/3` directly.
+
+  ## Examples
+
+      iex> AWS.S3.with_lock("my-bucket", "state.tfstate.tflock", fn lock ->
+      ...>   IO.inspect(lock.lock_id)
+      ...>   :work_done
+      ...> end)
+      :work_done
+  """
+  @spec with_lock(
+          bucket :: binary(),
+          key :: binary(),
+          fun :: (map() -> result),
+          opts :: keyword()
+        ) :: result | {:error, term()}
+        when result: var
+  def with_lock(bucket, key, fun, opts \\ []) when is_function(fun, 1) do
+    case acquire_lock(bucket, key, opts) do
+      {:ok, lock} ->
+        try do
+          fun.(lock)
+        after
+          release_lock(bucket, key, Keyword.put(opts, :lock_id, lock.lock_id))
+        end
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
   @doc false
   def build_operation(method, bucket, key, opts) do
     with {:ok, config} <- resolve_config(opts) do
@@ -1347,17 +1560,14 @@ defmodule AWS.S3 do
     case s3_request(:put, bucket, nil, Keyword.put(opts, :body, body)) do
       {:error, {:http_error, 409, resp}} ->
         {:error,
-         Error.conflict(
+         ErrorMessage.conflict(
            "bucket already exists",
-           %{bucket: bucket, region: region, response: resp},
-           opts
+           %{bucket: bucket, region: region, response: resp}
          )}
 
       result ->
         deserialize_response(result, opts, fn %{headers: headers} ->
-          headers
-          |> Serializer.deserialize()
-          |> Map.new()
+          deserialize_headers(headers, opts)
         end)
     end
   end
@@ -1372,9 +1582,7 @@ defmodule AWS.S3 do
     :delete
     |> s3_request(bucket, nil, opts)
     |> deserialize_response(opts, fn %{headers: headers} ->
-      headers
-      |> Serializer.deserialize()
-      |> Map.new()
+      deserialize_headers(headers, opts)
     end)
   end
 
@@ -1382,9 +1590,7 @@ defmodule AWS.S3 do
     :head
     |> s3_request(bucket, nil, opts)
     |> deserialize_response(opts, fn %{headers: headers} ->
-      headers
-      |> Serializer.deserialize()
-      |> Map.new()
+      deserialize_headers(headers, opts)
     end)
   end
 
@@ -1395,17 +1601,14 @@ defmodule AWS.S3 do
     case s3_request(:put, bucket, key, put_opts(opts, body: body, headers: headers)) do
       {:error, {:http_error, 412, resp}} when if_none_match? ->
         {:error,
-         Error.conflict(
+         ErrorMessage.conflict(
            "object already exists",
-           %{bucket: bucket, key: key, response: resp},
-           opts
+           %{bucket: bucket, key: key, response: resp}
          )}
 
       result ->
         deserialize_response(result, opts, fn %{headers: headers} ->
-          headers
-          |> Serializer.deserialize()
-          |> Map.new()
+          deserialize_headers(headers, opts)
         end)
     end
   end
@@ -1414,9 +1617,7 @@ defmodule AWS.S3 do
     :head
     |> s3_request(bucket, key, opts)
     |> deserialize_response(opts, fn %{headers: headers} ->
-      headers
-      |> Serializer.deserialize()
-      |> Map.new()
+      deserialize_headers(headers, opts)
     end)
   end
 
@@ -1427,9 +1628,13 @@ defmodule AWS.S3 do
   end
 
   defp do_get_object(bucket, key, opts) do
+    decode_json? = Keyword.get(opts, :decode_json, false)
+
     :get
     |> s3_request(bucket, key, opts)
-    |> deserialize_response(opts, fn %{body: body} -> body end)
+    |> deserialize_response(opts, fn %{body: body} ->
+      if decode_json?, do: Jason.decode!(body), else: body
+    end)
   end
 
   defp do_list_objects(bucket, opts) do
@@ -1504,7 +1709,7 @@ defmodule AWS.S3 do
     fields =
       result.fields
       |> Map.put("key", key)
-      |> Serializer.deserialize()
+      |> Serializer.deserialize(merge_response_header_opts(opts))
 
     {:ok,
      %{
@@ -1559,9 +1764,7 @@ defmodule AWS.S3 do
     :delete
     |> s3_request(bucket, key, Keyword.put(opts, :query, %{"uploadId" => upload_id}))
     |> deserialize_response(opts, fn %{headers: headers} ->
-      headers
-      |> Serializer.deserialize()
-      |> Map.new()
+      deserialize_headers(headers, opts)
     end)
   end
 
@@ -1571,9 +1774,7 @@ defmodule AWS.S3 do
     :put
     |> s3_request(bucket, key, put_opts(opts, query: query, body: body))
     |> deserialize_response(opts, fn %{headers: headers} ->
-      headers
-      |> Serializer.deserialize()
-      |> Map.new()
+      deserialize_headers(headers, opts)
     end)
   end
 
@@ -1769,19 +1970,19 @@ defmodule AWS.S3 do
     end
   end
 
-  defp normalize_notification_error({:error, {:http_error, status, resp}}, opts)
+  defp normalize_notification_error({:error, {:http_error, status, resp}}, _opts)
        when status in 400..499 do
-    {:error, Error.not_found("resource not found.", %{response: resp}, opts)}
+    {:error, ErrorMessage.not_found("resource not found.", %{response: resp})}
   end
 
-  defp normalize_notification_error({:error, {:http_error, status, resp}}, opts)
+  defp normalize_notification_error({:error, {:http_error, status, resp}}, _opts)
        when status >= 500 do
     {:error,
-     Error.service_unavailable("service temporarily unavailable", %{response: resp}, opts)}
+     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: resp})}
   end
 
-  defp normalize_notification_error({:error, reason}, opts) do
-    {:error, Error.internal_server_error("internal server error", %{reason: reason}, opts)}
+  defp normalize_notification_error({:error, reason}, _opts) do
+    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 
   defp insert_event_bridge_config(xml) do
@@ -1830,9 +2031,7 @@ defmodule AWS.S3 do
     :put
     |> s3_request(bucket, nil, request_opts)
     |> deserialize_response(opts, fn %{headers: headers} ->
-      headers
-      |> Serializer.deserialize()
-      |> Map.new()
+      deserialize_headers(headers, opts)
     end)
   end
 
@@ -1840,6 +2039,23 @@ defmodule AWS.S3 do
     md5 = :md5 |> :crypto.hash(xml) |> Base.encode64()
     [{"content-md5", md5}, {"content-type", "application/xml"}]
   end
+
+  # AWS owns the response-header namespace and adds new headers over time
+  # (e.g. `x-amz-checksum-crc64nvme`). `Serializer.deserialize/2`'s default
+  # is `to_existing_atom: true, strict: true`, which crashes on any header
+  # whose snake-cased atom hasn't been referenced elsewhere. Headers must
+  # round-trip without crashing, so atom-safety is relaxed here by default.
+  # Callers can still override any of these options by passing their own
+  # `opts` -- caller-supplied keys win the merge.
+  @response_header_opts [to_existing_atom: false, strict: false]
+
+  defp deserialize_headers(headers, opts) do
+    headers
+    |> Serializer.deserialize(merge_response_header_opts(opts))
+    |> Map.new()
+  end
+
+  defp merge_response_header_opts(opts), do: Keyword.merge(@response_header_opts, opts)
 
   defp deserialize_response({:ok, response}, _opts, func) do
     case func.(response) do
@@ -1849,24 +2065,24 @@ defmodule AWS.S3 do
     end
   end
 
-  defp deserialize_response({:error, {:http_error, status_code, response}}, opts, _func)
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
        when status_code in 300..399 do
-    {:error, Error.bad_request("redirect not followed.", %{response: response}, opts)}
+    {:error, ErrorMessage.bad_request("redirect not followed.", %{response: response})}
   end
 
-  defp deserialize_response({:error, {:http_error, status_code, response}}, opts, _func)
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
        when status_code in 400..499 do
-    {:error, Error.not_found("resource not found.", %{response: response}, opts)}
+    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
   end
 
-  defp deserialize_response({:error, {:http_error, status_code, response}}, opts, _func)
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
        when status_code >= 500 do
     {:error,
-     Error.service_unavailable("service temporarily unavailable", %{response: response}, opts)}
+     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
   end
 
-  defp deserialize_response({:error, reason}, opts, _func) do
-    {:error, Error.internal_server_error("internal server error", %{reason: reason}, opts)}
+  defp deserialize_response({:error, reason}, _opts, _func) do
+    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 
   defp copy_part_range(
@@ -1904,7 +2120,7 @@ defmodule AWS.S3 do
         {results, [reason | errors]}
 
       {:exit, reason}, {results, errors} ->
-        err = Error.internal_server_error("task exited", %{reason: reason}, [])
+        err = ErrorMessage.internal_server_error("task exited", %{reason: reason})
         {results, [err | errors]}
     end)
     |> then(fn
@@ -1936,15 +2152,14 @@ defmodule AWS.S3 do
     abort_multipart_upload(bucket, key, upload_id, opts)
 
     {:error,
-     Error.forbidden(
+     ErrorMessage.forbidden(
        "multipart upload size exceeds maximum allowed size",
        %{
          bucket: bucket,
          key: key,
          upload_id: upload_id,
          max_size: max
-       },
-       opts
+       }
      )}
   end
 
@@ -2002,15 +2217,14 @@ defmodule AWS.S3 do
   defp handle_content_type_mismatch(bucket, key, upload_id, content_type, opts) do
     error =
       {:error,
-       Error.forbidden(
+       ErrorMessage.forbidden(
          "content type mismatch",
          %{
            bucket: bucket,
            key: key,
            upload_id: upload_id,
            content_type: content_type
-         },
-         opts
+         }
        )}
 
     case Keyword.get(opts, :on_content_type_mismatch, :delete) do
@@ -2197,16 +2411,259 @@ defmodule AWS.S3 do
   defp resolve_path_style(value, _sandbox_opts), do: value
 
   # ---------------------------------------------------------------------------
+  # FACADE
+  # ---------------------------------------------------------------------------
+
+  defmacro __using__(opts \\ []) do
+    quote do
+      opts = unquote(opts)
+
+      src_bucket = opts[:bucket] || opts[:source_bucket]
+      dest_bucket = opts[:bucket] || opts[:destination_bucket] || src_bucket
+      default_options = opts[:options] || []
+
+      alias AWS.S3
+
+      @src_bucket src_bucket
+      @dest_bucket dest_bucket
+      @default_options default_options
+
+      def list_buckets(opts \\ []) do
+        opts
+        |> with_default_options()
+        |> S3.list_buckets()
+      end
+
+      def create_bucket(opts \\ []) do
+        S3.create_bucket(source_bucket!(opts), with_default_options(opts))
+      end
+
+      def delete_bucket(opts \\ []) do
+        S3.delete_bucket(source_bucket!(opts), with_default_options(opts))
+      end
+
+      def head_bucket(opts \\ []) do
+        S3.head_bucket(source_bucket!(opts), with_default_options(opts))
+      end
+
+      def put_new_object(key, body, opts \\ []) do
+        S3.put_new_object(source_bucket!(opts), key, body, with_default_options(opts))
+      end
+
+      def put_object(key, body, opts \\ []) do
+        S3.put_object(source_bucket!(opts), key, body, with_default_options(opts))
+      end
+
+      def head_object(key, opts \\ []) do
+        S3.head_object(source_bucket!(opts), key, with_default_options(opts))
+      end
+
+      def object_exists?(key, opts \\ []) do
+        S3.object_exists?(source_bucket!(opts), key, with_default_options(opts))
+      end
+
+      def delete_object(key, opts \\ []) do
+        S3.delete_object(source_bucket!(opts), key, with_default_options(opts))
+      end
+
+      def get_object(key, opts \\ []) do
+        S3.get_object(source_bucket!(opts), key, with_default_options(opts))
+      end
+
+      def list_objects(opts \\ []) do
+        S3.list_objects(source_bucket!(opts), with_default_options(opts))
+      end
+
+      def copy_object(dest_key, src_key, opts \\ []) do
+        opts
+        |> destination_bucket!()
+        |> S3.copy_object(
+          dest_key,
+          source_bucket!(opts),
+          src_key,
+          with_default_options(opts)
+        )
+      end
+
+      def presign(http_method, key, opts \\ []) do
+        S3.presign(
+          source_bucket!(opts),
+          http_method,
+          key,
+          with_default_options(opts)
+        )
+      end
+
+      def presign_post(key, opts \\ []) do
+        S3.presign_post(source_bucket!(opts), key, with_default_options(opts))
+      end
+
+      def presign_part(object, upload_id, part_number, opts \\ []) do
+        S3.presign_part(
+          source_bucket!(opts),
+          object,
+          upload_id,
+          part_number,
+          with_default_options(opts)
+        )
+      end
+
+      def create_multipart_upload(key, opts \\ []) do
+        S3.create_multipart_upload(
+          source_bucket!(opts),
+          key,
+          with_default_options(opts)
+        )
+      end
+
+      def abort_multipart_upload(key, upload_id, opts \\ []) do
+        S3.abort_multipart_upload(
+          source_bucket!(opts),
+          key,
+          upload_id,
+          with_default_options(opts)
+        )
+      end
+
+      def upload_part(key, upload_id, part_number, body, opts \\ []) do
+        S3.upload_part(
+          source_bucket!(opts),
+          key,
+          upload_id,
+          part_number,
+          body,
+          with_default_options(opts)
+        )
+      end
+
+      def list_parts(key, upload_id, part_number_marker \\ nil, opts \\ []) do
+        S3.list_parts(
+          source_bucket!(opts),
+          key,
+          upload_id,
+          part_number_marker,
+          with_default_options(opts)
+        )
+      end
+
+      def copy_part(dest_key, src_key, upload_id, part_number, src_range, opts) do
+        opts
+        |> destination_bucket!()
+        |> S3.copy_part(
+          dest_key,
+          source_bucket!(opts),
+          src_key,
+          upload_id,
+          part_number,
+          src_range,
+          with_default_options(opts)
+        )
+      end
+
+      def copy_parts(dest_key, src_key, upload_id, content_length, opts \\ []) do
+        opts
+        |> destination_bucket!()
+        |> S3.copy_parts(
+          dest_key,
+          source_bucket!(opts),
+          src_key,
+          upload_id,
+          content_length,
+          with_default_options(opts)
+        )
+      end
+
+      def copy_object_multipart(dest_key, src_key, opts \\ []) do
+        opts
+        |> destination_bucket!()
+        |> S3.copy_object_multipart(
+          dest_key,
+          source_bucket!(opts),
+          src_key,
+          with_default_options(opts)
+        )
+      end
+
+      def complete_multipart_upload(key, upload_id, parts, opts \\ []) do
+        S3.complete_multipart_upload(
+          source_bucket!(opts),
+          key,
+          upload_id,
+          parts,
+          with_default_options(opts)
+        )
+      end
+
+      def enable_event_bridge(opts \\ []) do
+        S3.enable_event_bridge(source_bucket!(opts), with_default_options(opts))
+      end
+
+      def disable_event_bridge(opts \\ []) do
+        S3.disable_event_bridge(source_bucket!(opts), with_default_options(opts))
+      end
+
+      def get_notification_configuration(opts \\ []) do
+        S3.get_notification_configuration(
+          source_bucket!(opts),
+          with_default_options(opts)
+        )
+      end
+
+      def put_public_access_block(opts \\ []) do
+        S3.put_public_access_block(
+          source_bucket!(opts),
+          with_default_options(opts)
+        )
+      end
+
+      def put_bucket_encryption(opts \\ []) do
+        S3.put_bucket_encryption(source_bucket!(opts), with_default_options(opts))
+      end
+
+      def put_bucket_lifecycle_configuration(rules, opts \\ []) do
+        S3.put_bucket_lifecycle_configuration(
+          source_bucket!(opts),
+          rules,
+          with_default_options(opts)
+        )
+      end
+
+      defp destination_bucket!(opts) do
+        with nil <-
+               opts[:bucket] ||
+                 opts[:destination_bucket] ||
+                 @dest_bucket ||
+                 opts[:source_bucket] ||
+                 @src_bucket do
+          raise "Destination bucket not specified"
+        end
+      end
+
+      defp source_bucket!(opts) do
+        with nil <- opts[:bucket] || opts[:source_bucket] || @src_bucket do
+          raise "Source bucket not specified"
+        end
+      end
+
+      defp with_default_options(opts) do
+        @default_options
+        |> Keyword.merge(opts)
+        |> Keyword.drop([:source_bucket, :destination_bucket])
+      end
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # SANDBOX HELPERS
   # ---------------------------------------------------------------------------
 
   defp inline_sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
     cfg = Config.sandbox()
-    sandbox_enabled = sandbox_opts[:enabled] || cfg[:enabled]
-    sandbox_mode = sandbox_opts[:mode] || cfg[:mode]
+    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
+    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
 
-    sandbox_enabled and sandbox_mode === :inline and not sandbox_disabled?()
+    enabled and mode === :inline and not sandbox_disabled?()
   end
 
   if Code.ensure_loaded?(SandboxRegistry) do

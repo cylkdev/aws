@@ -61,8 +61,9 @@ defmodule AWS.IdentityCenter do
       end
   """
 
-  alias AWS.{Client, Config, Error, Serializer}
+  alias AWS.{Client, Config}
   alias AWS.IdentityCenter.Operation
+  alias ExUtils.Serializer
 
   @content_type "application/x-amz-json-1.1"
 
@@ -96,7 +97,7 @@ defmodule AWS.IdentityCenter do
   defp do_list_instances(opts) do
     perform(:sso, "ListInstances", %{}, opts)
     |> deserialize_response(opts, fn body ->
-      %{instances: instances} = Serializer.deserialize(body)
+      %{instances: instances} = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{instances: instances || []}}
     end)
   end
@@ -134,7 +135,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "CreatePermissionSet", data, opts)
     |> deserialize_response(opts, fn body ->
-      %{permission_set: ps} = Serializer.deserialize(body)
+      %{permission_set: ps} = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, ps}
     end)
   end
@@ -202,7 +203,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "ListPermissionSets", data, opts)
     |> deserialize_response(opts, fn body ->
-      deserialized = Serializer.deserialize(body)
+      deserialized = Serializer.deserialize(body, deserialize_opts(opts))
 
       {:ok,
        %{
@@ -290,7 +291,7 @@ defmodule AWS.IdentityCenter do
       opts
     )
     |> deserialize_response(opts, fn body ->
-      %{permission_set: ps} = Serializer.deserialize(body)
+      %{permission_set: ps} = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{permission_set: ps}}
     end)
   end
@@ -323,7 +324,7 @@ defmodule AWS.IdentityCenter do
       opts
     )
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
 
       decoded =
         case result[:inline_policy] do
@@ -361,7 +362,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "ListManagedPoliciesInPermissionSet", data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{attached_managed_policies: result[:attached_managed_policies] || []}}
     end)
   end
@@ -398,7 +399,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "ListAccountAssignments", data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{account_assignments: result[:account_assignments] || []}}
     end)
   end
@@ -425,7 +426,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "ListAccountsForProvisionedPermissionSet", data, opts)
     |> deserialize_response(opts, fn body ->
-      %{account_ids: ids} = Serializer.deserialize(body)
+      %{account_ids: ids} = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{account_ids: ids || []}}
     end)
   end
@@ -457,7 +458,9 @@ defmodule AWS.IdentityCenter do
       },
       opts
     )
-    |> deserialize_response(opts, fn body -> {:ok, Serializer.deserialize(body)} end)
+    |> deserialize_response(opts, fn body ->
+      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
+    end)
   end
 
   @doc """
@@ -558,7 +561,9 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "CreateAccountAssignment", data, opts)
     |> deserialize_response(opts, fn body ->
-      %{account_assignment_creation_status: status} = Serializer.deserialize(body)
+      %{account_assignment_creation_status: status} =
+        Serializer.deserialize(body, deserialize_opts(opts))
+
       {:ok, status}
     end)
   end
@@ -598,7 +603,9 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "DeleteAccountAssignment", data, opts)
     |> deserialize_response(opts, fn body ->
-      %{account_assignment_deletion_status: status} = Serializer.deserialize(body)
+      %{account_assignment_deletion_status: status} =
+        Serializer.deserialize(body, deserialize_opts(opts))
+
       {:ok, status}
     end)
   end
@@ -642,7 +649,9 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "ProvisionPermissionSet", data, opts)
     |> deserialize_response(opts, fn body ->
-      %{permission_set_provisioning_status: status} = Serializer.deserialize(body)
+      %{permission_set_provisioning_status: status} =
+        Serializer.deserialize(body, deserialize_opts(opts))
+
       {:ok, status}
     end)
   end
@@ -685,7 +694,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:identitystore, "CreateUser", data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{user_id: result[:user_id], identity_store_id: result[:identity_store_id]}}
     end)
   end
@@ -757,7 +766,9 @@ defmodule AWS.IdentityCenter do
       %{"IdentityStoreId" => identity_store_id, "UserId" => user_id},
       opts
     )
-    |> deserialize_response(opts, fn body -> {:ok, Serializer.deserialize(body)} end)
+    |> deserialize_response(opts, fn body ->
+      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
+    end)
   end
 
   @doc """
@@ -833,7 +844,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:identitystore, "ListUsers", data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{users: result[:users] || [], next_token: result[:next_token]}}
     end)
   end
@@ -875,7 +886,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:identitystore, "CreateGroup", data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{group_id: result[:group_id], identity_store_id: result[:identity_store_id]}}
     end)
   end
@@ -947,7 +958,9 @@ defmodule AWS.IdentityCenter do
       %{"IdentityStoreId" => identity_store_id, "GroupId" => group_id},
       opts
     )
-    |> deserialize_response(opts, fn body -> {:ok, Serializer.deserialize(body)} end)
+    |> deserialize_response(opts, fn body ->
+      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
+    end)
   end
 
   @doc """
@@ -976,7 +989,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:identitystore, "ListGroups", data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
       {:ok, %{groups: result[:groups] || [], next_token: result[:next_token]}}
     end)
   end
@@ -1017,7 +1030,7 @@ defmodule AWS.IdentityCenter do
       opts
     )
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body)
+      result = Serializer.deserialize(body, deserialize_opts(opts))
 
       {:ok,
        %{membership_id: result[:membership_id], identity_store_id: result[:identity_store_id]}}
@@ -1144,6 +1157,16 @@ defmodule AWS.IdentityCenter do
     _ -> binary
   end
 
+  # AWS owns the response-body namespace and adds new fields over time.
+  # `Serializer.deserialize/2`'s default is `to_existing_atom: true, strict: true`,
+  # which crashes on any field whose snake-cased atom hasn't been referenced
+  # elsewhere in the project. Bodies must round-trip without crashing, so
+  # atom-safety is relaxed here by default. Callers can still override any of
+  # these options by passing their own `opts` -- caller-supplied keys win the merge.
+  @deserialize_defaults [to_existing_atom: false, strict: false]
+
+  defp deserialize_opts(opts), do: Keyword.merge(@deserialize_defaults, opts)
+
   defp deserialize_response({:ok, response}, _opts, func) do
     case func.(response) do
       {:error, _} = error -> error
@@ -1152,19 +1175,19 @@ defmodule AWS.IdentityCenter do
     end
   end
 
-  defp deserialize_response({:error, {:http_error, status_code, response}}, opts, _func)
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
        when status_code in 400..499 do
-    {:error, Error.not_found("resource not found.", %{response: response}, opts)}
+    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
   end
 
-  defp deserialize_response({:error, {:http_error, status_code, response}}, opts, _func)
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
        when status_code >= 500 do
     {:error,
-     Error.service_unavailable("service temporarily unavailable", %{response: response}, opts)}
+     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
   end
 
-  defp deserialize_response({:error, reason}, opts, _func) do
-    {:error, Error.internal_server_error("internal server error", %{reason: reason}, opts)}
+  defp deserialize_response({:error, reason}, _opts, _func) do
+    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 
   defp maybe_put(map, _key, nil), do: map
@@ -1193,10 +1216,10 @@ defmodule AWS.IdentityCenter do
   defp inline_sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
     cfg = Config.sandbox()
-    sandbox_enabled = sandbox_opts[:enabled] || cfg[:enabled]
-    sandbox_mode = sandbox_opts[:mode] || cfg[:mode]
+    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
+    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
 
-    sandbox_enabled and sandbox_mode === :inline and not sandbox_disabled?()
+    enabled and mode === :inline and not sandbox_disabled?()
   end
 
   if Code.ensure_loaded?(SandboxRegistry) do

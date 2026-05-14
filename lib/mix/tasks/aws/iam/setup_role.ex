@@ -36,11 +36,18 @@ defmodule Mix.Tasks.AWS.IAM.SetupRole do
   use Mix.Task
   alias Mix.Tasks.AWS.Helpers
 
-  @impl Mix.Task
-  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
-  def run(argv) do
-    Mix.Task.run("app.start")
+  # @requirements declares the Mix tasks that must run before this task.
+  #
+  # When this task is invoked, Mix runs each requirement once with Mix.Task.run/2
+  # before calling this task's run/1 function.
+  #
+  # This makes task dependencies explicit in the task definition instead of
+  # requiring run/1 to start dependencies manually or requiring callers to compose
+  # tasks themselves.
+  @requirements ["app.start"]
 
+  @impl Mix.Task
+  def run(argv) do
     {parsed, _args, _} =
       Helpers.parse_opts(argv,
         name: :string,

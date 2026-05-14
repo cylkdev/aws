@@ -62,8 +62,9 @@ defmodule AWS.Logs do
       end
   """
 
-  alias AWS.{Client, Config, Error, Serializer}
+  alias AWS.{Client, Config}
   alias AWS.Logs.Operation
+  alias ExUtils.Serializer
 
   @service "logs"
   @content_type "application/x-amz-json-1.1"
@@ -98,7 +99,9 @@ defmodule AWS.Logs do
       |> maybe_put("tags", opts[:tags])
 
     perform("CreateLogGroup", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -116,7 +119,9 @@ defmodule AWS.Logs do
 
   defp do_delete_log_group(name, opts) do
     perform("DeleteLogGroup", %{"logGroupName" => name}, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -146,7 +151,9 @@ defmodule AWS.Logs do
       |> maybe_put("nextToken", opts[:next_token])
 
     perform("DescribeLogGroups", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -166,7 +173,9 @@ defmodule AWS.Logs do
     data = %{"logGroupName" => name, "retentionInDays" => days}
 
     perform("PutRetentionPolicy", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -184,7 +193,9 @@ defmodule AWS.Logs do
 
   defp do_delete_retention_policy(name, opts) do
     perform("DeleteRetentionPolicy", %{"logGroupName" => name}, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   # Log Streams
@@ -206,7 +217,9 @@ defmodule AWS.Logs do
     data = %{"logGroupName" => group, "logStreamName" => stream}
 
     perform("CreateLogStream", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -226,7 +239,9 @@ defmodule AWS.Logs do
     data = %{"logGroupName" => group, "logStreamName" => stream}
 
     perform("DeleteLogStream", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -260,7 +275,9 @@ defmodule AWS.Logs do
       |> maybe_put("nextToken", opts[:next_token])
 
     perform("DescribeLogStreams", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   # Log Events
@@ -298,7 +315,9 @@ defmodule AWS.Logs do
     }
 
     perform("PutLogEvents", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -331,7 +350,9 @@ defmodule AWS.Logs do
       |> maybe_put("nextToken", opts[:next_token])
 
     perform("GetLogEvents", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -366,7 +387,9 @@ defmodule AWS.Logs do
       |> maybe_put("nextToken", opts[:next_token])
 
     perform("FilterLogEvents", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   # Insights Queries
@@ -408,7 +431,9 @@ defmodule AWS.Logs do
     data = maybe_put(base, "limit", opts[:limit])
 
     perform("StartQuery", data, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -426,7 +451,9 @@ defmodule AWS.Logs do
 
   defp do_get_query_results(query_id, opts) do
     perform("GetQueryResults", %{"queryId" => query_id}, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -444,7 +471,9 @@ defmodule AWS.Logs do
 
   defp do_stop_query(query_id, opts) do
     perform("StopQuery", %{"queryId" => query_id}, opts)
-    |> deserialize_response(opts, fn body -> Serializer.deserialize(body) end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   # ---------------------------------------------------------------------------
@@ -509,6 +538,16 @@ defmodule AWS.Logs do
     _ -> binary
   end
 
+  # AWS owns the response-body namespace and adds new fields over time.
+  # `Serializer.deserialize/2`'s default is `to_existing_atom: true, strict: true`,
+  # which crashes on any field whose snake-cased atom hasn't been referenced
+  # elsewhere in the project. Bodies must round-trip without crashing, so
+  # atom-safety is relaxed here by default. Callers can still override any of
+  # these options by passing their own `opts` -- caller-supplied keys win the merge.
+  @deserialize_defaults [to_existing_atom: false, strict: false]
+
+  defp deserialize_opts(opts), do: Keyword.merge(@deserialize_defaults, opts)
+
   defp deserialize_response({:ok, response}, _opts, func) do
     case func.(response) do
       {:error, _} = error -> error
@@ -517,19 +556,19 @@ defmodule AWS.Logs do
     end
   end
 
-  defp deserialize_response({:error, {:http_error, status_code, response}}, opts, _func)
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
        when status_code in 400..499 do
-    {:error, Error.not_found("resource not found.", %{response: response}, opts)}
+    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
   end
 
-  defp deserialize_response({:error, {:http_error, status_code, response}}, opts, _func)
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
        when status_code >= 500 do
     {:error,
-     Error.service_unavailable("service temporarily unavailable", %{response: response}, opts)}
+     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
   end
 
-  defp deserialize_response({:error, reason}, opts, _func) do
-    {:error, Error.internal_server_error("internal server error", %{reason: reason}, opts)}
+  defp deserialize_response({:error, reason}, _opts, _func) do
+    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 
   defp maybe_put(map, _key, nil), do: map
@@ -554,10 +593,10 @@ defmodule AWS.Logs do
   defp inline_sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
     cfg = Config.sandbox()
-    sandbox_enabled = sandbox_opts[:enabled] || cfg[:enabled]
-    sandbox_mode = sandbox_opts[:mode] || cfg[:mode]
+    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
+    mode = Keyword.get(sandbox_opts, :mode, cfg[:mode])
 
-    sandbox_enabled and sandbox_mode === :inline and not sandbox_disabled?()
+    enabled and mode === :inline and not sandbox_disabled?()
   end
 
   if Code.ensure_loaded?(SandboxRegistry) do
