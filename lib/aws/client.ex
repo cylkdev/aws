@@ -4,7 +4,7 @@ defmodule AWS.Client do
   `*.Operation` struct.
 
   Owns the parts that are identical across EventBridge, Logs,
-  Organizations, Identity Center, IAM, S3, and STS:
+  Organizations, Identity Center, IAM, STS, and S3:
 
     * SigV4 signing via `AWS.Signer.sign/5`,
     * HTTP dispatch via `AWS.HTTP` (buffered, stream-upload, or
@@ -56,8 +56,7 @@ defmodule AWS.Client do
   practice one of the per-service Operation structs
   (`AWS.EventBridge.Operation`, `AWS.Logs.Operation`,
   `AWS.Organizations.Operation`, `AWS.IdentityCenter.Operation`,
-  `AWS.IAM.Operation`, `AWS.S3.Operation`,
-  `AWS.Credentials.STS.Operation`).
+  `AWS.IAM.Operation`, `AWS.STS.Operation`, `AWS.S3.Operation`).
 
   ## Required struct fields
 

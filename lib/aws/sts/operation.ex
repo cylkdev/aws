@@ -1,13 +1,15 @@
-defmodule AWS.Credentials.STS.Operation do
+defmodule AWS.STS.Operation do
   @moduledoc """
-  Pure-data request descriptor for an STS Query protocol call
-  (`AssumeRole` and friends) issued during credential resolution.
+  Pure-data request descriptor for an AWS STS Query protocol call.
 
-  Built by `AWS.Credentials.Providers.AssumeRole` and handed to
-  `AWS.Client.execute/1`. Because the operation runs during credential
-  resolution, the caller must populate the struct with pre-resolved
-  source credentials. `AWS.Client.execute/1` signs and dispatches the
-  struct as-is, so there is no risk of a resolver loop.
+  Built by `AWS.STS` and handed to `AWS.Client.execute/1`. The body is a
+  form-urlencoded binary with `Action` and `Version` already merged in;
+  the response is raw XML that `AWS.STS` parses with `SweetXml`.
+
+  STS exposes regional endpoints at `sts.{region}.amazonaws.com` and the
+  legacy global endpoint `sts.amazonaws.com`. The facade defaults to the
+  regional form, signed under the configured region (default
+  `us-east-1`).
   """
 
   @enforce_keys [

@@ -14,18 +14,18 @@ mix docs             # generate documentation
 
 ## Architecture
 
-This library wraps AWS services (S3, EventBridge, CloudWatch Logs, IAM, IAM Identity Center, Organizations) with consistent error handling, response deserialization, and sandbox support for testing.
+This library wraps AWS services (S3, EventBridge, CloudWatch Logs, IAM, STS, IAM Identity Center, Organizations) with consistent error handling, response deserialization, and sandbox support for testing.
 
 ### Service modules
 
-Each service (`AWS.S3`, `AWS.EventBridge`, `AWS.Logs`, `AWS.IAM`, `AWS.IdentityCenter`, `AWS.Organizations`) follows the same structure:
+Each service (`AWS.S3`, `AWS.EventBridge`, `AWS.Logs`, `AWS.IAM`, `AWS.STS`, `AWS.IdentityCenter`, `AWS.Organizations`) follows the same structure:
 
 - Public functions check `sandbox?/1` first; if true, delegate to the `Sandbox` module
 - Otherwise call `do_*` private functions that dispatch through the service's `Client` module, then pipe through `deserialize_response/3`
 - Every service's `Client` module is a thin wrapper over `AWS.Client`, the shared dispatcher that owns SigV4 signing, HTTP dispatch (`AWS.HTTP`), credential/endpoint/sandbox resolution, and status-code branching. Per-service clients contribute only the protocol-specific pieces: body encoding (JSON / form-urlencoded / passthrough), request headers (X-Amz-Target for JSON 1.1; Action+Version for Query; per-operation for REST/XML), and URL composition (only S3 needs custom addressing). There is no ExAws integration.
 - Wire protocols per service (these are AWS's protocols, not this library's choice — see each module's `@moduledoc` for the authoritative botocore model reference):
   - JSON 1.1: `AWS.EventBridge`, `AWS.Logs`, `AWS.IdentityCenter` (both `sso-admin` and `identitystore`), `AWS.Organizations`
-  - Query (form-urlencoded request / XML response): `AWS.IAM`, and the internal STS AssumeRole provider at `AWS.Credentials.Providers.AssumeRole`
+  - Query (form-urlencoded request / XML response): `AWS.IAM`, `AWS.STS` (the internal `AWS.Credentials.Providers.AssumeRole` provider routes its `AssumeRole` call through `AWS.STS.assume_role/4` with pre-resolved source credentials)
   - REST/XML: `AWS.S3` (virtual-hosted addressing, per-operation response shapes, query-string presigning, streaming bodies)
   - XPath extraction for XML services happens in the service module via `SweetXml`. AWS exposes no JSON alternative for S3, IAM, or STS, so the XML handling is required.
 - `AWS.IdentityCenter` covers two sub-services (`sso-admin` and `identitystore`) through one client. `AWS.Organizations` and `AWS.IAM` are global services pinned to `us-east-1` for SigV4 signing.
