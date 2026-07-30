@@ -135,6 +135,43 @@ if Code.ensure_loaded?(SandboxRegistry) do
     end
 
     # ---------------------------------------------------------------------------
+    # Response retrieval — Images and snapshots
+    # ---------------------------------------------------------------------------
+
+    def describe_images_response(opts) do
+      doc_examples = ["fn -> ...", "fn (opts) -> ..."]
+      func = find!(:describe_images, "*", doc_examples)
+
+      case :erlang.fun_info(func)[:arity] do
+        0 -> func.()
+        1 -> func.(opts)
+        _ -> raise_unsupported_arity(func, doc_examples)
+      end
+    end
+
+    def deregister_image_response(image_id, opts) do
+      doc_examples = ["fn -> ...", "fn (opts) -> ..."]
+      func = find!(:deregister_image, image_id, doc_examples)
+
+      case :erlang.fun_info(func)[:arity] do
+        0 -> func.()
+        1 -> func.(opts)
+        _ -> raise_unsupported_arity(func, doc_examples)
+      end
+    end
+
+    def delete_snapshot_response(snapshot_id, opts) do
+      doc_examples = ["fn -> ...", "fn (opts) -> ..."]
+      func = find!(:delete_snapshot, snapshot_id, doc_examples)
+
+      case :erlang.fun_info(func)[:arity] do
+        0 -> func.()
+        1 -> func.(opts)
+        _ -> raise_unsupported_arity(func, doc_examples)
+      end
+    end
+
+    # ---------------------------------------------------------------------------
     # Response retrieval — Tags
     # ---------------------------------------------------------------------------
 
@@ -194,6 +231,13 @@ if Code.ensure_loaded?(SandboxRegistry) do
 
     def set_describe_instances_responses(funcs),
       do: set_responses(:describe_instances, Enum.map(funcs, &{"*", &1}))
+
+    def set_describe_images_responses(funcs),
+      do: set_responses(:describe_images, Enum.map(funcs, &{"*", &1}))
+
+    def set_deregister_image_responses(tuples), do: set_responses(:deregister_image, tuples)
+
+    def set_delete_snapshot_responses(tuples), do: set_responses(:delete_snapshot, tuples)
 
     def set_create_tags_responses(tuples), do: set_responses(:create_tags, tuples)
 

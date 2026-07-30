@@ -217,5 +217,234 @@ defmodule AWS.ElasticLoadBalancingV2Test do
                "Marker" => "tok"
              }
     end
+
+    test "flattens a weighted forward action into indexed member keys" do
+      assert ElasticLoadBalancingV2.flatten_query(%{
+               "RuleArn" => "arn:rule/1",
+               "Actions" => [
+                 %{
+                   "Type" => "forward",
+                   "ForwardConfig" => %{
+                     "TargetGroups" => [
+                       %{"TargetGroupArn" => "arn:tg/green", "Weight" => 100},
+                       %{"TargetGroupArn" => "arn:tg/blue", "Weight" => 0}
+                     ]
+                   }
+                 }
+               ]
+             }) === %{
+               "RuleArn" => "arn:rule/1",
+               "Actions.member.1.Type" => "forward",
+               "Actions.member.1.ForwardConfig.TargetGroups.member.1.TargetGroupArn" =>
+                 "arn:tg/green",
+               "Actions.member.1.ForwardConfig.TargetGroups.member.1.Weight" => "100",
+               "Actions.member.1.ForwardConfig.TargetGroups.member.2.TargetGroupArn" =>
+                 "arn:tg/blue",
+               "Actions.member.1.ForwardConfig.TargetGroups.member.2.Weight" => "0"
+             }
+    end
+  end
+
+  describe "describe_load_balancers/1" do
+    test "encodes Names and parses the load balancers", %{opts: opts} do
+      test_pid = self()
+
+      TestCowboyServer.set_handler(fn req ->
+        {:ok, body, req} = :cowboy_req.read_body(req)
+        send(test_pid, {:body, body})
+
+        reply_xml(req, 200, """
+        <DescribeLoadBalancersResponse>
+          <DescribeLoadBalancersResult><LoadBalancers><member>
+            <LoadBalancerArn>arn:lb/deployd-dev</LoadBalancerArn>
+            <LoadBalancerName>deployd-dev</LoadBalancerName>
+            <DNSName>deployd-dev-1.us-east-1.elb.amazonaws.com</DNSName>
+            <State><Code>active</Code></State>
+          </member></LoadBalancers></DescribeLoadBalancersResult>
+        </DescribeLoadBalancersResponse>
+        """)
+      end)
+
+      assert {:ok, %{load_balancers: [lb], next_token: nil}} =
+               ElasticLoadBalancingV2.describe_load_balancers(
+                 Keyword.put(opts, :names, ["deployd-dev"])
+               )
+
+      assert lb.load_balancer_arn === "arn:lb/deployd-dev"
+      assert lb.dns_name === "deployd-dev-1.us-east-1.elb.amazonaws.com"
+      assert lb.state === "active"
+
+      assert_receive {:body, body}
+      decoded = URI.decode_query(body)
+      assert decoded["Action"] === "DescribeLoadBalancers"
+      assert decoded["Names.member.1"] === "deployd-dev"
+    end
+  end
+
+  describe "describe_listeners/1" do
+    test "encodes the load balancer arn and parses ports as integers", %{opts: opts} do
+      test_pid = self()
+
+      TestCowboyServer.set_handler(fn req ->
+        {:ok, body, req} = :cowboy_req.read_body(req)
+        send(test_pid, {:body, body})
+
+        reply_xml(req, 200, """
+        <DescribeListenersResponse>
+          <DescribeListenersResult><Listeners>
+            <member><ListenerArn>arn:listener/80</ListenerArn><Port>80</Port><Protocol>HTTP</Protocol></member>
+            <member><ListenerArn>arn:listener/443</ListenerArn><Port>443</Port><Protocol>HTTPS</Protocol></member>
+          </Listeners></DescribeListenersResult>
+        </DescribeListenersResponse>
+        """)
+      end)
+
+      assert {:ok, %{listeners: listeners}} =
+               ElasticLoadBalancingV2.describe_listeners(
+                 Keyword.put(opts, :load_balancer_arn, "arn:lb/deployd-dev")
+               )
+
+      assert Enum.find(listeners, &(&1.port === 80)).listener_arn === "arn:listener/80"
+
+      assert_receive {:body, body}
+      decoded = URI.decode_query(body)
+      assert decoded["Action"] === "DescribeListeners"
+      assert decoded["LoadBalancerArn"] === "arn:lb/deployd-dev"
+    end
+
+    test "raises when neither selector is given", %{opts: opts} do
+      assert_raise ArgumentError, ~r/:load_balancer_arn/, fn ->
+        ElasticLoadBalancingV2.describe_listeners(opts)
+      end
+    end
+  end
+
+  describe "describe_rules/1" do
+    @rules_xml """
+    <DescribeRulesResponse>
+      <DescribeRulesResult><Rules><member>
+        <RuleArn>arn:rule/1</RuleArn>
+        <Priority>1</Priority>
+        <IsDefault>false</IsDefault>
+        <Conditions><member>
+          <Field>host-header</Field>
+          <Values><member>web.dev.deployd.internal</member></Values>
+          <HostHeaderConfig><Values><member>web.dev.deployd.internal</member></Values></HostHeaderConfig>
+        </member></Conditions>
+        <Actions><member>
+          <Type>forward</Type>
+          <ForwardConfig><TargetGroups>
+            <member><TargetGroupArn>arn:tg/deployd-web-dev-green</TargetGroupArn><Weight>100</Weight></member>
+            <member><TargetGroupArn>arn:tg/deployd-web-dev-blue</TargetGroupArn><Weight>0</Weight></member>
+          </TargetGroups></ForwardConfig>
+        </member></Actions>
+      </member></Rules></DescribeRulesResult>
+    </DescribeRulesResponse>
+    """
+
+    test "preserves host-header conditions and weighted target groups", %{opts: opts} do
+      test_pid = self()
+
+      TestCowboyServer.set_handler(fn req ->
+        {:ok, body, req} = :cowboy_req.read_body(req)
+        send(test_pid, {:body, body})
+        reply_xml(req, 200, @rules_xml)
+      end)
+
+      assert {:ok, %{rules: [rule], next_token: nil}} =
+               ElasticLoadBalancingV2.describe_rules(
+                 Keyword.put(opts, :listener_arn, "arn:listener/80")
+               )
+
+      assert rule.rule_arn === "arn:rule/1"
+      assert rule.is_default === false
+      assert [%{host_header_values: ["web.dev.deployd.internal"]}] = rule.conditions
+
+      # The weights are what a blue/green deploy reads to learn which
+      # color is currently live.
+      assert [%{type: "forward", target_groups: target_groups}] = rule.actions
+
+      assert Enum.max_by(target_groups, & &1.weight).target_group_arn ===
+               "arn:tg/deployd-web-dev-green"
+
+      assert_receive {:body, body}
+      decoded = URI.decode_query(body)
+      assert decoded["Action"] === "DescribeRules"
+      assert decoded["ListenerArn"] === "arn:listener/80"
+    end
+
+    test "raises when neither selector is given", %{opts: opts} do
+      assert_raise ArgumentError, ~r/:listener_arn/, fn ->
+        ElasticLoadBalancingV2.describe_rules(opts)
+      end
+    end
+  end
+
+  describe "modify_rule/1" do
+    test "encodes the nested weighted action and parses the returned rule", %{opts: opts} do
+      test_pid = self()
+
+      TestCowboyServer.set_handler(fn req ->
+        {:ok, body, req} = :cowboy_req.read_body(req)
+        send(test_pid, {:body, body})
+
+        reply_xml(req, 200, """
+        <ModifyRuleResponse>
+          <ModifyRuleResult><Rules><member>
+            <RuleArn>arn:rule/1</RuleArn><Priority>1</Priority><IsDefault>false</IsDefault>
+            <Actions><member>
+              <Type>forward</Type>
+              <ForwardConfig><TargetGroups>
+                <member><TargetGroupArn>arn:tg/green</TargetGroupArn><Weight>100</Weight></member>
+              </TargetGroups></ForwardConfig>
+            </member></Actions>
+          </member></Rules></ModifyRuleResult>
+        </ModifyRuleResponse>
+        """)
+      end)
+
+      assert {:ok, %{rules: [rule]}} =
+               ElasticLoadBalancingV2.modify_rule(
+                 opts ++
+                   [
+                     rule_arn: "arn:rule/1",
+                     actions: [
+                       %{
+                         "Type" => "forward",
+                         "ForwardConfig" => %{
+                           "TargetGroups" => [
+                             %{"TargetGroupArn" => "arn:tg/green", "Weight" => 100},
+                             %{"TargetGroupArn" => "arn:tg/blue", "Weight" => 0}
+                           ]
+                         }
+                       }
+                     ]
+                   ]
+               )
+
+      assert rule.rule_arn === "arn:rule/1"
+
+      assert_receive {:body, body}
+      decoded = URI.decode_query(body)
+      assert decoded["Action"] === "ModifyRule"
+      assert decoded["RuleArn"] === "arn:rule/1"
+      assert decoded["Actions.member.1.Type"] === "forward"
+
+      assert decoded["Actions.member.1.ForwardConfig.TargetGroups.member.1.TargetGroupArn"] ===
+               "arn:tg/green"
+
+      assert decoded["Actions.member.1.ForwardConfig.TargetGroups.member.1.Weight"] === "100"
+
+      assert decoded["Actions.member.1.ForwardConfig.TargetGroups.member.2.TargetGroupArn"] ===
+               "arn:tg/blue"
+
+      assert decoded["Actions.member.1.ForwardConfig.TargetGroups.member.2.Weight"] === "0"
+    end
+
+    test "raises when :rule_arn is missing", %{opts: opts} do
+      assert_raise ArgumentError, ~r/:rule_arn/, fn ->
+        ElasticLoadBalancingV2.modify_rule(opts)
+      end
+    end
   end
 end

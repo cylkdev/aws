@@ -141,6 +141,59 @@ defmodule AWS.EC2.SandboxTest do
     end
   end
 
+  # Images and snapshots
+
+  describe "describe_images/1" do
+    test "returns mocked success" do
+      Sandbox.set_describe_images_responses([
+        fn ->
+          {:ok,
+           %{
+             images: [
+               %{
+                 image_id: "ami-111",
+                 tags: [%{key: "ReleaseApp", value: "web"}],
+                 block_device_mappings: [%{device_name: "/dev/xvda", snapshot_id: "snap-aaa"}]
+               }
+             ]
+           }}
+        end
+      ])
+
+      assert {:ok, %{images: [%{image_id: "ami-111"}]}} =
+               EC2.describe_images(Keyword.put(@sandbox_opts, :owners, ["self"]))
+    end
+
+    test "1-arity function receives the call opts" do
+      Sandbox.set_describe_images_responses([
+        fn opts -> {:ok, %{images: opts[:owners]}} end
+      ])
+
+      assert {:ok, %{images: ["self"]}} =
+               EC2.describe_images(Keyword.put(@sandbox_opts, :owners, ["self"]))
+    end
+  end
+
+  describe "deregister_image/2" do
+    test "returns mocked success keyed by image id" do
+      Sandbox.set_deregister_image_responses([
+        {"ami-111", fn -> {:ok, %{}} end}
+      ])
+
+      assert {:ok, %{}} = EC2.deregister_image("ami-111", @sandbox_opts)
+    end
+  end
+
+  describe "delete_snapshot/2" do
+    test "returns mocked success keyed by snapshot id" do
+      Sandbox.set_delete_snapshot_responses([
+        {"snap-aaa", fn -> {:ok, %{}} end}
+      ])
+
+      assert {:ok, %{}} = EC2.delete_snapshot("snap-aaa", @sandbox_opts)
+    end
+  end
+
   # Regex matching
 
   describe "regex matching" do

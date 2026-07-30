@@ -25,7 +25,7 @@ Each service (`AWS.S3`, `AWS.EventBridge`, `AWS.Logs`, `AWS.IAM`, `AWS.STS`, `AW
 - Every service's `Client` module is a thin wrapper over `AWS.Client`, the shared dispatcher that owns SigV4 signing, HTTP dispatch (`AWS.HTTP`), credential/endpoint/sandbox resolution, and status-code branching. Per-service clients contribute only the protocol-specific pieces: body encoding (JSON / form-urlencoded / passthrough), request headers (X-Amz-Target for JSON 1.1; Action+Version for Query; per-operation for REST/XML), and URL composition (only S3 needs custom addressing). There is no ExAws integration.
 - Wire protocols per service (these are AWS's protocols, not this library's choice — see each module's `@moduledoc` for the authoritative botocore model reference):
   - JSON 1.1: `AWS.EventBridge`, `AWS.Logs`, `AWS.IdentityCenter` (both `sso-admin` and `identitystore`), `AWS.Organizations`
-  - Query (form-urlencoded request / XML response): `AWS.IAM`, `AWS.STS` (the internal `AWS.Credentials.Providers.AssumeRole` provider routes its `AssumeRole` call through `AWS.STS.assume_role/4` with pre-resolved source credentials)
+  - Query (form-urlencoded request / XML response): `AWS.IAM`, `AWS.STS` (the internal `AWS.Credentials.Providers.AssumeRole` provider routes its `AssumeRole` call through `AWS.STS.assume_role/4` with pre-resolved source credentials), `AWS.EC2`, `AWS.AutoScaling`, `AWS.ElasticLoadBalancingV2`. Note `AWS.EC2` builds params with `put_member_list/3` + `put_filters/2` and parses inline, while `AWS.AutoScaling` and `AWS.ElasticLoadBalancingV2` share a recursive `flatten_query/1` and extracted `parse_*/1` functions — match the conventions of the module you are editing.
   - REST/XML: `AWS.S3` (virtual-hosted addressing, per-operation response shapes, query-string presigning, streaming bodies)
   - XPath extraction for XML services happens in the service module via `SweetXml`. AWS exposes no JSON alternative for S3, IAM, or STS, so the XML handling is required.
 - `AWS.IdentityCenter` covers two sub-services (`sso-admin` and `identitystore`) through one client. `AWS.Organizations` and `AWS.IAM` are global services pinned to `us-east-1` for SigV4 signing.
@@ -49,7 +49,9 @@ Response deserialization is delegated to `ExUtils.Serializer.deserialize/1` (fro
 
 ### Configuration
 
-`AWS.Config` reads from the application environment (`:aws`). Key config keys: `:region`, `:access_key_id`, `:secret_access_key`, `:sandbox` (a keyword list with `:enabled`).
+`AWS.Config` resolves each key from per-call opts, then the application environment (`:aws`), then a built-in source chain. Key config keys: `:region`, `:access_key_id`, `:secret_access_key`, `:sandbox` (a keyword list with `:enabled`).
+
+Passing `profile: "name"` in per-call opts resolves every credential key and the region from that named shared-config profile, skipping the built-in chains entirely — so nothing is read from the system or application environment. Precedence is **explicit key opt > `:profile` > app env > built-in defaults**.
 
 ### S3 specifics
 

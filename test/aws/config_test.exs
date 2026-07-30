@@ -221,6 +221,81 @@ defmodule AWS.ConfigTest do
     end
   end
 
+  describe "per-call :profile" do
+    test "resolves every key from the named profile" do
+      seed_cache({:awscli, "cylk-admin"}, %{
+        access_key_id: "AKIA_PROFILE",
+        secret_access_key: "PROFILE_SECRET",
+        security_token: "PROFILE_TOKEN",
+        region: "eu-west-2"
+      })
+
+      resolved = Config.new(profile: "cylk-admin")
+
+      assert resolved[:access_key_id] === "AKIA_PROFILE"
+      assert resolved[:secret_access_key] === "PROFILE_SECRET"
+      assert resolved[:security_token] === "PROFILE_TOKEN"
+      assert resolved[:region] === "eu-west-2"
+    end
+
+    test "ignores the system environment entirely" do
+      seed_cache({:awscli, "cylk-admin"}, %{
+        access_key_id: "AKIA_PROFILE",
+        secret_access_key: "PROFILE_SECRET",
+        region: "eu-west-2"
+      })
+
+      # The built-in chains consult all of these; naming a profile must
+      # skip those chains rather than merge with them.
+      System.put_env("AWS_PROFILE", "some-other-profile")
+      System.put_env("AWS_ACCESS_KEY_ID", "AKIA_FROM_ENV")
+      System.put_env("AWS_REGION", "ap-south-1")
+
+      resolved = Config.new(profile: "cylk-admin")
+
+      assert resolved[:access_key_id] === "AKIA_PROFILE"
+      assert resolved[:region] === "eu-west-2"
+    end
+
+    test "ignores the application environment" do
+      seed_cache({:awscli, "cylk-admin"}, %{
+        access_key_id: "AKIA_PROFILE",
+        secret_access_key: "PROFILE_SECRET"
+      })
+
+      Application.put_env(:aws, :access_key_id, "AKIA_FROM_APP_ENV")
+
+      assert Config.access_key_id(profile: "cylk-admin") === "AKIA_PROFILE"
+    end
+
+    test "an explicit key still wins over the profile" do
+      seed_cache({:awscli, "cylk-admin"}, %{
+        access_key_id: "AKIA_PROFILE",
+        secret_access_key: "PROFILE_SECRET"
+      })
+
+      resolved = Config.new(profile: "cylk-admin", access_key_id: "AKIA_EXPLICIT")
+
+      assert resolved[:access_key_id] === "AKIA_EXPLICIT"
+      assert resolved[:secret_access_key] === "PROFILE_SECRET"
+    end
+
+    test "a blank or nil profile falls back to the normal chain" do
+      Application.put_env(:aws, :access_key_id, "AKIA_FROM_APP_ENV")
+
+      assert Config.access_key_id(profile: "") === "AKIA_FROM_APP_ENV"
+      assert Config.access_key_id(profile: nil) === "AKIA_FROM_APP_ENV"
+    end
+  end
+
+  describe "{:awscli, profile} two-tuple source" do
+    test "resolves with the default ttl" do
+      seed_cache({:awscli, "cylk-admin"}, %{access_key_id: "AKIA_TWO_TUPLE"})
+
+      assert Config.access_key_id(access_key_id: {:awscli, "cylk-admin"}) === "AKIA_TWO_TUPLE"
+    end
+  end
+
   describe "region/1" do
     test "uses the env chain when no opts are supplied" do
       System.put_env("AWS_REGION", "sa-east-1")

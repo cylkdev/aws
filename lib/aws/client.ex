@@ -173,7 +173,7 @@ defmodule AWS.Client do
   # hint: ...}}` whenever the user has a profile configured but no
   # provider could resolve it.
   defp missing_credentials_error(opts) do
-    profile_name = Profile.default()
+    profile_name = opts[:profile] || Profile.default()
 
     case Profile.load(profile_name, opts) do
       nil ->

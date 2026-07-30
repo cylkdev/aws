@@ -28,6 +28,30 @@ if Code.ensure_loaded?(SandboxRegistry) do
       apply_func(func, [opts], doc_examples)
     end
 
+    def describe_load_balancers_response(opts) do
+      doc_examples = ["fn -> ... end", "fn opts -> ... end"]
+      func = find!(:describe_load_balancers, "*", doc_examples)
+      apply_func(func, [opts], doc_examples)
+    end
+
+    def describe_listeners_response(opts) do
+      doc_examples = ["fn -> ... end", "fn opts -> ... end"]
+      func = find!(:describe_listeners, "*", doc_examples)
+      apply_func(func, [opts], doc_examples)
+    end
+
+    def describe_rules_response(opts) do
+      doc_examples = ["fn -> ... end", "fn opts -> ... end"]
+      func = find!(:describe_rules, "*", doc_examples)
+      apply_func(func, [opts], doc_examples)
+    end
+
+    def modify_rule_response(opts) do
+      doc_examples = ["fn -> ... end", "fn opts -> ... end"]
+      func = find!(:modify_rule, "*", doc_examples)
+      apply_func(func, [opts], doc_examples)
+    end
+
     # ---------------------------------------------------------------------------
     # Response registration
     # ---------------------------------------------------------------------------
@@ -37,6 +61,18 @@ if Code.ensure_loaded?(SandboxRegistry) do
 
     def set_describe_target_health_responses(tuples_or_funcs),
       do: set_responses(:describe_target_health, normalize_no_key(tuples_or_funcs))
+
+    def set_describe_load_balancers_responses(tuples_or_funcs),
+      do: set_responses(:describe_load_balancers, normalize_no_key(tuples_or_funcs))
+
+    def set_describe_listeners_responses(tuples_or_funcs),
+      do: set_responses(:describe_listeners, normalize_no_key(tuples_or_funcs))
+
+    def set_describe_rules_responses(tuples_or_funcs),
+      do: set_responses(:describe_rules, normalize_no_key(tuples_or_funcs))
+
+    def set_modify_rule_responses(tuples_or_funcs),
+      do: set_responses(:modify_rule, normalize_no_key(tuples_or_funcs))
 
     # ---------------------------------------------------------------------------
     # Sandbox control

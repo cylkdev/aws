@@ -12,8 +12,11 @@ defmodule AWS.EC2 do
   with SigV4 signing under the same region.
 
   The scope of this module is deliberately narrow: security groups,
-  VPC/subnet discovery, and tagging — the operations needed by the
-  callers of this library. Each public function mirrors the wrapper
+  VPC/subnet discovery, instance and tag lookup, and AMI/snapshot
+  lifecycle — the operations needed by the callers of this library.
+  Instances are described but never launched or terminated here; the
+  image operations exist to retire AMIs a build pipeline has
+  superseded. Each public function mirrors the wrapper
   pattern used throughout `AWS.*` (inline sandbox branch + `do_*`
   helper + typed response map).
 
@@ -380,6 +383,134 @@ defmodule AWS.EC2 do
   end
 
   # ---------------------------------------------------------------------------
+  # Images and snapshots
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Describes AMIs.
+
+  Returns `%{images: [...]}`. Each image includes its `:tags` and
+  `:block_device_mappings`; a mapping's `:snapshot_id` is `nil` for
+  instance-store devices that have no backing EBS snapshot.
+
+  ## Options
+
+    * `:owners` - List of owner IDs or aliases (e.g. `["self"]`),
+      encoded as `Owner.N`.
+    * `:image_ids` - List of AMI IDs, encoded as `ImageId.N`.
+    * `:filters` - List of `%{name:, values:}` filters. Filters with no
+      values are dropped, because AWS rejects a filter name that carries
+      no values.
+
+      AWS.EC2.describe_images(
+        owners: ["self"],
+        filters: [%{name: "tag:ReleaseGroup", values: ["deployd"]}]
+      )
+  """
+  @spec describe_images(opts :: keyword()) ::
+          {:ok, %{images: list(map())}} | {:error, term()}
+  def describe_images(opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_describe_images_response(opts)
+    else
+      do_describe_images(opts)
+    end
+  end
+
+  defp do_describe_images(opts) do
+    params =
+      %{}
+      |> put_member_list("Owner", opts[:owners] || [])
+      |> put_member_list("ImageId", opts[:image_ids] || [])
+      |> put_filters(reject_valueless_filters(opts[:filters] || []))
+
+    "DescribeImages"
+    |> perform(params, opts)
+    |> deserialize_response(opts, fn body ->
+      images =
+        xpath(body, ~x"//imagesSet/item"l,
+          image_id: ~x"./imageId/text()"s,
+          name: ~x"./name/text()"s,
+          state: ~x"./imageState/text()"s,
+          owner_id: ~x"./imageOwnerId/text()"s,
+          creation_date: ~x"./creationDate/text()"s,
+          tags: [
+            ~x"./tagSet/item"l,
+            key: ~x"./key/text()"s,
+            value: ~x"./value/text()"s
+          ],
+          block_device_mappings: [
+            ~x"./blockDeviceMapping/item"l,
+            device_name: ~x"./deviceName/text()"s,
+            snapshot_id: ~x"./ebs/snapshotId/text()"s
+          ]
+        )
+
+      {:ok, %{images: Enum.map(images, &coerce_image/1)}}
+    end)
+  end
+
+  # Instance-store devices carry no <ebs> child, so SweetXml yields ""
+  # where there is no snapshot to delete.
+  defp coerce_image(image) do
+    Map.update!(image, :block_device_mappings, fn mappings ->
+      Enum.map(mappings, fn mapping ->
+        Map.update!(mapping, :snapshot_id, fn
+          "" -> nil
+          id -> id
+        end)
+      end)
+    end)
+  end
+
+  defp reject_valueless_filters(filters) do
+    Enum.reject(filters, fn filter ->
+      (filter[:values] || filter["Values"] || []) === []
+    end)
+  end
+
+  @doc """
+  Deregisters an AMI.
+
+  The backing snapshots are not deleted; delete them separately with
+  `delete_snapshot/2`.
+  """
+  @spec deregister_image(image_id :: String.t(), opts :: keyword()) ::
+          {:ok, %{}} | {:error, term()}
+  def deregister_image(image_id, opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_deregister_image_response(image_id, opts)
+    else
+      do_deregister_image(image_id, opts)
+    end
+  end
+
+  defp do_deregister_image(image_id, opts) do
+    "DeregisterImage"
+    |> perform(%{"ImageId" => image_id}, opts)
+    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+  end
+
+  @doc """
+  Deletes an EBS snapshot.
+  """
+  @spec delete_snapshot(snapshot_id :: String.t(), opts :: keyword()) ::
+          {:ok, %{}} | {:error, term()}
+  def delete_snapshot(snapshot_id, opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_delete_snapshot_response(snapshot_id, opts)
+    else
+      do_delete_snapshot(snapshot_id, opts)
+    end
+  end
+
+  defp do_delete_snapshot(snapshot_id, opts) do
+    "DeleteSnapshot"
+    |> perform(%{"SnapshotId" => snapshot_id}, opts)
+    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+  end
+
+  # ---------------------------------------------------------------------------
   # Tags
   # ---------------------------------------------------------------------------
 
@@ -526,6 +657,21 @@ defmodule AWS.EC2 do
     defdelegate sandbox_describe_instances_response(opts),
       to: AWS.EC2.Sandbox,
       as: :describe_instances_response
+
+    @doc false
+    defdelegate sandbox_describe_images_response(opts),
+      to: AWS.EC2.Sandbox,
+      as: :describe_images_response
+
+    @doc false
+    defdelegate sandbox_deregister_image_response(image_id, opts),
+      to: AWS.EC2.Sandbox,
+      as: :deregister_image_response
+
+    @doc false
+    defdelegate sandbox_delete_snapshot_response(snapshot_id, opts),
+      to: AWS.EC2.Sandbox,
+      as: :delete_snapshot_response
   else
     defp sandbox_disabled?, do: true
 
@@ -550,6 +696,9 @@ defmodule AWS.EC2 do
     defp sandbox_create_tags_response(_, _), do: raise("sandbox not available")
     defp sandbox_describe_tags_response(_), do: raise("sandbox not available")
     defp sandbox_describe_instances_response(_), do: raise("sandbox not available")
+    defp sandbox_describe_images_response(_), do: raise("sandbox not available")
+    defp sandbox_deregister_image_response(_, _), do: raise("sandbox not available")
+    defp sandbox_delete_snapshot_response(_, _), do: raise("sandbox not available")
   end
 
   # ---------------------------------------------------------------------------
@@ -610,6 +759,17 @@ defmodule AWS.EC2 do
       {:error, _} = err -> err
       result -> {:ok, result}
     end
+  end
+
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
+       when status_code in 400..499 do
+    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
+  end
+
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
+       when status_code >= 500 do
+    {:error,
+     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
   end
 
   defp deserialize_response({:error, reason}, _opts, _func) do

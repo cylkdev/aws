@@ -16,13 +16,33 @@ defmodule AWS.Config do
     | `{:system, "ENV_VAR"}`                      | `System.get_env("ENV_VAR")` (trimmed; empty treated as nil)   |
     | `:instance_role`                            | `key` field of EC2 IMDSv2 creds map                           |
     | `:ecs_task_role`                            | `key` field of ECS container creds map                        |
+    | `{:awscli, profile}`                        | same, with the default 30s TTL                                |
     | `{:awscli, profile, ttl_seconds}`           | `key` field of shared-profile creds map                       |
     | `{:awscli, {:system, "ENV_VAR"}, ttl_seconds}` | profile name read from env, then dispatched as `{:awscli, profile, ttl}` |
 
   ## Precedence
 
-  **Per-call opts > app env > built-in defaults.** A caller passing
-  `access_key_id: "X"` ignores any app-env `:access_key_id` chain.
+  **Per-call opts > `:profile` > app env > built-in defaults.** A caller
+  passing `access_key_id: "X"` ignores any app-env `:access_key_id`
+  chain.
+
+  ## Naming a profile per call
+
+  Passing `:profile` resolves every credential key and the region from
+  that named shared-config profile:
+
+      AWS.EC2.describe_instances(profile: "cylk-admin", region: "us-east-1")
+
+  This reads only `~/.aws/*` — the built-in chains, which would otherwise
+  consult `AWS_PROFILE` and `AWS_ACCESS_KEY_ID`, are skipped entirely, so
+  neither the system nor the application environment can change which
+  credentials are used. SSO, `credential_process`, `assume_role`, and
+  static profiles all resolve through this path. `:profile_ttl_seconds`
+  overrides the 30-second credential cache lifetime.
+
+  An explicit key still wins over `:profile`, so
+  `access_key_id: "X", profile: "p"` takes the literal key and draws the
+  rest from the profile.
 
   ## Sandbox configuration
 
@@ -68,6 +88,8 @@ defmodule AWS.Config do
   ]
 
   @sandbox [enabled: false]
+
+  @default_profile_ttl_seconds 30
 
   @doc """
   Aggregates every per-key resolver into a single keyword list. Caller
@@ -136,7 +158,22 @@ defmodule AWS.Config do
   defp source(opts, key, default) do
     case Keyword.fetch(opts, key) do
       {:ok, value} -> value
-      :error -> Application.get_env(@app, key, default)
+      :error -> profile_source(opts, key, default)
+    end
+  end
+
+  # A caller-supplied `:profile` names the shared-config profile directly,
+  # so nothing is read from the system or application environment. The
+  # built-in chains are skipped entirely rather than merged, because their
+  # first entries would otherwise resolve a different profile from
+  # `AWS_PROFILE`.
+  defp profile_source(opts, key, default) do
+    case Keyword.get(opts, :profile) do
+      profile when is_binary(profile) and profile !== "" ->
+        {:awscli, profile, Keyword.get(opts, :profile_ttl_seconds, @default_profile_ttl_seconds)}
+
+      _no_profile ->
+        Application.get_env(@app, key, default)
     end
   end
 
@@ -157,6 +194,10 @@ defmodule AWS.Config do
       nil -> nil
       profile -> resolve({:awscli, profile, ttl_seconds}, key, opts)
     end
+  end
+
+  defp resolve({:awscli, profile}, key, opts) do
+    resolve({:awscli, profile, @default_profile_ttl_seconds}, key, opts)
   end
 
   defp resolve({:awscli, profile, ttl_seconds}, key, opts) do
