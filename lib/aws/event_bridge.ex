@@ -59,15 +59,42 @@ defmodule AWS.EventBridge do
       end
   """
 
-  alias AWS.{Client, Config}
-  alias AWS.EventBridge.Operation
+  use AWS.Service,
+    sandbox: AWS.EventBridge.Sandbox,
+    operations: [
+      create_api_destination: 5,
+      create_connection: 4,
+      create_event_bus: 2,
+      delete_api_destination: 2,
+      delete_connection: 2,
+      delete_event_bus: 2,
+      delete_rule: 2,
+      describe_api_destination: 2,
+      describe_connection: 2,
+      describe_event_bus: 2,
+      describe_rule: 2,
+      disable_rule: 2,
+      enable_rule: 2,
+      list_api_destinations: 1,
+      list_connections: 1,
+      list_event_buses: 1,
+      list_rules: 1,
+      list_targets_by_rule: 2,
+      put_events: 2,
+      put_rule: 2,
+      put_targets: 3,
+      remove_targets: 3,
+      update_api_destination: 2,
+      update_connection: 2
+    ]
+
+  alias AWS.Client
+  alias AWS.Operation
   alias ExUtils.Serializer
 
   @service "events"
   @content_type "application/x-amz-json-1.1"
   @target_prefix "AWSEvents"
-
-  @override_keys [:headers, :body, :http, :url]
 
   # Rule management
 
@@ -82,7 +109,7 @@ defmodule AWS.EventBridge do
   """
   @spec put_rule(name :: String.t(), opts :: keyword()) ::
           {:ok, %{rule_arn: String.t()}} | {:error, term()}
-  def put_rule(name, opts \\ []) do
+  def put_rule(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_put_rule_response(name, opts)
     else
@@ -111,7 +138,7 @@ defmodule AWS.EventBridge do
   """
   @spec describe_rule(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def describe_rule(name, opts \\ []) do
+  def describe_rule(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_describe_rule_response(name, opts)
     else
@@ -160,7 +187,7 @@ defmodule AWS.EventBridge do
   """
   @spec delete_rule(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
-  def delete_rule(name, opts \\ []) do
+  def delete_rule(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_delete_rule_response(name, opts)
     else
@@ -193,7 +220,7 @@ defmodule AWS.EventBridge do
   """
   @spec put_targets(rule :: String.t(), targets :: list(map()), opts :: keyword()) ::
           {:ok, %{failed_entry_count: integer(), failed_entries: list()}} | {:error, term()}
-  def put_targets(rule, targets, opts \\ []) do
+  def put_targets(rule, [_ | _] = targets, opts \\ []) when is_binary(rule) do
     if sandbox?(opts) do
       sandbox_put_targets_response(rule, targets, opts)
     else
@@ -220,7 +247,7 @@ defmodule AWS.EventBridge do
   """
   @spec list_targets_by_rule(rule :: String.t(), opts :: keyword()) ::
           {:ok, %{targets: list(map()), next_token: String.t() | nil}} | {:error, term()}
-  def list_targets_by_rule(rule, opts \\ []) do
+  def list_targets_by_rule(rule, opts \\ []) when is_binary(rule) do
     if sandbox?(opts) do
       sandbox_list_targets_by_rule_response(rule, opts)
     else
@@ -246,7 +273,7 @@ defmodule AWS.EventBridge do
   """
   @spec remove_targets(rule :: String.t(), ids :: list(String.t()), opts :: keyword()) ::
           {:ok, %{failed_entry_count: integer(), failed_entries: list()}} | {:error, term()}
-  def remove_targets(rule, ids, opts \\ []) do
+  def remove_targets(rule, [_ | _] = ids, opts \\ []) when is_binary(rule) do
     if sandbox?(opts) do
       sandbox_remove_targets_response(rule, ids, opts)
     else
@@ -286,7 +313,8 @@ defmodule AWS.EventBridge do
           opts :: keyword()
         ) ::
           {:ok, map()} | {:error, term()}
-  def create_connection(name, authorization_type, auth_parameters, opts \\ []) do
+  def create_connection(name, authorization_type, auth_parameters, opts \\ [])
+      when is_binary(name) and is_binary(authorization_type) and is_map(auth_parameters) do
     if sandbox?(opts) do
       sandbox_create_connection_response(name, authorization_type, auth_parameters, opts)
     else
@@ -317,7 +345,7 @@ defmodule AWS.EventBridge do
   """
   @spec describe_connection(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def describe_connection(name, opts \\ []) do
+  def describe_connection(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_describe_connection_response(name, opts)
     else
@@ -343,7 +371,7 @@ defmodule AWS.EventBridge do
   """
   @spec update_connection(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def update_connection(name, opts \\ []) do
+  def update_connection(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_update_connection_response(name, opts)
     else
@@ -369,7 +397,7 @@ defmodule AWS.EventBridge do
   """
   @spec delete_connection(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def delete_connection(name, opts \\ []) do
+  def delete_connection(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_delete_connection_response(name, opts)
     else
@@ -432,7 +460,9 @@ defmodule AWS.EventBridge do
           opts :: keyword()
         ) ::
           {:ok, map()} | {:error, term()}
-  def create_api_destination(name, connection_arn, invocation_endpoint, http_method, opts \\ []) do
+  def create_api_destination(name, connection_arn, invocation_endpoint, http_method, opts \\ [])
+      when is_binary(name) and is_binary(connection_arn) and is_binary(invocation_endpoint) and
+             is_binary(http_method) do
     if sandbox?(opts) do
       sandbox_create_api_destination_response(
         name,
@@ -468,7 +498,7 @@ defmodule AWS.EventBridge do
   """
   @spec describe_api_destination(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def describe_api_destination(name, opts \\ []) do
+  def describe_api_destination(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_describe_api_destination_response(name, opts)
     else
@@ -496,7 +526,7 @@ defmodule AWS.EventBridge do
   """
   @spec update_api_destination(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def update_api_destination(name, opts \\ []) do
+  def update_api_destination(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_update_api_destination_response(name, opts)
     else
@@ -524,7 +554,7 @@ defmodule AWS.EventBridge do
   """
   @spec delete_api_destination(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
-  def delete_api_destination(name, opts \\ []) do
+  def delete_api_destination(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_delete_api_destination_response(name, opts)
     else
@@ -573,7 +603,7 @@ defmodule AWS.EventBridge do
   """
   @spec create_event_bus(name :: String.t(), opts :: keyword()) ::
           {:ok, %{event_bus_arn: String.t()}} | {:error, term()}
-  def create_event_bus(name, opts \\ []) do
+  def create_event_bus(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_create_event_bus_response(name, opts)
     else
@@ -595,7 +625,7 @@ defmodule AWS.EventBridge do
   """
   @spec describe_event_bus(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def describe_event_bus(name \\ "default", opts \\ []) do
+  def describe_event_bus(name \\ "default", opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_describe_event_bus_response(name, opts)
     else
@@ -615,7 +645,7 @@ defmodule AWS.EventBridge do
   """
   @spec delete_event_bus(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
-  def delete_event_bus(name, opts \\ []) do
+  def delete_event_bus(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_delete_event_bus_response(name, opts)
     else
@@ -669,7 +699,7 @@ defmodule AWS.EventBridge do
   """
   @spec put_events(entries :: list(map()), opts :: keyword()) ::
           {:ok, %{entries: list(map()), failed_entry_count: integer()}} | {:error, term()}
-  def put_events(entries, opts \\ []) do
+  def put_events([_ | _] = entries, opts \\ []) do
     if sandbox?(opts) do
       sandbox_put_events_response(entries, opts)
     else
@@ -693,7 +723,7 @@ defmodule AWS.EventBridge do
   """
   @spec enable_rule(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
-  def enable_rule(name, opts \\ []) do
+  def enable_rule(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_enable_rule_response(name, opts)
     else
@@ -715,7 +745,7 @@ defmodule AWS.EventBridge do
   """
   @spec disable_rule(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
-  def disable_rule(name, opts \\ []) do
+  def disable_rule(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_disable_rule_response(name, opts)
     else
@@ -840,15 +870,6 @@ defmodule AWS.EventBridge do
     end
   end
 
-  defp apply_overrides(op, overrides) do
-    Enum.reduce(@override_keys, op, fn key, acc ->
-      case Keyword.fetch(overrides, key) do
-        {:ok, value} -> Map.put(acc, key, value)
-        :error -> acc
-      end
-    end)
-  end
-
   defp encode_body(data) when map_size(data) === 0, do: "{}"
   defp encode_body(data), do: data |> :json.encode() |> IO.iodata_to_binary()
 
@@ -877,31 +898,7 @@ defmodule AWS.EventBridge do
 
   defp deserialize_opts(opts), do: Keyword.merge(@deserialize_defaults, opts)
 
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
-  end
-
   defp maybe_put(map, _key, nil), do: map
-  defp maybe_put(map, _key, false), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
   defp maybe_put(map, key, value, transform), do: Map.put(map, key, transform.(value))
 
@@ -920,174 +917,4 @@ defmodule AWS.EventBridge do
   # ---------------------------------------------------------------------------
   # Sandbox delegation
   # ---------------------------------------------------------------------------
-
-  defp sandbox?(opts) do
-    sandbox_opts = opts[:sandbox] || []
-    cfg = Config.sandbox()
-    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-
-    enabled and not sandbox_disabled?()
-  end
-
-  if Code.ensure_loaded?(SandboxRegistry) do
-    @doc false
-    defdelegate sandbox_disabled?, to: AWS.EventBridge.Sandbox
-
-    # Rule management
-    @doc false
-    defdelegate sandbox_put_rule_response(name, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :put_rule_response
-
-    @doc false
-    defdelegate sandbox_describe_rule_response(name, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :describe_rule_response
-
-    @doc false
-    defdelegate sandbox_list_rules_response(opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :list_rules_response
-
-    @doc false
-    defdelegate sandbox_delete_rule_response(name, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :delete_rule_response
-
-    # Target management
-    @doc false
-    defdelegate sandbox_put_targets_response(rule, targets, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :put_targets_response
-
-    @doc false
-    defdelegate sandbox_list_targets_by_rule_response(rule, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :list_targets_by_rule_response
-
-    @doc false
-    defdelegate sandbox_remove_targets_response(rule, ids, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :remove_targets_response
-
-    # Connection management
-    @doc false
-    defdelegate sandbox_create_connection_response(name, auth_type, auth_params, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :create_connection_response
-
-    @doc false
-    defdelegate sandbox_describe_connection_response(name, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :describe_connection_response
-
-    @doc false
-    defdelegate sandbox_update_connection_response(name, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :update_connection_response
-
-    @doc false
-    defdelegate sandbox_delete_connection_response(name, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :delete_connection_response
-
-    @doc false
-    defdelegate sandbox_list_connections_response(opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :list_connections_response
-
-    # API Destination management
-    @doc false
-    defdelegate sandbox_create_api_destination_response(name, conn_arn, endpoint, method, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :create_api_destination_response
-
-    @doc false
-    defdelegate sandbox_describe_api_destination_response(name, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :describe_api_destination_response
-
-    @doc false
-    defdelegate sandbox_update_api_destination_response(name, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :update_api_destination_response
-
-    @doc false
-    defdelegate sandbox_delete_api_destination_response(name, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :delete_api_destination_response
-
-    @doc false
-    defdelegate sandbox_list_api_destinations_response(opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :list_api_destinations_response
-
-    # Event Bus management
-    @doc false
-    defdelegate sandbox_create_event_bus_response(name, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :create_event_bus_response
-
-    @doc false
-    defdelegate sandbox_describe_event_bus_response(name, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :describe_event_bus_response
-
-    @doc false
-    defdelegate sandbox_delete_event_bus_response(name, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :delete_event_bus_response
-
-    @doc false
-    defdelegate sandbox_list_event_buses_response(opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :list_event_buses_response
-
-    # Events
-    @doc false
-    defdelegate sandbox_put_events_response(entries, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :put_events_response
-
-    # Rule control
-    @doc false
-    defdelegate sandbox_enable_rule_response(name, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :enable_rule_response
-
-    @doc false
-    defdelegate sandbox_disable_rule_response(name, opts),
-      to: AWS.EventBridge.Sandbox,
-      as: :disable_rule_response
-  else
-    defp sandbox_disabled?, do: true
-
-    defp sandbox_put_rule_response(_, _), do: raise("sandbox not available")
-    defp sandbox_describe_rule_response(_, _), do: raise("sandbox not available")
-    defp sandbox_list_rules_response(_), do: raise("sandbox not available")
-    defp sandbox_delete_rule_response(_, _), do: raise("sandbox not available")
-    defp sandbox_put_targets_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_list_targets_by_rule_response(_, _), do: raise("sandbox not available")
-    defp sandbox_remove_targets_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_create_connection_response(_, _, _, _), do: raise("sandbox not available")
-    defp sandbox_describe_connection_response(_, _), do: raise("sandbox not available")
-    defp sandbox_update_connection_response(_, _), do: raise("sandbox not available")
-    defp sandbox_delete_connection_response(_, _), do: raise("sandbox not available")
-    defp sandbox_list_connections_response(_), do: raise("sandbox not available")
-
-    defp sandbox_create_api_destination_response(_, _, _, _, _),
-      do: raise("sandbox not available")
-
-    defp sandbox_describe_api_destination_response(_, _), do: raise("sandbox not available")
-    defp sandbox_update_api_destination_response(_, _), do: raise("sandbox not available")
-    defp sandbox_delete_api_destination_response(_, _), do: raise("sandbox not available")
-    defp sandbox_list_api_destinations_response(_), do: raise("sandbox not available")
-    defp sandbox_create_event_bus_response(_, _), do: raise("sandbox not available")
-    defp sandbox_describe_event_bus_response(_, _), do: raise("sandbox not available")
-    defp sandbox_delete_event_bus_response(_, _), do: raise("sandbox not available")
-    defp sandbox_list_event_buses_response(_), do: raise("sandbox not available")
-    defp sandbox_put_events_response(_, _), do: raise("sandbox not available")
-    defp sandbox_enable_rule_response(_, _), do: raise("sandbox not available")
-    defp sandbox_disable_rule_response(_, _), do: raise("sandbox not available")
-  end
 end

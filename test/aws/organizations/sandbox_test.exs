@@ -4,8 +4,6 @@ defmodule AWS.Organizations.SandboxTest do
   alias AWS.Organizations
   alias AWS.Organizations.Sandbox
 
-  @sandbox_opts [sandbox: [enabled: true]]
-
   # Organization
 
   describe "create_organization/1" do
@@ -15,7 +13,7 @@ defmodule AWS.Organizations.SandboxTest do
       ])
 
       assert {:ok, %{organization: %{id: "o-1", feature_set: "ALL"}}} =
-               Organizations.create_organization(@sandbox_opts)
+               Organizations.create_organization(sandbox: [enabled: true])
     end
   end
 
@@ -25,7 +23,7 @@ defmodule AWS.Organizations.SandboxTest do
         fn -> {:ok, %{}} end
       ])
 
-      assert {:ok, %{}} = Organizations.delete_organization(@sandbox_opts)
+      assert {:ok, %{}} = Organizations.delete_organization(sandbox: [enabled: true])
     end
   end
 
@@ -36,7 +34,7 @@ defmodule AWS.Organizations.SandboxTest do
       ])
 
       assert {:ok, %{organization: %{id: "o-1"}}} =
-               Organizations.describe_organization(@sandbox_opts)
+               Organizations.describe_organization(sandbox: [enabled: true])
     end
   end
 
@@ -49,7 +47,9 @@ defmodule AWS.Organizations.SandboxTest do
       ])
 
       assert {:ok, %{organizational_unit: %{id: "ou-1"}}} =
-               Organizations.create_organizational_unit("r-abcd", "Workloads", @sandbox_opts)
+               Organizations.create_organizational_unit("r-abcd", "Workloads",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -59,7 +59,8 @@ defmodule AWS.Organizations.SandboxTest do
         {"ou-1", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = Organizations.delete_organizational_unit("ou-1", @sandbox_opts)
+      assert {:ok, %{}} =
+               Organizations.delete_organizational_unit("ou-1", sandbox: [enabled: true])
     end
   end
 
@@ -70,7 +71,9 @@ defmodule AWS.Organizations.SandboxTest do
       ])
 
       assert {:ok, %{organizational_units: [%{id: "ou-1"}]}} =
-               Organizations.list_organizational_units_for_parent("r-abcd", @sandbox_opts)
+               Organizations.list_organizational_units_for_parent("r-abcd",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -83,7 +86,9 @@ defmodule AWS.Organizations.SandboxTest do
       ])
 
       assert {:ok, %{create_account_status: %{id: "car-1"}}} =
-               Organizations.create_account("tools", "tools@example.com", @sandbox_opts)
+               Organizations.create_account("tools", "tools@example.com",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -104,7 +109,7 @@ defmodule AWS.Organizations.SandboxTest do
       ])
 
       assert {:ok, %{create_account_status: %{state: "SUCCEEDED"}}} =
-               Organizations.describe_create_account_status("car-1", @sandbox_opts)
+               Organizations.describe_create_account_status("car-1", sandbox: [enabled: true])
     end
   end
 
@@ -115,7 +120,9 @@ defmodule AWS.Organizations.SandboxTest do
       ])
 
       assert {:ok, %{}} =
-               Organizations.move_account("111122223333", "r-abcd", "ou-1", @sandbox_opts)
+               Organizations.move_account("111122223333", "r-abcd", "ou-1",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -125,7 +132,7 @@ defmodule AWS.Organizations.SandboxTest do
         {"111122223333", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = Organizations.close_account("111122223333", @sandbox_opts)
+      assert {:ok, %{}} = Organizations.close_account("111122223333", sandbox: [enabled: true])
     end
   end
 
@@ -136,7 +143,7 @@ defmodule AWS.Organizations.SandboxTest do
       ])
 
       assert {:ok, %{accounts: [%{id: "111122223333"}], next_token: nil}} =
-               Organizations.list_accounts(@sandbox_opts)
+               Organizations.list_accounts(sandbox: [enabled: true])
     end
   end
 
@@ -148,7 +155,8 @@ defmodule AWS.Organizations.SandboxTest do
         fn -> {:ok, %{roots: [%{id: "r-abcd", name: "Root"}]}} end
       ])
 
-      assert {:ok, %{roots: [%{id: "r-abcd"}]}} = Organizations.list_roots(@sandbox_opts)
+      assert {:ok, %{roots: [%{id: "r-abcd"}]}} =
+               Organizations.list_roots(sandbox: [enabled: true])
     end
   end
 
@@ -158,7 +166,7 @@ defmodule AWS.Organizations.SandboxTest do
         fn -> {:ok, %{roots: [%{id: "r-abcd", name: "Root"}, %{id: "r-other"}]}} end
       ])
 
-      assert {:ok, %{id: "r-abcd"}} = Organizations.get_root(@sandbox_opts)
+      assert {:ok, %{id: "r-abcd"}} = Organizations.get_root(sandbox: [enabled: true])
     end
   end
 
@@ -174,7 +182,7 @@ defmodule AWS.Organizations.SandboxTest do
                Organizations.register_delegated_administrator(
                  "111122223333",
                  "billing.amazonaws.com",
-                 @sandbox_opts
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -186,7 +194,9 @@ defmodule AWS.Organizations.SandboxTest do
       ])
 
       assert {:ok, %{}} =
-               Organizations.enable_aws_service_access("sso.amazonaws.com", @sandbox_opts)
+               Organizations.enable_aws_service_access("sso.amazonaws.com",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -197,7 +207,7 @@ defmodule AWS.Organizations.SandboxTest do
       ])
 
       assert {:ok, %{delegated_administrators: [%{id: "111122223333"}]}} =
-               Organizations.list_delegated_administrators(@sandbox_opts)
+               Organizations.list_delegated_administrators(sandbox: [enabled: true])
     end
   end
 
@@ -208,7 +218,7 @@ defmodule AWS.Organizations.SandboxTest do
       ])
 
       assert {:ok, %{account: %{id: "111122223333", name: "tools"}}} =
-               Organizations.describe_account("111122223333", @sandbox_opts)
+               Organizations.describe_account("111122223333", sandbox: [enabled: true])
     end
   end
 
@@ -219,7 +229,7 @@ defmodule AWS.Organizations.SandboxTest do
       ])
 
       assert {:ok, %{organizational_unit: %{id: "ou-1"}}} =
-               Organizations.describe_organizational_unit("ou-1", @sandbox_opts)
+               Organizations.describe_organizational_unit("ou-1", sandbox: [enabled: true])
     end
   end
 
@@ -230,7 +240,9 @@ defmodule AWS.Organizations.SandboxTest do
       ])
 
       assert {:ok, %{organizational_unit: %{name: "Workloads2"}}} =
-               Organizations.update_organizational_unit("ou-1", "Workloads2", @sandbox_opts)
+               Organizations.update_organizational_unit("ou-1", "Workloads2",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -241,7 +253,9 @@ defmodule AWS.Organizations.SandboxTest do
       ])
 
       assert {:ok, %{}} =
-               Organizations.disable_aws_service_access("sso.amazonaws.com", @sandbox_opts)
+               Organizations.disable_aws_service_access("sso.amazonaws.com",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -255,7 +269,7 @@ defmodule AWS.Organizations.SandboxTest do
                Organizations.deregister_delegated_administrator(
                  "111122223333",
                  "billing.amazonaws.com",
-                 @sandbox_opts
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -268,7 +282,7 @@ defmodule AWS.Organizations.SandboxTest do
       ])
 
       assert {:ok, %{children: [%{id: "111122223333", type: "ACCOUNT"}], next_token: nil}} =
-               Organizations.list_children("ou-1", "ACCOUNT", @sandbox_opts)
+               Organizations.list_children("ou-1", "ACCOUNT", sandbox: [enabled: true])
     end
   end
 
@@ -281,7 +295,9 @@ defmodule AWS.Organizations.SandboxTest do
       ])
 
       assert {:ok, %{organizational_unit: %{matched: true}}} =
-               Organizations.create_organizational_unit("r-abcd", "Workloads-prod", @sandbox_opts)
+               Organizations.create_organizational_unit("r-abcd", "Workloads-prod",
+                 sandbox: [enabled: true]
+               )
     end
   end
 end

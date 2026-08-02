@@ -123,11 +123,11 @@ defmodule AWS.AuthCache do
 
       {:error, reason} ->
         log_failure(key, reason)
-        _ = put_error(key, reason)
+        :ok = put_error(key, reason)
         {:error, reason}
 
       :skip ->
-        _ = put_error(key, :unavailable)
+        :ok = put_error(key, :unavailable)
         {:error, :unavailable}
     end
   end
@@ -189,12 +189,12 @@ defmodule AWS.AuthCache do
 
   @impl GenServer
   def handle_call({:put, key, entry}, _from, state) do
-    :ets.insert(state.table, {key, entry})
+    true = :ets.insert(state.table, {key, entry})
     {:reply, :ok, state}
   end
 
   def handle_call({:delete, key}, _from, state) do
-    :ets.delete(state.table, key)
+    true = :ets.delete(state.table, key)
     {:reply, :ok, state}
   end
 end

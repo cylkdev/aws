@@ -4,8 +4,6 @@ defmodule AWS.IAM.SandboxTest do
   alias AWS.IAM
   alias AWS.IAM.Sandbox
 
-  @sandbox_opts [sandbox: [enabled: true]]
-
   # Users
 
   describe "create_user/2" do
@@ -14,7 +12,7 @@ defmodule AWS.IAM.SandboxTest do
         {"alice", fn -> {:ok, %{user_name: "alice", arn: "arn:aws:iam::123:user/alice"}} end}
       ])
 
-      assert {:ok, %{user_name: "alice"}} = IAM.create_user("alice", @sandbox_opts)
+      assert {:ok, %{user_name: "alice"}} = IAM.create_user("alice", sandbox: [enabled: true])
     end
   end
 
@@ -24,7 +22,7 @@ defmodule AWS.IAM.SandboxTest do
         {"alice", fn -> {:ok, %{user_name: "alice", user_id: "AIDA123"}} end}
       ])
 
-      assert {:ok, %{user_id: "AIDA123"}} = IAM.get_user("alice", @sandbox_opts)
+      assert {:ok, %{user_id: "AIDA123"}} = IAM.get_user("alice", sandbox: [enabled: true])
     end
   end
 
@@ -35,7 +33,7 @@ defmodule AWS.IAM.SandboxTest do
       ])
 
       assert {:ok, %{users: [%{user_name: "alice"}], is_truncated: false}} =
-               IAM.list_users(@sandbox_opts)
+               IAM.list_users(sandbox: [enabled: true])
     end
   end
 
@@ -45,7 +43,7 @@ defmodule AWS.IAM.SandboxTest do
         {"alice", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = IAM.delete_user("alice", @sandbox_opts)
+      assert {:ok, %{}} = IAM.delete_user("alice", sandbox: [enabled: true])
     end
   end
 
@@ -61,7 +59,7 @@ defmodule AWS.IAM.SandboxTest do
       ])
 
       assert {:ok, %{access_key_id: "AKIA123", secret_access_key: "secret"}} =
-               IAM.create_access_key("alice", @sandbox_opts)
+               IAM.create_access_key("alice", sandbox: [enabled: true])
     end
   end
 
@@ -73,7 +71,7 @@ defmodule AWS.IAM.SandboxTest do
       ])
 
       assert {:ok, %{access_keys: [%{access_key_id: "AKIA123"}]}} =
-               IAM.list_access_keys("alice", @sandbox_opts)
+               IAM.list_access_keys("alice", sandbox: [enabled: true])
     end
   end
 
@@ -83,7 +81,7 @@ defmodule AWS.IAM.SandboxTest do
         {"AKIA123", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = IAM.delete_access_key("AKIA123", "alice", @sandbox_opts)
+      assert {:ok, %{}} = IAM.delete_access_key("AKIA123", "alice", sandbox: [enabled: true])
     end
   end
 
@@ -95,7 +93,7 @@ defmodule AWS.IAM.SandboxTest do
         {"devs", fn -> {:ok, %{group_name: "devs", arn: "arn:aws:iam::123:group/devs"}} end}
       ])
 
-      assert {:ok, %{group_name: "devs"}} = IAM.create_group("devs", @sandbox_opts)
+      assert {:ok, %{group_name: "devs"}} = IAM.create_group("devs", sandbox: [enabled: true])
     end
   end
 
@@ -105,7 +103,7 @@ defmodule AWS.IAM.SandboxTest do
         fn -> {:ok, %{groups: [%{group_name: "devs"}]}} end
       ])
 
-      assert {:ok, %{groups: [%{group_name: "devs"}]}} = IAM.list_groups(@sandbox_opts)
+      assert {:ok, %{groups: [%{group_name: "devs"}]}} = IAM.list_groups(sandbox: [enabled: true])
     end
   end
 
@@ -115,7 +113,7 @@ defmodule AWS.IAM.SandboxTest do
         {"devs", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = IAM.delete_group("devs", @sandbox_opts)
+      assert {:ok, %{}} = IAM.delete_group("devs", sandbox: [enabled: true])
     end
   end
 
@@ -127,7 +125,7 @@ defmodule AWS.IAM.SandboxTest do
         {"devs", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = IAM.add_user_to_group("devs", "alice", @sandbox_opts)
+      assert {:ok, %{}} = IAM.add_user_to_group("devs", "alice", sandbox: [enabled: true])
     end
   end
 
@@ -137,7 +135,7 @@ defmodule AWS.IAM.SandboxTest do
         {"devs", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = IAM.remove_user_from_group("devs", "alice", @sandbox_opts)
+      assert {:ok, %{}} = IAM.remove_user_from_group("devs", "alice", sandbox: [enabled: true])
     end
   end
 
@@ -152,7 +150,7 @@ defmodule AWS.IAM.SandboxTest do
       trust_policy = %{"Version" => "2012-10-17", "Statement" => []}
 
       assert {:ok, %{role_name: "AdminRole"}} =
-               IAM.create_role("AdminRole", trust_policy, @sandbox_opts)
+               IAM.create_role("AdminRole", trust_policy, sandbox: [enabled: true])
     end
   end
 
@@ -163,7 +161,8 @@ defmodule AWS.IAM.SandboxTest do
          fn -> {:ok, %{role_name: "AdminRole", arn: "arn:aws:iam::123:role/AdminRole"}} end}
       ])
 
-      assert {:ok, %{role_name: "AdminRole"}} = IAM.get_role("AdminRole", @sandbox_opts)
+      assert {:ok, %{role_name: "AdminRole"}} =
+               IAM.get_role("AdminRole", sandbox: [enabled: true])
     end
   end
 
@@ -173,7 +172,8 @@ defmodule AWS.IAM.SandboxTest do
         fn -> {:ok, %{roles: [%{role_name: "AdminRole"}]}} end
       ])
 
-      assert {:ok, %{roles: [%{role_name: "AdminRole"}]}} = IAM.list_roles(@sandbox_opts)
+      assert {:ok, %{roles: [%{role_name: "AdminRole"}]}} =
+               IAM.list_roles(sandbox: [enabled: true])
     end
   end
 
@@ -183,7 +183,7 @@ defmodule AWS.IAM.SandboxTest do
         {"AdminRole", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = IAM.delete_role("AdminRole", @sandbox_opts)
+      assert {:ok, %{}} = IAM.delete_role("AdminRole", sandbox: [enabled: true])
     end
   end
 
@@ -198,7 +198,7 @@ defmodule AWS.IAM.SandboxTest do
       policy_doc = %{"Version" => "2012-10-17", "Statement" => []}
 
       assert {:ok, %{policy_name: "ReadOnly"}} =
-               IAM.create_policy("ReadOnly", policy_doc, @sandbox_opts)
+               IAM.create_policy("ReadOnly", policy_doc, sandbox: [enabled: true])
     end
   end
 
@@ -210,7 +210,7 @@ defmodule AWS.IAM.SandboxTest do
       ])
 
       assert {:ok, %{policy_name: "ReadOnly"}} =
-               IAM.get_policy("arn:aws:iam::123:policy/ReadOnly", @sandbox_opts)
+               IAM.get_policy("arn:aws:iam::123:policy/ReadOnly", sandbox: [enabled: true])
     end
   end
 
@@ -225,7 +225,9 @@ defmodule AWS.IAM.SandboxTest do
       ])
 
       assert {:ok, %{version_id: "v1", is_default_version: true}} =
-               IAM.get_policy_version("arn:aws:iam::123:policy/ReadOnly", "v1", @sandbox_opts)
+               IAM.get_policy_version("arn:aws:iam::123:policy/ReadOnly", "v1",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -235,7 +237,8 @@ defmodule AWS.IAM.SandboxTest do
         fn -> {:ok, %{policies: [%{policy_name: "ReadOnly"}]}} end
       ])
 
-      assert {:ok, %{policies: [%{policy_name: "ReadOnly"}]}} = IAM.list_policies(@sandbox_opts)
+      assert {:ok, %{policies: [%{policy_name: "ReadOnly"}]}} =
+               IAM.list_policies(sandbox: [enabled: true])
     end
   end
 
@@ -245,7 +248,8 @@ defmodule AWS.IAM.SandboxTest do
         {"arn:aws:iam::123:policy/ReadOnly", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = IAM.delete_policy("arn:aws:iam::123:policy/ReadOnly", @sandbox_opts)
+      assert {:ok, %{}} =
+               IAM.delete_policy("arn:aws:iam::123:policy/ReadOnly", sandbox: [enabled: true])
     end
   end
 
@@ -260,7 +264,8 @@ defmodule AWS.IAM.SandboxTest do
                IAM.create_policy_version(
                  "arn:aws:iam::123:policy/ReadOnly",
                  %{"Version" => "2012-10-17", "Statement" => []},
-                 Keyword.put(@sandbox_opts, :set_as_default, true)
+                 set_as_default: true,
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -275,7 +280,7 @@ defmodule AWS.IAM.SandboxTest do
                IAM.set_default_policy_version(
                  "arn:aws:iam::123:policy/ReadOnly",
                  "v2",
-                 @sandbox_opts
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -290,7 +295,7 @@ defmodule AWS.IAM.SandboxTest do
                IAM.delete_policy_version(
                  "arn:aws:iam::123:policy/ReadOnly",
                  "v1",
-                 @sandbox_opts
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -310,7 +315,9 @@ defmodule AWS.IAM.SandboxTest do
       ])
 
       assert {:ok, %{versions: [%{version_id: "v1"}], is_truncated: false, marker: nil}} =
-               IAM.list_policy_versions("arn:aws:iam::123:policy/ReadOnly", @sandbox_opts)
+               IAM.list_policy_versions("arn:aws:iam::123:policy/ReadOnly",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -326,7 +333,7 @@ defmodule AWS.IAM.SandboxTest do
                IAM.attach_role_policy(
                  "AdminRole",
                  "arn:aws:iam::123:policy/ReadOnly",
-                 @sandbox_opts
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -341,7 +348,7 @@ defmodule AWS.IAM.SandboxTest do
                IAM.detach_role_policy(
                  "AdminRole",
                  "arn:aws:iam::123:policy/ReadOnly",
-                 @sandbox_opts
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -361,7 +368,7 @@ defmodule AWS.IAM.SandboxTest do
       ])
 
       assert {:ok, %{policies: [%{policy_name: "ReadOnly"}]}} =
-               IAM.list_attached_role_policies("AdminRole", @sandbox_opts)
+               IAM.list_attached_role_policies("AdminRole", sandbox: [enabled: true])
     end
   end
 
@@ -372,7 +379,9 @@ defmodule AWS.IAM.SandboxTest do
       ])
 
       assert {:ok, %{}} =
-               IAM.attach_user_policy("alice", "arn:aws:iam::123:policy/ReadOnly", @sandbox_opts)
+               IAM.attach_user_policy("alice", "arn:aws:iam::123:policy/ReadOnly",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -383,7 +392,9 @@ defmodule AWS.IAM.SandboxTest do
       ])
 
       assert {:ok, %{}} =
-               IAM.detach_user_policy("alice", "arn:aws:iam::123:policy/ReadOnly", @sandbox_opts)
+               IAM.detach_user_policy("alice", "arn:aws:iam::123:policy/ReadOnly",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -394,7 +405,9 @@ defmodule AWS.IAM.SandboxTest do
       ])
 
       assert {:ok, %{}} =
-               IAM.attach_group_policy("devs", "arn:aws:iam::123:policy/ReadOnly", @sandbox_opts)
+               IAM.attach_group_policy("devs", "arn:aws:iam::123:policy/ReadOnly",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -405,7 +418,9 @@ defmodule AWS.IAM.SandboxTest do
       ])
 
       assert {:ok, %{}} =
-               IAM.detach_group_policy("devs", "arn:aws:iam::123:policy/ReadOnly", @sandbox_opts)
+               IAM.detach_group_policy("devs", "arn:aws:iam::123:policy/ReadOnly",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -426,7 +441,7 @@ defmodule AWS.IAM.SandboxTest do
       ])
 
       assert {:ok, %{mfa_devices: [%{user_name: "alice"}]}} =
-               IAM.list_mfa_devices("alice", @sandbox_opts)
+               IAM.list_mfa_devices("alice", sandbox: [enabled: true])
     end
   end
 
@@ -442,7 +457,7 @@ defmodule AWS.IAM.SandboxTest do
                IAM.update_assume_role_policy(
                  "role-1",
                  %{"Version" => "2012-10-17"},
-                 @sandbox_opts
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -471,7 +486,7 @@ defmodule AWS.IAM.SandboxTest do
       ])
 
       assert {:ok, %{role_name: "role-1", policy_name: "inline-1"}} =
-               IAM.get_role_policy("role-1", "inline-1", @sandbox_opts)
+               IAM.get_role_policy("role-1", "inline-1", sandbox: [enabled: true])
     end
   end
 
@@ -481,7 +496,7 @@ defmodule AWS.IAM.SandboxTest do
         {"role-1", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = IAM.delete_role_policy("role-1", "inline-1", @sandbox_opts)
+      assert {:ok, %{}} = IAM.delete_role_policy("role-1", "inline-1", sandbox: [enabled: true])
     end
   end
 
@@ -493,7 +508,7 @@ defmodule AWS.IAM.SandboxTest do
       ])
 
       assert {:ok, %{policy_names: ["inline-1"], is_truncated: false, marker: nil}} =
-               IAM.list_role_policies("role-1", @sandbox_opts)
+               IAM.list_role_policies("role-1", sandbox: [enabled: true])
     end
   end
 
@@ -509,7 +524,8 @@ defmodule AWS.IAM.SandboxTest do
                IAM.create_open_id_connect_provider(
                  "https://example.com",
                  ["sts.amazonaws.com"],
-                 Keyword.merge(@sandbox_opts, thumbprint_list: ["abc"])
+                 thumbprint_list: ["abc"],
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -530,7 +546,7 @@ defmodule AWS.IAM.SandboxTest do
       ])
 
       assert {:ok, %{url: "https://example.com"}} =
-               IAM.get_open_id_connect_provider("arn:oidc-1", @sandbox_opts)
+               IAM.get_open_id_connect_provider("arn:oidc-1", sandbox: [enabled: true])
     end
   end
 
@@ -541,7 +557,7 @@ defmodule AWS.IAM.SandboxTest do
       ])
 
       assert {:ok, %{open_id_connect_provider_list: [%{arn: "arn:oidc-1"}]}} =
-               IAM.list_open_id_connect_providers(@sandbox_opts)
+               IAM.list_open_id_connect_providers(sandbox: [enabled: true])
     end
   end
 
@@ -551,7 +567,8 @@ defmodule AWS.IAM.SandboxTest do
         {"arn:oidc-1", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = IAM.delete_open_id_connect_provider("arn:oidc-1", @sandbox_opts)
+      assert {:ok, %{}} =
+               IAM.delete_open_id_connect_provider("arn:oidc-1", sandbox: [enabled: true])
     end
   end
 
@@ -565,7 +582,7 @@ defmodule AWS.IAM.SandboxTest do
                IAM.update_open_id_connect_provider_thumbprint(
                  "arn:oidc-1",
                  ["def"],
-                 @sandbox_opts
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -580,7 +597,7 @@ defmodule AWS.IAM.SandboxTest do
                IAM.add_client_id_to_open_id_connect_provider(
                  "arn:oidc-1",
                  "new-client",
-                 @sandbox_opts
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -595,7 +612,7 @@ defmodule AWS.IAM.SandboxTest do
                IAM.remove_client_id_from_open_id_connect_provider(
                  "arn:oidc-1",
                  "old-client",
-                 @sandbox_opts
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -608,7 +625,8 @@ defmodule AWS.IAM.SandboxTest do
         {~r/^svc-/, fn -> {:ok, %{user_name: "svc-matched"}} end}
       ])
 
-      assert {:ok, %{user_name: "svc-matched"}} = IAM.create_user("svc-deploy", @sandbox_opts)
+      assert {:ok, %{user_name: "svc-matched"}} =
+               IAM.create_user("svc-deploy", sandbox: [enabled: true])
     end
   end
 end

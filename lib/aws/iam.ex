@@ -69,16 +69,66 @@ defmodule AWS.IAM do
   """
 
   import SweetXml, only: [xpath: 2, xpath: 3, sigil_x: 2]
-  alias AWS.{Client, Config}
-  alias AWS.IAM.Operation
+
+  use AWS.Service,
+    sandbox: AWS.IAM.Sandbox,
+    operations: [
+      add_client_id_to_open_id_connect_provider: 2,
+      add_user_to_group: 3,
+      attach_group_policy: 3,
+      attach_role_policy: 3,
+      attach_user_policy: 3,
+      create_access_key: 2,
+      create_group: 2,
+      create_open_id_connect_provider: 2,
+      create_policy: 2,
+      create_policy_version: 2,
+      create_role: 2,
+      create_user: 2,
+      delete_access_key: 3,
+      delete_group: 2,
+      delete_open_id_connect_provider: 2,
+      delete_policy: 2,
+      delete_policy_version: 3,
+      delete_role: 2,
+      delete_role_policy: 3,
+      delete_user: 2,
+      detach_group_policy: 3,
+      detach_role_policy: 3,
+      detach_user_policy: 3,
+      get_account_summary: 1,
+      get_open_id_connect_provider: 2,
+      get_policy: 2,
+      get_policy_version: 3,
+      get_role: 2,
+      get_role_policy: 3,
+      get_user: 2,
+      list_access_keys: 2,
+      list_attached_role_policies: 2,
+      list_groups: 1,
+      list_mfa_devices: 2,
+      list_open_id_connect_providers: 1,
+      list_policies: 1,
+      list_policy_versions: 2,
+      list_role_policies: 2,
+      list_roles: 1,
+      list_users: 1,
+      put_role_policy: 3,
+      remove_client_id_from_open_id_connect_provider: 2,
+      remove_user_from_group: 3,
+      set_default_policy_version: 3,
+      update_assume_role_policy: 2,
+      update_open_id_connect_provider_thumbprint: 2
+    ]
+
+  alias AWS.Client
+  alias AWS.Operation
 
   @service "iam"
   @content_type "application/x-www-form-urlencoded"
   @api_version "2010-05-08"
   @default_region "us-east-1"
   @default_host "iam.amazonaws.com"
-
-  @override_keys [:headers, :body, :http, :url]
 
   # ---------------------------------------------------------------------------
   # Users
@@ -90,8 +140,8 @@ defmodule AWS.IAM do
   ## Arguments
 
     * `username` - The user name (1–128 chars).
-    * `opts` - Options including `:path`, `:permissions_boundary`, `:tags`,
-      plus shared options.
+    * `opts` - Options including `:path` and `:permissions_boundary`, plus
+      shared options. AWS's `Tags` parameter is not encoded.
   """
   @spec create_user(username :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -1603,6 +1653,14 @@ defmodule AWS.IAM do
   @spec get_account_summary(opts :: keyword()) ::
           {:ok, %{summary_map: map()}} | {:error, term()}
   def get_account_summary(opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_get_account_summary_response(opts)
+    else
+      do_get_account_summary(opts)
+    end
+  end
+
+  defp do_get_account_summary(opts) do
     "GetAccountSummary"
     |> perform(%{}, opts)
     |> deserialize_response(opts, fn body ->
@@ -1620,319 +1678,6 @@ defmodule AWS.IAM do
   # ---------------------------------------------------------------------------
   # Sandbox delegation
   # ---------------------------------------------------------------------------
-
-  defp sandbox?(opts) do
-    sandbox_opts = opts[:sandbox] || []
-    cfg = Config.sandbox()
-    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-
-    enabled and not sandbox_disabled?()
-  end
-
-  if Code.ensure_loaded?(SandboxRegistry) do
-    @doc false
-    defdelegate sandbox_disabled?, to: AWS.IAM.Sandbox
-
-    # Users
-    @doc false
-    defdelegate sandbox_create_user_response(name, opts),
-      to: AWS.IAM.Sandbox,
-      as: :create_user_response
-
-    @doc false
-    defdelegate sandbox_get_user_response(name, opts), to: AWS.IAM.Sandbox, as: :get_user_response
-    @doc false
-    defdelegate sandbox_list_users_response(opts), to: AWS.IAM.Sandbox, as: :list_users_response
-    @doc false
-    defdelegate sandbox_delete_user_response(name, opts),
-      to: AWS.IAM.Sandbox,
-      as: :delete_user_response
-
-    # Access Keys
-    @doc false
-    defdelegate sandbox_create_access_key_response(username, opts),
-      to: AWS.IAM.Sandbox,
-      as: :create_access_key_response
-
-    @doc false
-    defdelegate sandbox_list_access_keys_response(username, opts),
-      to: AWS.IAM.Sandbox,
-      as: :list_access_keys_response
-
-    @doc false
-    defdelegate sandbox_delete_access_key_response(key_id, username, opts),
-      to: AWS.IAM.Sandbox,
-      as: :delete_access_key_response
-
-    # Groups
-    @doc false
-    defdelegate sandbox_create_group_response(name, opts),
-      to: AWS.IAM.Sandbox,
-      as: :create_group_response
-
-    @doc false
-    defdelegate sandbox_list_groups_response(opts), to: AWS.IAM.Sandbox, as: :list_groups_response
-    @doc false
-    defdelegate sandbox_delete_group_response(name, opts),
-      to: AWS.IAM.Sandbox,
-      as: :delete_group_response
-
-    # Group membership
-    @doc false
-    defdelegate sandbox_add_user_to_group_response(group, user, opts),
-      to: AWS.IAM.Sandbox,
-      as: :add_user_to_group_response
-
-    @doc false
-    defdelegate sandbox_remove_user_from_group_response(group, user, opts),
-      to: AWS.IAM.Sandbox,
-      as: :remove_user_from_group_response
-
-    # Roles
-    @doc false
-    defdelegate sandbox_create_role_response(name, opts),
-      to: AWS.IAM.Sandbox,
-      as: :create_role_response
-
-    @doc false
-    defdelegate sandbox_get_role_response(name, opts), to: AWS.IAM.Sandbox, as: :get_role_response
-    @doc false
-    defdelegate sandbox_list_roles_response(opts), to: AWS.IAM.Sandbox, as: :list_roles_response
-    @doc false
-    defdelegate sandbox_delete_role_response(name, opts),
-      to: AWS.IAM.Sandbox,
-      as: :delete_role_response
-
-    # Policies
-    @doc false
-    defdelegate sandbox_create_policy_response(name, opts),
-      to: AWS.IAM.Sandbox,
-      as: :create_policy_response
-
-    @doc false
-    defdelegate sandbox_get_policy_response(arn, opts),
-      to: AWS.IAM.Sandbox,
-      as: :get_policy_response
-
-    @doc false
-    defdelegate sandbox_get_policy_version_response(arn, version_id, opts),
-      to: AWS.IAM.Sandbox,
-      as: :get_policy_version_response
-
-    @doc false
-    defdelegate sandbox_list_policies_response(opts),
-      to: AWS.IAM.Sandbox,
-      as: :list_policies_response
-
-    @doc false
-    defdelegate sandbox_delete_policy_response(arn, opts),
-      to: AWS.IAM.Sandbox,
-      as: :delete_policy_response
-
-    @doc false
-    defdelegate sandbox_create_policy_version_response(arn, opts),
-      to: AWS.IAM.Sandbox,
-      as: :create_policy_version_response
-
-    @doc false
-    defdelegate sandbox_set_default_policy_version_response(arn, version_id, opts),
-      to: AWS.IAM.Sandbox,
-      as: :set_default_policy_version_response
-
-    @doc false
-    defdelegate sandbox_delete_policy_version_response(arn, version_id, opts),
-      to: AWS.IAM.Sandbox,
-      as: :delete_policy_version_response
-
-    @doc false
-    defdelegate sandbox_list_policy_versions_response(arn, opts),
-      to: AWS.IAM.Sandbox,
-      as: :list_policy_versions_response
-
-    # Attachments
-    @doc false
-    defdelegate sandbox_attach_role_policy_response(role, arn, opts),
-      to: AWS.IAM.Sandbox,
-      as: :attach_role_policy_response
-
-    @doc false
-    defdelegate sandbox_detach_role_policy_response(role, arn, opts),
-      to: AWS.IAM.Sandbox,
-      as: :detach_role_policy_response
-
-    @doc false
-    defdelegate sandbox_list_attached_role_policies_response(role, opts),
-      to: AWS.IAM.Sandbox,
-      as: :list_attached_role_policies_response
-
-    @doc false
-    defdelegate sandbox_attach_user_policy_response(user, arn, opts),
-      to: AWS.IAM.Sandbox,
-      as: :attach_user_policy_response
-
-    @doc false
-    defdelegate sandbox_detach_user_policy_response(user, arn, opts),
-      to: AWS.IAM.Sandbox,
-      as: :detach_user_policy_response
-
-    @doc false
-    defdelegate sandbox_attach_group_policy_response(group, arn, opts),
-      to: AWS.IAM.Sandbox,
-      as: :attach_group_policy_response
-
-    @doc false
-    defdelegate sandbox_detach_group_policy_response(group, arn, opts),
-      to: AWS.IAM.Sandbox,
-      as: :detach_group_policy_response
-
-    # MFA Devices
-    @doc false
-    defdelegate sandbox_list_mfa_devices_response(username, opts),
-      to: AWS.IAM.Sandbox,
-      as: :list_mfa_devices_response
-
-    # Role Policies
-    @doc false
-    defdelegate sandbox_update_assume_role_policy_response(role_name, opts),
-      to: AWS.IAM.Sandbox,
-      as: :update_assume_role_policy_response
-
-    @doc false
-    defdelegate sandbox_put_role_policy_response(role_name, policy_name, opts),
-      to: AWS.IAM.Sandbox,
-      as: :put_role_policy_response
-
-    @doc false
-    defdelegate sandbox_get_role_policy_response(role_name, policy_name, opts),
-      to: AWS.IAM.Sandbox,
-      as: :get_role_policy_response
-
-    @doc false
-    defdelegate sandbox_delete_role_policy_response(role_name, policy_name, opts),
-      to: AWS.IAM.Sandbox,
-      as: :delete_role_policy_response
-
-    @doc false
-    defdelegate sandbox_list_role_policies_response(role_name, opts),
-      to: AWS.IAM.Sandbox,
-      as: :list_role_policies_response
-
-    # OIDC Providers
-    @doc false
-    defdelegate sandbox_create_open_id_connect_provider_response(url, opts),
-      to: AWS.IAM.Sandbox,
-      as: :create_open_id_connect_provider_response
-
-    @doc false
-    defdelegate sandbox_get_open_id_connect_provider_response(arn, opts),
-      to: AWS.IAM.Sandbox,
-      as: :get_open_id_connect_provider_response
-
-    @doc false
-    defdelegate sandbox_list_open_id_connect_providers_response(opts),
-      to: AWS.IAM.Sandbox,
-      as: :list_open_id_connect_providers_response
-
-    @doc false
-    defdelegate sandbox_delete_open_id_connect_provider_response(arn, opts),
-      to: AWS.IAM.Sandbox,
-      as: :delete_open_id_connect_provider_response
-
-    @doc false
-    defdelegate sandbox_update_open_id_connect_provider_thumbprint_response(arn, opts),
-      to: AWS.IAM.Sandbox,
-      as: :update_open_id_connect_provider_thumbprint_response
-
-    @doc false
-    defdelegate sandbox_add_client_id_to_open_id_connect_provider_response(arn, opts),
-      to: AWS.IAM.Sandbox,
-      as: :add_client_id_to_open_id_connect_provider_response
-
-    @doc false
-    defdelegate sandbox_remove_client_id_from_open_id_connect_provider_response(arn, opts),
-      to: AWS.IAM.Sandbox,
-      as: :remove_client_id_from_open_id_connect_provider_response
-  else
-    defp sandbox_disabled?, do: true
-
-    # Users
-    defp sandbox_create_user_response(_, _), do: raise("sandbox not available")
-    defp sandbox_get_user_response(_, _), do: raise("sandbox not available")
-    defp sandbox_list_users_response(_), do: raise("sandbox not available")
-    defp sandbox_delete_user_response(_, _), do: raise("sandbox not available")
-
-    # Access Keys
-    defp sandbox_create_access_key_response(_, _), do: raise("sandbox not available")
-    defp sandbox_list_access_keys_response(_, _), do: raise("sandbox not available")
-    defp sandbox_delete_access_key_response(_, _, _), do: raise("sandbox not available")
-
-    # Groups
-    defp sandbox_create_group_response(_, _), do: raise("sandbox not available")
-    defp sandbox_list_groups_response(_), do: raise("sandbox not available")
-    defp sandbox_delete_group_response(_, _), do: raise("sandbox not available")
-
-    # Group membership
-    defp sandbox_add_user_to_group_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_remove_user_from_group_response(_, _, _), do: raise("sandbox not available")
-
-    # Roles
-    defp sandbox_create_role_response(_, _), do: raise("sandbox not available")
-    defp sandbox_get_role_response(_, _), do: raise("sandbox not available")
-    defp sandbox_list_roles_response(_), do: raise("sandbox not available")
-    defp sandbox_delete_role_response(_, _), do: raise("sandbox not available")
-
-    # Policies
-    defp sandbox_create_policy_response(_, _), do: raise("sandbox not available")
-    defp sandbox_get_policy_response(_, _), do: raise("sandbox not available")
-    defp sandbox_get_policy_version_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_list_policies_response(_), do: raise("sandbox not available")
-    defp sandbox_delete_policy_response(_, _), do: raise("sandbox not available")
-    defp sandbox_create_policy_version_response(_, _), do: raise("sandbox not available")
-    defp sandbox_set_default_policy_version_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_delete_policy_version_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_list_policy_versions_response(_, _), do: raise("sandbox not available")
-
-    # Attachments
-    defp sandbox_attach_role_policy_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_detach_role_policy_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_list_attached_role_policies_response(_, _), do: raise("sandbox not available")
-    defp sandbox_attach_user_policy_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_detach_user_policy_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_attach_group_policy_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_detach_group_policy_response(_, _, _), do: raise("sandbox not available")
-
-    # MFA Devices
-    defp sandbox_list_mfa_devices_response(_, _), do: raise("sandbox not available")
-
-    # Role Policies
-    defp sandbox_update_assume_role_policy_response(_, _), do: raise("sandbox not available")
-    defp sandbox_put_role_policy_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_get_role_policy_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_delete_role_policy_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_list_role_policies_response(_, _), do: raise("sandbox not available")
-
-    # OIDC Providers
-    defp sandbox_create_open_id_connect_provider_response(_, _),
-      do: raise("sandbox not available")
-
-    defp sandbox_get_open_id_connect_provider_response(_, _),
-      do: raise("sandbox not available")
-
-    defp sandbox_list_open_id_connect_providers_response(_),
-      do: raise("sandbox not available")
-
-    defp sandbox_delete_open_id_connect_provider_response(_, _),
-      do: raise("sandbox not available")
-
-    defp sandbox_update_open_id_connect_provider_thumbprint_response(_, _),
-      do: raise("sandbox not available")
-
-    defp sandbox_add_client_id_to_open_id_connect_provider_response(_, _),
-      do: raise("sandbox not available")
-
-    defp sandbox_remove_client_id_from_open_id_connect_provider_response(_, _),
-      do: raise("sandbox not available")
-  end
 
   # ---------------------------------------------------------------------------
   # Private helpers
@@ -1969,42 +1714,10 @@ defmodule AWS.IAM do
     end
   end
 
-  defp apply_overrides(op, overrides) do
-    Enum.reduce(@override_keys, op, fn key, acc ->
-      case Keyword.fetch(overrides, key) do
-        {:ok, value} -> Map.put(acc, key, value)
-        :error -> acc
-      end
-    end)
-  end
-
   defp encode_body(action, params) do
     params
     |> Map.merge(%{"Action" => action, "Version" => @api_version})
     |> URI.encode_query()
-  end
-
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 
   defp maybe_put(map, _key, nil), do: map

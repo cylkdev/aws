@@ -18,13 +18,14 @@ defmodule AWS.ElasticLoadBalancingV2 do
   identifier is `elasticloadbalancing` and the API version is
   `2015-12-01`.
 
-  The operations needed by current callers are implemented:
-  `describe_load_balancers/1`, `describe_listeners/2`,
-  `describe_listeners_by_arns/2`, `describe_target_groups/1`,
-  `describe_target_health/2`, `describe_rules/2`,
-  `describe_rules_by_arns/2`, and `modify_rule/3`. `modify_rule/3` is the only
-  mutating operation; load balancers, listeners, and target groups are
-  expected to be declared elsewhere (e.g. terraform) and only read here.
+  `modify_rule/3` is the only mutating operation; load balancers,
+  listeners, and target groups are expected to be declared elsewhere
+  (e.g. terraform) and only read here.
+
+  Where AWS accepts one of several mutually exclusive selectors, each is
+  its own function, because each sends a different wire parameter --
+  `describe_target_groups_by_names/2` vs `describe_target_groups_by_arns/2`,
+  `describe_rules/2` vs `describe_rules_by_arns/2`, and so on.
 
   Inputs AWS requires for an operation are positional arguments; `opts`
   carries only optional inputs plus credentials, region, endpoint
@@ -68,32 +69,46 @@ defmodule AWS.ElasticLoadBalancingV2 do
 
   import SweetXml, only: [xpath: 3, sigil_x: 2]
 
+  use AWS.Service,
+    sandbox: AWS.ElasticLoadBalancingV2.Sandbox,
+    operations: [
+      describe_listeners: 2,
+      describe_listeners_by_arns: 2,
+      describe_load_balancers: 1,
+      describe_rules: 2,
+      describe_rules_by_arns: 2,
+      describe_target_groups: 1,
+      describe_target_groups_by_names: 2,
+      describe_target_groups_by_arns: 2,
+      describe_target_groups_by_load_balancer: 2,
+      describe_target_health: 2,
+      modify_rule: 3
+    ]
+
   alias AWS.Client
-  alias AWS.Config
-  alias AWS.ElasticLoadBalancingV2.Operation
+  alias AWS.Operation
 
   @service "elasticloadbalancing"
   @content_type "application/x-www-form-urlencoded"
   @api_version "2015-12-01"
   @default_region "us-east-1"
 
-  @override_keys [:headers, :body, :http, :url]
-
   # ---------------------------------------------------------------------------
   # Public API
   # ---------------------------------------------------------------------------
 
   @doc """
-  Describes target groups.
+  Describes every target group in the region.
 
-  Maps to AWS `DescribeTargetGroups`. v1 supports filtering by `:names`
-  only; other selectors (`:target_group_arns`, `:load_balancer_arn`) are
-  not exposed yet.
+  Maps to AWS `DescribeTargetGroups` with no selector. AWS accepts one of
+  `LoadBalancerArn`, `Names` or `TargetGroupArns`; to filter, use
+  `describe_target_groups_by_names/2`, `describe_target_groups_by_arns/2`
+  or `describe_target_groups_by_load_balancer/2`.
 
   ## Options
 
-    - `:names` - list of target group names; encoded as `Names.member.N`
     - `:next_token` - pagination token (encoded as `Marker` on the wire)
+    - `:page_size` - maximum results per page
 
   See `AWS.ElasticLoadBalancingV2` shared options for credentials /
   region / endpoint.
@@ -108,16 +123,66 @@ defmodule AWS.ElasticLoadBalancingV2 do
     if sandbox?(opts) do
       sandbox_describe_target_groups_response(opts)
     else
-      do_describe_target_groups(opts)
+      do_describe_target_groups(%{}, opts)
     end
   end
 
-  defp do_describe_target_groups(opts) do
+  @doc """
+  Describes target groups by name.
+
+  Maps to AWS `DescribeTargetGroups` with `Names`.
+  """
+  @spec describe_target_groups_by_names(names :: [String.t()], opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def describe_target_groups_by_names([_ | _] = names, opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_describe_target_groups_by_names_response(names, opts)
+    else
+      do_describe_target_groups(%{"Names" => names}, opts)
+    end
+  end
+
+  @doc """
+  Describes target groups by ARN.
+
+  Maps to AWS `DescribeTargetGroups` with `TargetGroupArns`.
+  """
+  @spec describe_target_groups_by_arns(target_group_arns :: [String.t()], opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def describe_target_groups_by_arns([_ | _] = target_group_arns, opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_describe_target_groups_by_arns_response(target_group_arns, opts)
+    else
+      do_describe_target_groups(%{"TargetGroupArns" => target_group_arns}, opts)
+    end
+  end
+
+  @doc """
+  Describes every target group attached to a load balancer.
+
+  Maps to AWS `DescribeTargetGroups` with `LoadBalancerArn`.
+  """
+  @spec describe_target_groups_by_load_balancer(
+          load_balancer_arn :: String.t(),
+          opts :: keyword()
+        ) :: {:ok, map()} | {:error, term()}
+  def describe_target_groups_by_load_balancer(load_balancer_arn, opts \\ [])
+      when is_binary(load_balancer_arn) do
+    if sandbox?(opts) do
+      sandbox_describe_target_groups_by_load_balancer_response(load_balancer_arn, opts)
+    else
+      do_describe_target_groups(%{"LoadBalancerArn" => load_balancer_arn}, opts)
+    end
+  end
+
+  defp do_describe_target_groups(selector, opts) do
     params =
-      flatten_query(%{
-        "Names" => opts[:names],
-        "Marker" => opts[:next_token]
+      selector
+      |> Map.merge(%{
+        "Marker" => opts[:next_token],
+        "PageSize" => opts[:page_size]
       })
+      |> flatten_query()
 
     "DescribeTargetGroups"
     |> perform(params, opts)
@@ -375,8 +440,9 @@ defmodule AWS.ElasticLoadBalancingV2 do
   """
   @spec modify_rule(rule_arn :: String.t(), actions :: [map()], opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def modify_rule(rule_arn, actions, opts \\ [])
-      when is_binary(rule_arn) and is_list(actions) do
+  # An empty action list is dropped by the encoder, so it would issue a
+  # real ModifyRule that changes nothing and reports success.
+  def modify_rule(rule_arn, [_ | _] = actions, opts \\ []) when is_binary(rule_arn) do
     if sandbox?(opts) do
       sandbox_modify_rule_response(rule_arn, actions, opts)
     else
@@ -434,153 +500,22 @@ defmodule AWS.ElasticLoadBalancingV2 do
     end
   end
 
-  defp apply_overrides(op, overrides) do
-    Enum.reduce(@override_keys, op, fn key, acc ->
-      case Keyword.fetch(overrides, key) do
-        {:ok, value} -> Map.put(acc, key, value)
-        :error -> acc
-      end
-    end)
-  end
-
   defp encode_body(action, params) do
     params
     |> Map.merge(%{"Action" => action, "Version" => @api_version})
     |> URI.encode_query()
   end
 
-  # ---------------------------------------------------------------------------
-  # Generic AWS Query-protocol flattener (mirrors AWS.AutoScaling)
-  # ---------------------------------------------------------------------------
-
   @doc false
-  def flatten_query(input) when is_map(input) do
-    Enum.reduce(input, %{}, fn {k, v}, acc -> put_query(acc, pascal(k), v) end)
-  end
-
-  defp put_query(acc, _key, nil), do: acc
-  defp put_query(acc, _key, []), do: acc
-
-  defp put_query(acc, key, list) when is_list(list) do
-    list
-    |> Enum.with_index(1)
-    |> Enum.reduce(acc, fn {item, idx}, inner ->
-      put_query(inner, "#{key}.member.#{idx}", item)
-    end)
-  end
-
-  defp put_query(acc, key, map) when is_map(map) do
-    Enum.reduce(map, acc, fn {sub_k, sub_v}, inner ->
-      put_query(inner, "#{key}.#{pascal(sub_k)}", sub_v)
-    end)
-  end
-
-  defp put_query(acc, key, value) when is_boolean(value),
-    do: Map.put(acc, key, to_string(value))
-
-  defp put_query(acc, key, value) when is_atom(value),
-    do: Map.put(acc, key, Atom.to_string(value))
-
-  defp put_query(acc, key, value), do: Map.put(acc, key, to_string(value))
-
-  defp pascal(key) when is_binary(key), do: key
-  defp pascal(key) when is_atom(key), do: key |> Atom.to_string() |> Recase.to_pascal()
+  defdelegate flatten_query(input), to: AWS.Query, as: :encode
 
   # ---------------------------------------------------------------------------
   # Response error wrapping
   # ---------------------------------------------------------------------------
 
-  defp deserialize_response({:ok, body}, _opts, parser) do
-    case parser.(body) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _parser)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _parser)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _parser) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
-  end
-
   # ---------------------------------------------------------------------------
   # Sandbox delegation
   # ---------------------------------------------------------------------------
-
-  defp sandbox?(opts) do
-    sandbox_opts = opts[:sandbox] || []
-    cfg = Config.sandbox()
-    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-
-    enabled and not sandbox_disabled?()
-  end
-
-  if Code.ensure_loaded?(SandboxRegistry) do
-    @doc false
-    defdelegate sandbox_disabled?, to: AWS.ElasticLoadBalancingV2.Sandbox
-
-    @doc false
-    defdelegate sandbox_describe_target_groups_response(opts),
-      to: AWS.ElasticLoadBalancingV2.Sandbox,
-      as: :describe_target_groups_response
-
-    @doc false
-    defdelegate sandbox_describe_target_health_response(target_group_arn, opts),
-      to: AWS.ElasticLoadBalancingV2.Sandbox,
-      as: :describe_target_health_response
-
-    @doc false
-    defdelegate sandbox_describe_load_balancers_response(opts),
-      to: AWS.ElasticLoadBalancingV2.Sandbox,
-      as: :describe_load_balancers_response
-
-    @doc false
-    defdelegate sandbox_describe_listeners_response(load_balancer_arn, opts),
-      to: AWS.ElasticLoadBalancingV2.Sandbox,
-      as: :describe_listeners_response
-
-    @doc false
-    defdelegate sandbox_describe_listeners_by_arns_response(listener_arns, opts),
-      to: AWS.ElasticLoadBalancingV2.Sandbox,
-      as: :describe_listeners_by_arns_response
-
-    @doc false
-    defdelegate sandbox_describe_rules_response(listener_arn, opts),
-      to: AWS.ElasticLoadBalancingV2.Sandbox,
-      as: :describe_rules_response
-
-    @doc false
-    defdelegate sandbox_describe_rules_by_arns_response(rule_arns, opts),
-      to: AWS.ElasticLoadBalancingV2.Sandbox,
-      as: :describe_rules_by_arns_response
-
-    @doc false
-    defdelegate sandbox_modify_rule_response(rule_arn, actions, opts),
-      to: AWS.ElasticLoadBalancingV2.Sandbox,
-      as: :modify_rule_response
-  else
-    @sandbox_unavailable "sandbox not available; add :sandbox_registry as a dep"
-
-    defp sandbox_disabled?, do: false
-    defp sandbox_describe_target_groups_response(_o), do: raise(@sandbox_unavailable)
-    defp sandbox_describe_target_health_response(_a, _o), do: raise(@sandbox_unavailable)
-    defp sandbox_describe_load_balancers_response(_o), do: raise(@sandbox_unavailable)
-    defp sandbox_describe_listeners_response(_a, _o), do: raise(@sandbox_unavailable)
-    defp sandbox_describe_listeners_by_arns_response(_a, _o), do: raise(@sandbox_unavailable)
-    defp sandbox_describe_rules_response(_a, _o), do: raise(@sandbox_unavailable)
-    defp sandbox_describe_rules_by_arns_response(_a, _o), do: raise(@sandbox_unavailable)
-    defp sandbox_modify_rule_response(_r, _a, _o), do: raise(@sandbox_unavailable)
-  end
 
   # ---------------------------------------------------------------------------
   # XML parsers

@@ -64,15 +64,20 @@ defmodule AWS.STS do
   """
 
   import SweetXml, only: [xpath: 3, sigil_x: 2]
-  alias AWS.{Client, Config}
-  alias AWS.STS.Operation
+
+  use AWS.Service,
+    sandbox: AWS.STS.Sandbox,
+    operations: [
+      get_caller_identity: 1
+    ]
+
+  alias AWS.Client
+  alias AWS.Operation
 
   @service "sts"
   @content_type "application/x-www-form-urlencoded"
   @api_version "2011-06-15"
   @default_region "us-east-1"
-
-  @override_keys [:headers, :body, :http, :url]
 
   # ---------------------------------------------------------------------------
   # Public API
@@ -194,12 +199,17 @@ defmodule AWS.STS do
     err -> {:error, {:sts_invalid_response, Exception.message(err)}}
   end
 
+  # An absent Expiration is legitimate; an unparseable one is not. Returning
+  # nil for the latter would mean "never expires", and `AWS.AuthCache` caches
+  # an entry with no expiry forever -- the credentials would die at AWS while
+  # this process kept reusing them. Raise instead; the caller's rescue turns
+  # it into `{:error, {:sts_invalid_response, _}}`.
   defp parse_expiration(""), do: nil
 
   defp parse_expiration(iso) do
     case DateTime.from_iso8601(iso) do
       {:ok, dt, _} -> dt
-      _ -> nil
+      {:error, reason} -> raise ArgumentError, "unparseable Expiration #{inspect(iso)}: #{reason}"
     end
   end
 
@@ -211,28 +221,6 @@ defmodule AWS.STS do
   # ---------------------------------------------------------------------------
   # Sandbox delegation
   # ---------------------------------------------------------------------------
-
-  defp sandbox?(opts) do
-    sandbox_opts = opts[:sandbox] || []
-    cfg = Config.sandbox()
-    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-
-    enabled and not sandbox_disabled?()
-  end
-
-  if Code.ensure_loaded?(SandboxRegistry) do
-    @doc false
-    defdelegate sandbox_disabled?, to: AWS.STS.Sandbox
-
-    @doc false
-    defdelegate sandbox_get_caller_identity_response(opts),
-      to: AWS.STS.Sandbox,
-      as: :get_caller_identity_response
-  else
-    defp sandbox_disabled?, do: true
-
-    defp sandbox_get_caller_identity_response(_), do: raise("sandbox not available")
-  end
 
   # ---------------------------------------------------------------------------
   # Private helpers (Query-protocol perform/build/deserialize)
@@ -269,15 +257,6 @@ defmodule AWS.STS do
     end
   end
 
-  defp apply_overrides(op, overrides) do
-    Enum.reduce(@override_keys, op, fn key, acc ->
-      case Keyword.fetch(overrides, key) do
-        {:ok, value} -> Map.put(acc, key, value)
-        :error -> acc
-      end
-    end)
-  end
-
   defp encode_body(action, params) do
     params
     |> Map.merge(%{"Action" => action, "Version" => @api_version})
@@ -285,27 +264,4 @@ defmodule AWS.STS do
   end
 
   defp default_host(region), do: "sts.#{region}.amazonaws.com"
-
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
-  end
 end

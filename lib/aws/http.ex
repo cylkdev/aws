@@ -32,6 +32,8 @@ defmodule AWS.HTTP do
       messages to that process.
   """
 
+  require Logger
+
   alias AWS.HTTP.FinchPool
 
   @default_request_timeout 30_000
@@ -66,13 +68,21 @@ defmodule AWS.HTTP do
   @spec request(method, String.t(), iodata, [header], keyword) ::
           {:ok, response} | {:error, %{reason: term}}
   def request(method, url, body, headers, opts \\ []) when is_atom(method) do
-    validate_url!(url)
+    :ok = validate_url!(url)
 
-    [method: method, url: url, headers: headers, body: body]
+    [method: method, url: url, headers: headers]
+    |> put_body(body)
     |> Keyword.merge(base_opts(opts))
     |> Req.request()
     |> handle_response()
   end
+
+  # Req >= 0.7 infers POST from the presence of a body, and an empty binary
+  # counts as present -- so passing `body: ""` on a GET silently rewrote it
+  # into a POST. Omit the key entirely when there is nothing to send; the
+  # explicit `:method` is then the only thing that decides the verb.
+  defp put_body(req_opts, body) when body in [nil, "", []], do: req_opts
+  defp put_body(req_opts, body), do: Keyword.put(req_opts, :body, body)
 
   @doc "Convenience wrapper for `request(:post, url, body, headers, opts)`."
   @spec post(String.t(), iodata, [header], keyword) :: {:ok, response} | {:error, %{reason: term}}
@@ -80,10 +90,10 @@ defmodule AWS.HTTP do
     request(:post, url, body, headers, opts)
   end
 
-  @doc "Convenience wrapper for `request(:get, url, \"\", headers, opts)`."
+  @doc "Convenience wrapper for `request(:get, url, nil, headers, opts)`."
   @spec get(String.t(), [header], keyword) :: {:ok, response} | {:error, %{reason: term}}
   def get(url, headers \\ [], opts \\ []) do
-    request(:get, url, "", headers, opts)
+    request(:get, url, nil, headers, opts)
   end
 
   @doc """
@@ -98,9 +108,10 @@ defmodule AWS.HTTP do
   @spec stream_upload(method, String.t(), Enumerable.t(), [header], keyword) ::
           {:ok, response} | {:error, %{reason: term}}
   def stream_upload(method, url, body_stream, headers, opts \\ []) when is_atom(method) do
-    _ = validate_url!(url)
+    :ok = validate_url!(url)
 
-    [method: method, url: url, headers: headers, body: body_stream]
+    [method: method, url: url, headers: headers]
+    |> put_body(body_stream)
     |> Keyword.merge(base_opts(opts))
     |> Req.request()
     |> handle_response()
@@ -114,7 +125,7 @@ defmodule AWS.HTTP do
   @spec stream_download(String.t(), [header], keyword) ::
           {:ok, stream_response} | {:error, %{reason: term}}
   def stream_download(url, headers \\ [], opts \\ []) do
-    _ = validate_url!(url)
+    :ok = validate_url!(url)
     timeout = request_timeout(opts)
 
     result =
@@ -138,7 +149,9 @@ defmodule AWS.HTTP do
 
   defp base_opts(opts) do
     [
-      finch: FinchPool.name(),
+      # Req 0.7 wants the pool under `finch: [name: ...]`; a bare atom is
+      # deprecated and warns on every request.
+      finch: [name: FinchPool.name()],
       receive_timeout: request_timeout(opts),
       retry: false,
       redirect: false,
@@ -162,11 +175,22 @@ defmodule AWS.HTTP do
     Stream.resource(
       fn -> {response, []} end,
       fn state -> step(state, timeout) end,
-      fn {response, _pending} ->
-        _ = Req.cancel_async_response(response)
-        :ok
-      end
+      fn {response, _pending} -> cancel_stream(response) end
     )
+  end
+
+  # Runs in `Stream.resource/3`'s after-fun, which must return the accumulator
+  # and cannot report failure. `cancel_fun` is supplied by the adapter, so its
+  # return is not a fixed shape; match both outcomes rather than discard it.
+  defp cancel_stream(response) do
+    case Req.cancel_async_response(response) do
+      :ok ->
+        :ok
+
+      other ->
+        Logger.warning("[AWS.HTTP] cancelling the response stream returned #{inspect(other)}")
+        :ok
+    end
   end
 
   defp step({response, []}, timeout) do

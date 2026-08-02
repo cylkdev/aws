@@ -49,8 +49,13 @@ defmodule AWS.Credentials.SSO.Login do
          :ok <- prompt_user(device, opts),
          {:ok, token} <- poll_for_token(registration, device, config, opts) do
       cache = build_cache(config, registration, token)
-      _ = TokenCache.write(config.cache_key, cache, opts)
-      {:ok, cache}
+
+      # Persisting the token is the point of logging in. If the write fails,
+      # reporting success would tell the user they are logged in while the
+      # next command finds no token.
+      with :ok <- TokenCache.write(config.cache_key, cache, opts) do
+        {:ok, cache}
+      end
     end
   end
 
@@ -249,8 +254,16 @@ defmodule AWS.Credentials.SSO.Login do
       end
 
     try do
-      System.cmd(bin, args, stderr_to_stdout: true)
-      :ok
+      # The URL and code were already printed, so failing to auto-open a
+      # browser is not fatal -- but it should not look like it worked.
+      case System.cmd(bin, args, stderr_to_stdout: true) do
+        {_output, 0} ->
+          :ok
+
+        {output, status} ->
+          Logger.debug("AWS SSO: #{bin} exited #{status}: #{String.trim(output)}")
+          :ok
+      end
     rescue
       _ -> :ok
     catch

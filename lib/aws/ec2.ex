@@ -36,15 +36,34 @@ defmodule AWS.EC2 do
   """
 
   import SweetXml, only: [xpath: 2, xpath: 3, sigil_x: 2]
-  alias AWS.{Client, Config}
-  alias AWS.EC2.Operation
+
+  use AWS.Service,
+    sandbox: AWS.EC2.Sandbox,
+    operations: [
+      authorize_security_group_egress: 2,
+      authorize_security_group_ingress: 2,
+      create_security_group: 2,
+      create_tags: 2,
+      delete_security_group: 2,
+      delete_snapshot: 2,
+      deregister_image: 2,
+      describe_images: 1,
+      describe_instances: 1,
+      describe_security_groups: 1,
+      describe_subnets: 1,
+      describe_tags: 1,
+      describe_vpcs: 1,
+      revoke_security_group_egress: 2,
+      revoke_security_group_ingress: 2
+    ]
+
+  alias AWS.Client
+  alias AWS.Operation
 
   @service "ec2"
   @content_type "application/x-www-form-urlencoded"
   @api_version "2016-11-15"
   @default_region "us-east-1"
-
-  @override_keys [:headers, :body, :http, :url]
 
   # ---------------------------------------------------------------------------
   # Security Groups
@@ -586,121 +605,6 @@ defmodule AWS.EC2 do
   # Sandbox delegation
   # ---------------------------------------------------------------------------
 
-  defp sandbox?(opts) do
-    sandbox_opts = opts[:sandbox] || []
-    cfg = Config.sandbox()
-    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-
-    enabled and not sandbox_disabled?()
-  end
-
-  if Code.ensure_loaded?(SandboxRegistry) do
-    @doc false
-    defdelegate sandbox_disabled?, to: AWS.EC2.Sandbox, as: :sandbox_disabled?
-
-    @doc false
-    defdelegate sandbox_create_security_group_response(name, opts),
-      to: AWS.EC2.Sandbox,
-      as: :create_security_group_response
-
-    @doc false
-    defdelegate sandbox_describe_security_groups_response(opts),
-      to: AWS.EC2.Sandbox,
-      as: :describe_security_groups_response
-
-    @doc false
-    defdelegate sandbox_delete_security_group_response(group_id, opts),
-      to: AWS.EC2.Sandbox,
-      as: :delete_security_group_response
-
-    @doc false
-    defdelegate sandbox_authorize_security_group_ingress_response(group_id, opts),
-      to: AWS.EC2.Sandbox,
-      as: :authorize_security_group_ingress_response
-
-    @doc false
-    defdelegate sandbox_revoke_security_group_ingress_response(group_id, opts),
-      to: AWS.EC2.Sandbox,
-      as: :revoke_security_group_ingress_response
-
-    @doc false
-    defdelegate sandbox_authorize_security_group_egress_response(group_id, opts),
-      to: AWS.EC2.Sandbox,
-      as: :authorize_security_group_egress_response
-
-    @doc false
-    defdelegate sandbox_revoke_security_group_egress_response(group_id, opts),
-      to: AWS.EC2.Sandbox,
-      as: :revoke_security_group_egress_response
-
-    @doc false
-    defdelegate sandbox_describe_vpcs_response(opts),
-      to: AWS.EC2.Sandbox,
-      as: :describe_vpcs_response
-
-    @doc false
-    defdelegate sandbox_describe_subnets_response(opts),
-      to: AWS.EC2.Sandbox,
-      as: :describe_subnets_response
-
-    @doc false
-    defdelegate sandbox_create_tags_response(resource_ids, opts),
-      to: AWS.EC2.Sandbox,
-      as: :create_tags_response
-
-    @doc false
-    defdelegate sandbox_describe_tags_response(opts),
-      to: AWS.EC2.Sandbox,
-      as: :describe_tags_response
-
-    @doc false
-    defdelegate sandbox_describe_instances_response(opts),
-      to: AWS.EC2.Sandbox,
-      as: :describe_instances_response
-
-    @doc false
-    defdelegate sandbox_describe_images_response(opts),
-      to: AWS.EC2.Sandbox,
-      as: :describe_images_response
-
-    @doc false
-    defdelegate sandbox_deregister_image_response(image_id, opts),
-      to: AWS.EC2.Sandbox,
-      as: :deregister_image_response
-
-    @doc false
-    defdelegate sandbox_delete_snapshot_response(snapshot_id, opts),
-      to: AWS.EC2.Sandbox,
-      as: :delete_snapshot_response
-  else
-    defp sandbox_disabled?, do: true
-
-    defp sandbox_create_security_group_response(_, _), do: raise("sandbox not available")
-    defp sandbox_describe_security_groups_response(_), do: raise("sandbox not available")
-    defp sandbox_delete_security_group_response(_, _), do: raise("sandbox not available")
-
-    defp sandbox_authorize_security_group_ingress_response(_, _),
-      do: raise("sandbox not available")
-
-    defp sandbox_revoke_security_group_ingress_response(_, _),
-      do: raise("sandbox not available")
-
-    defp sandbox_authorize_security_group_egress_response(_, _),
-      do: raise("sandbox not available")
-
-    defp sandbox_revoke_security_group_egress_response(_, _),
-      do: raise("sandbox not available")
-
-    defp sandbox_describe_vpcs_response(_), do: raise("sandbox not available")
-    defp sandbox_describe_subnets_response(_), do: raise("sandbox not available")
-    defp sandbox_create_tags_response(_, _), do: raise("sandbox not available")
-    defp sandbox_describe_tags_response(_), do: raise("sandbox not available")
-    defp sandbox_describe_instances_response(_), do: raise("sandbox not available")
-    defp sandbox_describe_images_response(_), do: raise("sandbox not available")
-    defp sandbox_deregister_image_response(_, _), do: raise("sandbox not available")
-    defp sandbox_delete_snapshot_response(_, _), do: raise("sandbox not available")
-  end
-
   # ---------------------------------------------------------------------------
   # Private helpers
   # ---------------------------------------------------------------------------
@@ -738,42 +642,10 @@ defmodule AWS.EC2 do
     end
   end
 
-  defp apply_overrides(op, overrides) do
-    Enum.reduce(@override_keys, op, fn key, acc ->
-      case Keyword.fetch(overrides, key) do
-        {:ok, value} -> Map.put(acc, key, value)
-        :error -> acc
-      end
-    end)
-  end
-
   defp encode_body(action, params) do
     params
     |> Map.merge(%{"Action" => action, "Version" => @api_version})
     |> URI.encode_query()
-  end
-
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:ok, _} = ok -> ok
-      {:error, _} = err -> err
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 
   defp put_member_list(map, _prefix, []), do: map

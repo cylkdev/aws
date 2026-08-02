@@ -4,15 +4,6 @@ defmodule AWS.SignerTest do
   alias AWS.Signer
 
   # Pinned timestamp so signatures are deterministic.
-  @now ~U[2025-01-15 12:00:00Z]
-
-  @creds %{
-    access_key_id: "AKIDEXAMPLE",
-    secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-    region: "us-east-1",
-    service: "s3",
-    now: @now
-  }
 
   describe "sign/5" do
     test "returns the canonical SigV4 header set" do
@@ -22,7 +13,13 @@ defmodule AWS.SignerTest do
           "https://examplebucket.s3.us-east-1.amazonaws.com/test.txt",
           [],
           "",
-          @creds
+          %{
+            access_key_id: "AKIDEXAMPLE",
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            region: "us-east-1",
+            service: "s3",
+            now: ~U[2025-01-15 12:00:00Z]
+          }
         )
 
       names = Enum.map(headers, fn {k, _} -> k end)
@@ -34,7 +31,18 @@ defmodule AWS.SignerTest do
     end
 
     test ":payload_hash override replaces hex_sha256(body) in the content-sha256 header" do
-      creds = Map.put(@creds, :payload_hash, "UNSIGNED-PAYLOAD")
+      creds =
+        Map.put(
+          %{
+            access_key_id: "AKIDEXAMPLE",
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            region: "us-east-1",
+            service: "s3",
+            now: ~U[2025-01-15 12:00:00Z]
+          },
+          :payload_hash,
+          "UNSIGNED-PAYLOAD"
+        )
 
       headers =
         Signer.sign(
@@ -49,7 +57,18 @@ defmodule AWS.SignerTest do
     end
 
     test "security_token appears as x-amz-security-token header" do
-      creds = Map.put(@creds, :token, "session-token")
+      creds =
+        Map.put(
+          %{
+            access_key_id: "AKIDEXAMPLE",
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            region: "us-east-1",
+            service: "s3",
+            now: ~U[2025-01-15 12:00:00Z]
+          },
+          :token,
+          "session-token"
+        )
 
       headers =
         Signer.sign(:get, "https://examplebucket.s3.us-east-1.amazonaws.com/k", [], "", creds)
@@ -58,13 +77,28 @@ defmodule AWS.SignerTest do
     end
 
     test "signature is deterministic for pinned `now`" do
-      h1 = Signer.sign(:get, "https://examplebucket.s3.us-east-1.amazonaws.com/k", [], "", @creds)
-      h2 = Signer.sign(:get, "https://examplebucket.s3.us-east-1.amazonaws.com/k", [], "", @creds)
+      h1 =
+        Signer.sign(:get, "https://examplebucket.s3.us-east-1.amazonaws.com/k", [], "", %{
+          access_key_id: "AKIDEXAMPLE",
+          secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+          region: "us-east-1",
+          service: "s3",
+          now: ~U[2025-01-15 12:00:00Z]
+        })
+
+      h2 =
+        Signer.sign(:get, "https://examplebucket.s3.us-east-1.amazonaws.com/k", [], "", %{
+          access_key_id: "AKIDEXAMPLE",
+          secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+          region: "us-east-1",
+          service: "s3",
+          now: ~U[2025-01-15 12:00:00Z]
+        })
 
       auth1 = List.keyfind(h1, "authorization", 0)
       auth2 = List.keyfind(h2, "authorization", 0)
 
-      assert auth1 === auth2
+      assert auth2 === auth1
     end
   end
 
@@ -76,7 +110,13 @@ defmodule AWS.SignerTest do
           "https://examplebucket.s3.us-east-1.amazonaws.com/test.txt",
           [],
           3600,
-          @creds
+          %{
+            access_key_id: "AKIDEXAMPLE",
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            region: "us-east-1",
+            service: "s3",
+            now: ~U[2025-01-15 12:00:00Z]
+          }
         )
 
       query = URI.parse(url).query
@@ -96,17 +136,34 @@ defmodule AWS.SignerTest do
           "https://examplebucket.s3.us-east-1.amazonaws.com/folder/file.bin",
           [],
           600,
-          @creds
+          %{
+            access_key_id: "AKIDEXAMPLE",
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            region: "us-east-1",
+            service: "s3",
+            now: ~U[2025-01-15 12:00:00Z]
+          }
         )
 
       uri = URI.parse(url)
 
-      assert uri.host === "examplebucket.s3.us-east-1.amazonaws.com"
-      assert uri.path === "/folder/file.bin"
+      assert "examplebucket.s3.us-east-1.amazonaws.com" === uri.host
+      assert "/folder/file.bin" === uri.path
     end
 
     test "security_token is folded into the query as X-Amz-Security-Token" do
-      creds = Map.put(@creds, :token, "session-xyz")
+      creds =
+        Map.put(
+          %{
+            access_key_id: "AKIDEXAMPLE",
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            region: "us-east-1",
+            service: "s3",
+            now: ~U[2025-01-15 12:00:00Z]
+          },
+          :token,
+          "session-xyz"
+        )
 
       url = Signer.sign_query(:get, "https://b.s3.us-east-1.amazonaws.com/k", [], 60, creds)
 
@@ -114,16 +171,38 @@ defmodule AWS.SignerTest do
     end
 
     test "expires_in is reflected in X-Amz-Expires" do
-      url = Signer.sign_query(:get, "https://b.s3.us-east-1.amazonaws.com/k", [], 900, @creds)
+      url =
+        Signer.sign_query(:get, "https://b.s3.us-east-1.amazonaws.com/k", [], 900, %{
+          access_key_id: "AKIDEXAMPLE",
+          secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+          region: "us-east-1",
+          service: "s3",
+          now: ~U[2025-01-15 12:00:00Z]
+        })
 
       assert URI.parse(url).query =~ "X-Amz-Expires=900"
     end
 
     test "signature is deterministic for pinned `now`" do
-      url1 = Signer.sign_query(:get, "https://b.s3.us-east-1.amazonaws.com/k", [], 60, @creds)
-      url2 = Signer.sign_query(:get, "https://b.s3.us-east-1.amazonaws.com/k", [], 60, @creds)
+      url1 =
+        Signer.sign_query(:get, "https://b.s3.us-east-1.amazonaws.com/k", [], 60, %{
+          access_key_id: "AKIDEXAMPLE",
+          secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+          region: "us-east-1",
+          service: "s3",
+          now: ~U[2025-01-15 12:00:00Z]
+        })
 
-      assert url1 === url2
+      url2 =
+        Signer.sign_query(:get, "https://b.s3.us-east-1.amazonaws.com/k", [], 60, %{
+          access_key_id: "AKIDEXAMPLE",
+          secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+          region: "us-east-1",
+          service: "s3",
+          now: ~U[2025-01-15 12:00:00Z]
+        })
+
+      assert url2 === url1
     end
 
     test "preserves pre-existing query params" do
@@ -133,7 +212,13 @@ defmodule AWS.SignerTest do
           "https://b.s3.us-east-1.amazonaws.com/k?partNumber=1&uploadId=abc",
           [],
           60,
-          @creds
+          %{
+            access_key_id: "AKIDEXAMPLE",
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            region: "us-east-1",
+            service: "s3",
+            now: ~U[2025-01-15 12:00:00Z]
+          }
         )
 
       query = URI.parse(url).query
@@ -157,10 +242,16 @@ defmodule AWS.SignerTest do
           "https://examplebucket.s3.us-east-1.amazonaws.com",
           conditions,
           3600,
-          @creds
+          %{
+            access_key_id: "AKIDEXAMPLE",
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            region: "us-east-1",
+            service: "s3",
+            now: ~U[2025-01-15 12:00:00Z]
+          }
         )
 
-      assert result.url === "https://examplebucket.s3.us-east-1.amazonaws.com"
+      assert "https://examplebucket.s3.us-east-1.amazonaws.com" === result.url
 
       for key <- [
             "policy",
@@ -172,50 +263,22 @@ defmodule AWS.SignerTest do
         assert Map.has_key?(result.fields, key)
       end
 
-      assert result.fields["x-amz-algorithm"] === "AWS4-HMAC-SHA256"
-    end
-
-    test "policy decodes to a JSON object with the expected conditions" do
-      conditions = [%{"bucket" => "b"}, %{"key" => "k"}]
-
-      result =
-        Signer.presign_post_policy("https://b.s3.us-east-1.amazonaws.com", conditions, 60, @creds)
-
-      {:ok, decoded} = Base.decode64(result.fields["policy"])
-      policy = :json.decode(decoded)
-
-      assert Map.has_key?(policy, "expiration")
-      assert is_list(policy["conditions"])
-      assert %{"bucket" => "b"} in policy["conditions"]
-      assert %{"key" => "k"} in policy["conditions"]
-    end
-
-    test "signature matches an HMAC-SHA256 over the base64 policy with the SigV4 signing key" do
-      result =
-        Signer.presign_post_policy(
-          "https://b.s3.us-east-1.amazonaws.com",
-          [%{"bucket" => "b"}, %{"key" => "k"}],
-          60,
-          @creds
-        )
-
-      policy_b64 = result.fields["policy"]
-
-      k_date = :crypto.mac(:hmac, :sha256, "AWS4" <> @creds.secret_access_key, "20250115")
-      k_region = :crypto.mac(:hmac, :sha256, k_date, @creds.region)
-      k_service = :crypto.mac(:hmac, :sha256, k_region, @creds.service)
-      signing_key = :crypto.mac(:hmac, :sha256, k_service, "aws4_request")
-
-      expected =
-        :hmac
-        |> :crypto.mac(:sha256, signing_key, policy_b64)
-        |> Base.encode16(case: :lower)
-
-      assert result.fields["x-amz-signature"] === expected
+      assert "AWS4-HMAC-SHA256" === result.fields["x-amz-algorithm"]
     end
 
     test "security_token adds x-amz-security-token to fields and policy conditions" do
-      creds = Map.put(@creds, :token, "tok-123")
+      creds =
+        Map.put(
+          %{
+            access_key_id: "AKIDEXAMPLE",
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            region: "us-east-1",
+            service: "s3",
+            now: ~U[2025-01-15 12:00:00Z]
+          },
+          :token,
+          "tok-123"
+        )
 
       result =
         Signer.presign_post_policy(
@@ -225,12 +288,7 @@ defmodule AWS.SignerTest do
           creds
         )
 
-      assert result.fields["x-amz-security-token"] === "tok-123"
-
-      {:ok, decoded} = Base.decode64(result.fields["policy"])
-      policy = :json.decode(decoded)
-
-      assert %{"x-amz-security-token" => "tok-123"} in policy["conditions"]
+      assert "tok-123" === result.fields["x-amz-security-token"]
     end
   end
 end

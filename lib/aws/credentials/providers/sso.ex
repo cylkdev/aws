@@ -31,6 +31,8 @@ defmodule AWS.Credentials.Providers.SSO do
   recover by invoking `AWS.Credentials.SSO.Login`.
   """
 
+  require Logger
+
   alias AWS.Credentials.Profile
   alias AWS.Credentials.SSO
   alias AWS.Credentials.SSO.{Operation, TokenCache}
@@ -174,7 +176,7 @@ defmodule AWS.Credentials.Providers.SSO do
     case interpret_oidc_response(SSO.execute(op), &token_error/1) do
       {:ok, body} ->
         updated = merge_refreshed(cached, body)
-        _ = TokenCache.write(config.cache_key, updated, opts)
+        :ok = persist_refreshed(config.cache_key, updated, opts)
         {:ok, updated}
 
       {:error, _} = err ->
@@ -218,6 +220,25 @@ defmodule AWS.Credentials.Providers.SSO do
     {:ok, :json.decode(binary)}
   rescue
     err -> {:error, {:sso_invalid_json, Exception.message(err)}}
+  end
+
+  # Unlike `AWS.Credentials.SSO.Login`, this refresh happens while resolving
+  # credentials for a call that can still succeed: the new token is valid in
+  # memory and is returned. Failing here would turn a read-only cache
+  # directory into "no AWS access at all". It is not silent, though — every
+  # later process will refresh again, which costs an extra OIDC round trip
+  # and can eventually be throttled.
+  defp persist_refreshed(cache_key, contents, opts) do
+    case TokenCache.write(cache_key, contents, opts) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning(
+          "[AWS.Credentials.Providers.SSO] could not persist the refreshed SSO token: " <>
+            "#{inspect(reason)} — continuing with the in-memory token"
+        )
+    end
   end
 
   defp merge_refreshed(cached, %{"accessToken" => access} = body) do

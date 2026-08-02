@@ -60,16 +60,42 @@ defmodule AWS.Organizations do
       end
   """
 
-  alias AWS.{Client, Config}
-  alias AWS.Organizations.Operation
+  use AWS.Service,
+    sandbox: AWS.Organizations.Sandbox,
+    operations: [
+      close_account: 2,
+      create_account: 2,
+      create_organization: 1,
+      create_organizational_unit: 2,
+      delete_organization: 1,
+      delete_organizational_unit: 2,
+      deregister_delegated_administrator: 2,
+      describe_account: 2,
+      describe_create_account_status: 2,
+      describe_organization: 1,
+      describe_organizational_unit: 2,
+      disable_aws_service_access: 2,
+      enable_aws_service_access: 2,
+      list_accounts: 1,
+      list_aws_service_access_for_organization: 1,
+      list_children: 2,
+      list_delegated_administrators: 1,
+      list_organizational_units_for_parent: 2,
+      list_parents: 2,
+      list_roots: 1,
+      move_account: 2,
+      register_delegated_administrator: 2,
+      update_organizational_unit: 2
+    ]
+
+  alias AWS.Client
+  alias AWS.Operation
   alias ExUtils.Serializer
 
   @service "organizations"
   @content_type "application/x-amz-json-1.1"
   @target_prefix "AWSOrganizationsV20161128"
   @default_region "us-east-1"
-
-  @override_keys [:headers, :body, :http, :url]
 
   # ---------------------------------------------------------------------------
   # Organization
@@ -97,7 +123,7 @@ defmodule AWS.Organizations do
   end
 
   defp do_create_organization(opts) do
-    data = %{"FeatureSet" => opts[:feature_set] || "ALL"}
+    data = maybe_put(%{}, "FeatureSet", opts[:feature_set])
 
     "CreateOrganization"
     |> perform(data, opts)
@@ -124,7 +150,8 @@ defmodule AWS.Organizations do
   """
   @spec create_organizational_unit(parent_id :: String.t(), name :: String.t(), opts :: keyword()) ::
           {:ok, %{organizational_unit: map()}} | {:error, term()}
-  def create_organizational_unit(parent_id, name, opts \\ []) do
+  def create_organizational_unit(parent_id, name, opts \\ [])
+      when is_binary(parent_id) and is_binary(name) do
     if sandbox?(opts) do
       sandbox_create_organizational_unit_response(name, opts)
     else
@@ -159,7 +186,7 @@ defmodule AWS.Organizations do
   """
   @spec create_account(name :: String.t(), email :: String.t(), opts :: keyword()) ::
           {:ok, %{create_account_status: map()}} | {:error, term()}
-  def create_account(name, email, opts \\ []) do
+  def create_account(name, email, opts \\ []) when is_binary(name) and is_binary(email) do
     if sandbox?(opts) do
       sandbox_create_account_response(name, opts)
     else
@@ -172,7 +199,7 @@ defmodule AWS.Organizations do
       maybe_put(
         %{"AccountName" => name, "Email" => email},
         "IamUserAccessToBilling",
-        opts[:iam_user_access_to_billing] || "ALLOW"
+        opts[:iam_user_access_to_billing]
       )
 
     "CreateAccount"
@@ -197,7 +224,7 @@ defmodule AWS.Organizations do
   """
   @spec describe_create_account_status(request_id :: String.t(), opts :: keyword()) ::
           {:ok, %{create_account_status: map()}} | {:error, term()}
-  def describe_create_account_status(request_id, opts \\ []) do
+  def describe_create_account_status(request_id, opts \\ []) when is_binary(request_id) do
     if sandbox?(opts) do
       sandbox_describe_create_account_status_response(request_id, opts)
     else
@@ -234,7 +261,9 @@ defmodule AWS.Organizations do
           destination_parent_id :: String.t(),
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
-  def move_account(account_id, source_parent_id, destination_parent_id, opts \\ []) do
+  def move_account(account_id, source_parent_id, destination_parent_id, opts \\ [])
+      when is_binary(account_id) and is_binary(source_parent_id) and
+             is_binary(destination_parent_id) do
     if sandbox?(opts) do
       sandbox_move_account_response(account_id, opts)
     else
@@ -293,7 +322,7 @@ defmodule AWS.Organizations do
   """
   @spec delete_organizational_unit(ou_id :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
-  def delete_organizational_unit(ou_id, opts \\ []) do
+  def delete_organizational_unit(ou_id, opts \\ []) when is_binary(ou_id) do
     if sandbox?(opts) do
       sandbox_delete_organizational_unit_response(ou_id, opts)
     else
@@ -324,7 +353,7 @@ defmodule AWS.Organizations do
   """
   @spec close_account(account_id :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
-  def close_account(account_id, opts \\ []) do
+  def close_account(account_id, opts \\ []) when is_binary(account_id) do
     if sandbox?(opts) do
       sandbox_close_account_response(account_id, opts)
     else
@@ -363,7 +392,8 @@ defmodule AWS.Organizations do
           service_principal :: String.t(),
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
-  def register_delegated_administrator(account_id, service_principal, opts \\ []) do
+  def register_delegated_administrator(account_id, service_principal, opts \\ [])
+      when is_binary(account_id) and is_binary(service_principal) do
     if sandbox?(opts) do
       sandbox_register_delegated_administrator_response(account_id, opts)
     else
@@ -397,7 +427,8 @@ defmodule AWS.Organizations do
   """
   @spec enable_aws_service_access(service_principal :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
-  def enable_aws_service_access(service_principal, opts \\ []) do
+  def enable_aws_service_access(service_principal, opts \\ [])
+      when is_binary(service_principal) do
     if sandbox?(opts) do
       sandbox_enable_aws_service_access_response(service_principal, opts)
     else
@@ -493,7 +524,7 @@ defmodule AWS.Organizations do
   """
   @spec list_organizational_units_for_parent(parent_id :: String.t(), opts :: keyword()) ::
           {:ok, %{organizational_units: list(map())}} | {:error, term()}
-  def list_organizational_units_for_parent(parent_id, opts \\ []) do
+  def list_organizational_units_for_parent(parent_id, opts \\ []) when is_binary(parent_id) do
     if sandbox?(opts) do
       sandbox_list_organizational_units_for_parent_response(parent_id, opts)
     else
@@ -645,7 +676,7 @@ defmodule AWS.Organizations do
   """
   @spec list_parents(child_id :: String.t(), opts :: keyword()) ::
           {:ok, %{parents: list(map()), next_token: String.t() | nil}} | {:error, term()}
-  def list_parents(child_id, opts \\ []) do
+  def list_parents(child_id, opts \\ []) when is_binary(child_id) do
     if sandbox?(opts) do
       sandbox_list_parents_response(child_id, opts)
     else
@@ -684,7 +715,7 @@ defmodule AWS.Organizations do
   """
   @spec describe_account(account_id :: String.t(), opts :: keyword()) ::
           {:ok, %{account: map()}} | {:error, term()}
-  def describe_account(account_id, opts \\ []) do
+  def describe_account(account_id, opts \\ []) when is_binary(account_id) do
     if sandbox?(opts) do
       sandbox_describe_account_response(account_id, opts)
     else
@@ -714,7 +745,7 @@ defmodule AWS.Organizations do
   """
   @spec describe_organizational_unit(ou_id :: String.t(), opts :: keyword()) ::
           {:ok, %{organizational_unit: map()}} | {:error, term()}
-  def describe_organizational_unit(ou_id, opts \\ []) do
+  def describe_organizational_unit(ou_id, opts \\ []) when is_binary(ou_id) do
     if sandbox?(opts) do
       sandbox_describe_organizational_unit_response(ou_id, opts)
     else
@@ -745,7 +776,8 @@ defmodule AWS.Organizations do
           name :: String.t(),
           opts :: keyword()
         ) :: {:ok, %{organizational_unit: map()}} | {:error, term()}
-  def update_organizational_unit(ou_id, name, opts \\ []) do
+  def update_organizational_unit(ou_id, name, opts \\ [])
+      when is_binary(ou_id) and is_binary(name) do
     if sandbox?(opts) do
       sandbox_update_organizational_unit_response(ou_id, opts)
     else
@@ -772,7 +804,8 @@ defmodule AWS.Organizations do
   """
   @spec disable_aws_service_access(service_principal :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
-  def disable_aws_service_access(service_principal, opts \\ []) do
+  def disable_aws_service_access(service_principal, opts \\ [])
+      when is_binary(service_principal) do
     if sandbox?(opts) do
       sandbox_disable_aws_service_access_response(service_principal, opts)
     else
@@ -800,7 +833,8 @@ defmodule AWS.Organizations do
           service_principal :: String.t(),
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
-  def deregister_delegated_administrator(account_id, service_principal, opts \\ []) do
+  def deregister_delegated_administrator(account_id, service_principal, opts \\ [])
+      when is_binary(account_id) and is_binary(service_principal) do
     if sandbox?(opts) do
       sandbox_deregister_delegated_administrator_response(account_id, opts)
     else
@@ -834,7 +868,8 @@ defmodule AWS.Organizations do
           child_type :: String.t(),
           opts :: keyword()
         ) :: {:ok, %{children: list(map()), next_token: String.t() | nil}} | {:error, term()}
-  def list_children(parent_id, child_type, opts \\ []) do
+  def list_children(parent_id, child_type, opts \\ [])
+      when is_binary(parent_id) and is_binary(child_type) do
     if sandbox?(opts) do
       sandbox_list_children_response(parent_id, opts)
     else
@@ -859,178 +894,6 @@ defmodule AWS.Organizations do
   # ---------------------------------------------------------------------------
   # Sandbox delegation
   # ---------------------------------------------------------------------------
-
-  defp sandbox?(opts) do
-    sandbox_opts = opts[:sandbox] || []
-    cfg = Config.sandbox()
-    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-
-    enabled and not sandbox_disabled?()
-  end
-
-  if Code.ensure_loaded?(SandboxRegistry) do
-    @doc false
-    defdelegate sandbox_disabled?, to: AWS.Organizations.Sandbox
-
-    # Organization
-    @doc false
-    defdelegate sandbox_create_organization_response(opts),
-      to: AWS.Organizations.Sandbox,
-      as: :create_organization_response
-
-    @doc false
-    defdelegate sandbox_delete_organization_response(opts),
-      to: AWS.Organizations.Sandbox,
-      as: :delete_organization_response
-
-    @doc false
-    defdelegate sandbox_describe_organization_response(opts),
-      to: AWS.Organizations.Sandbox,
-      as: :describe_organization_response
-
-    # Organizational Units
-    @doc false
-    defdelegate sandbox_create_organizational_unit_response(name, opts),
-      to: AWS.Organizations.Sandbox,
-      as: :create_organizational_unit_response
-
-    @doc false
-    defdelegate sandbox_delete_organizational_unit_response(ou_id, opts),
-      to: AWS.Organizations.Sandbox,
-      as: :delete_organizational_unit_response
-
-    @doc false
-    defdelegate sandbox_list_organizational_units_for_parent_response(parent_id, opts),
-      to: AWS.Organizations.Sandbox,
-      as: :list_organizational_units_for_parent_response
-
-    # Accounts
-    @doc false
-    defdelegate sandbox_create_account_response(name, opts),
-      to: AWS.Organizations.Sandbox,
-      as: :create_account_response
-
-    @doc false
-    defdelegate sandbox_describe_create_account_status_response(request_id, opts),
-      to: AWS.Organizations.Sandbox,
-      as: :describe_create_account_status_response
-
-    @doc false
-    defdelegate sandbox_move_account_response(account_id, opts),
-      to: AWS.Organizations.Sandbox,
-      as: :move_account_response
-
-    @doc false
-    defdelegate sandbox_close_account_response(account_id, opts),
-      to: AWS.Organizations.Sandbox,
-      as: :close_account_response
-
-    @doc false
-    defdelegate sandbox_list_accounts_response(opts),
-      to: AWS.Organizations.Sandbox,
-      as: :list_accounts_response
-
-    # Roots
-    @doc false
-    defdelegate sandbox_list_roots_response(opts),
-      to: AWS.Organizations.Sandbox,
-      as: :list_roots_response
-
-    # Delegated administrators / service access
-    @doc false
-    defdelegate sandbox_register_delegated_administrator_response(account_id, opts),
-      to: AWS.Organizations.Sandbox,
-      as: :register_delegated_administrator_response
-
-    @doc false
-    defdelegate sandbox_enable_aws_service_access_response(service_principal, opts),
-      to: AWS.Organizations.Sandbox,
-      as: :enable_aws_service_access_response
-
-    @doc false
-    defdelegate sandbox_list_delegated_administrators_response(opts),
-      to: AWS.Organizations.Sandbox,
-      as: :list_delegated_administrators_response
-
-    @doc false
-    defdelegate sandbox_list_aws_service_access_for_organization_response(opts),
-      to: AWS.Organizations.Sandbox,
-      as: :list_aws_service_access_for_organization_response
-
-    @doc false
-    defdelegate sandbox_list_parents_response(child_id, opts),
-      to: AWS.Organizations.Sandbox,
-      as: :list_parents_response
-
-    # Describe / update
-    @doc false
-    defdelegate sandbox_describe_account_response(account_id, opts),
-      to: AWS.Organizations.Sandbox,
-      as: :describe_account_response
-
-    @doc false
-    defdelegate sandbox_describe_organizational_unit_response(ou_id, opts),
-      to: AWS.Organizations.Sandbox,
-      as: :describe_organizational_unit_response
-
-    @doc false
-    defdelegate sandbox_update_organizational_unit_response(ou_id, opts),
-      to: AWS.Organizations.Sandbox,
-      as: :update_organizational_unit_response
-
-    @doc false
-    defdelegate sandbox_disable_aws_service_access_response(service_principal, opts),
-      to: AWS.Organizations.Sandbox,
-      as: :disable_aws_service_access_response
-
-    @doc false
-    defdelegate sandbox_deregister_delegated_administrator_response(account_id, opts),
-      to: AWS.Organizations.Sandbox,
-      as: :deregister_delegated_administrator_response
-
-    @doc false
-    defdelegate sandbox_list_children_response(parent_id, opts),
-      to: AWS.Organizations.Sandbox,
-      as: :list_children_response
-  else
-    defp sandbox_disabled?, do: true
-
-    defp sandbox_create_organization_response(_), do: raise("sandbox not available")
-    defp sandbox_delete_organization_response(_), do: raise("sandbox not available")
-    defp sandbox_describe_organization_response(_), do: raise("sandbox not available")
-    defp sandbox_create_organizational_unit_response(_, _), do: raise("sandbox not available")
-    defp sandbox_delete_organizational_unit_response(_, _), do: raise("sandbox not available")
-
-    defp sandbox_list_organizational_units_for_parent_response(_, _),
-      do: raise("sandbox not available")
-
-    defp sandbox_create_account_response(_, _), do: raise("sandbox not available")
-    defp sandbox_describe_create_account_status_response(_, _), do: raise("sandbox not available")
-    defp sandbox_move_account_response(_, _), do: raise("sandbox not available")
-    defp sandbox_close_account_response(_, _), do: raise("sandbox not available")
-    defp sandbox_list_accounts_response(_), do: raise("sandbox not available")
-    defp sandbox_list_roots_response(_), do: raise("sandbox not available")
-
-    defp sandbox_register_delegated_administrator_response(_, _),
-      do: raise("sandbox not available")
-
-    defp sandbox_enable_aws_service_access_response(_, _), do: raise("sandbox not available")
-    defp sandbox_list_delegated_administrators_response(_), do: raise("sandbox not available")
-
-    defp sandbox_list_aws_service_access_for_organization_response(_),
-      do: raise("sandbox not available")
-
-    defp sandbox_list_parents_response(_, _), do: raise("sandbox not available")
-    defp sandbox_describe_account_response(_, _), do: raise("sandbox not available")
-    defp sandbox_describe_organizational_unit_response(_, _), do: raise("sandbox not available")
-    defp sandbox_update_organizational_unit_response(_, _), do: raise("sandbox not available")
-    defp sandbox_disable_aws_service_access_response(_, _), do: raise("sandbox not available")
-
-    defp sandbox_deregister_delegated_administrator_response(_, _),
-      do: raise("sandbox not available")
-
-    defp sandbox_list_children_response(_, _), do: raise("sandbox not available")
-  end
 
   # ---------------------------------------------------------------------------
   # Private helpers
@@ -1074,15 +937,6 @@ defmodule AWS.Organizations do
     end
   end
 
-  defp apply_overrides(op, overrides) do
-    Enum.reduce(@override_keys, op, fn key, acc ->
-      case Keyword.fetch(overrides, key) do
-        {:ok, value} -> Map.put(acc, key, value)
-        :error -> acc
-      end
-    end)
-  end
-
   defp encode_body(data) when map_size(data) === 0, do: "{}"
   defp encode_body(data), do: data |> :json.encode() |> IO.iodata_to_binary()
 
@@ -1110,29 +964,6 @@ defmodule AWS.Organizations do
   @deserialize_defaults [to_existing_atom: false, strict: false]
 
   defp deserialize_opts(opts), do: Keyword.merge(@deserialize_defaults, opts)
-
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
-  end
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)

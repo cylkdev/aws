@@ -4,8 +4,6 @@ defmodule AWS.IdentityCenter.SandboxTest do
   alias AWS.IdentityCenter
   alias AWS.IdentityCenter.Sandbox
 
-  @sandbox_opts [sandbox: [enabled: true]]
-
   # Instances
 
   describe "list_instances/1" do
@@ -15,7 +13,7 @@ defmodule AWS.IdentityCenter.SandboxTest do
       ])
 
       assert {:ok, %{instances: [%{instance_arn: "arn:aws:sso:::instance/ssoins-1"}]}} =
-               IdentityCenter.list_instances(@sandbox_opts)
+               IdentityCenter.list_instances(sandbox: [enabled: true])
     end
   end
 
@@ -28,7 +26,7 @@ defmodule AWS.IdentityCenter.SandboxTest do
       ])
 
       assert {:ok, %{permission_set_arn: "ps-1"}} =
-               IdentityCenter.create_permission_set("arn:ins", "admin", @sandbox_opts)
+               IdentityCenter.create_permission_set("arn:ins", "admin", sandbox: [enabled: true])
     end
   end
 
@@ -38,7 +36,8 @@ defmodule AWS.IdentityCenter.SandboxTest do
         {"ps-1", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = IdentityCenter.delete_permission_set("arn:ins", "ps-1", @sandbox_opts)
+      assert {:ok, %{}} =
+               IdentityCenter.delete_permission_set("arn:ins", "ps-1", sandbox: [enabled: true])
     end
   end
 
@@ -49,7 +48,7 @@ defmodule AWS.IdentityCenter.SandboxTest do
       ])
 
       assert {:ok, %{permission_sets: ["ps-1", "ps-2"]}} =
-               IdentityCenter.list_permission_sets("arn:ins", @sandbox_opts)
+               IdentityCenter.list_permission_sets("arn:ins", sandbox: [enabled: true])
     end
   end
 
@@ -64,7 +63,7 @@ defmodule AWS.IdentityCenter.SandboxTest do
                  "arn:ins",
                  "ps-1",
                  "arn:aws:iam::aws:policy/ReadOnlyAccess",
-                 @sandbox_opts
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -80,7 +79,7 @@ defmodule AWS.IdentityCenter.SandboxTest do
                  "arn:ins",
                  "ps-1",
                  "arn:aws:iam::aws:policy/ReadOnlyAccess",
-                 @sandbox_opts
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -102,7 +101,9 @@ defmodule AWS.IdentityCenter.SandboxTest do
       }
 
       assert {:ok, %{status: "IN_PROGRESS"}} =
-               IdentityCenter.create_account_assignment("arn:ins", assignment, @sandbox_opts)
+               IdentityCenter.create_account_assignment("arn:ins", assignment,
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -121,7 +122,9 @@ defmodule AWS.IdentityCenter.SandboxTest do
       }
 
       assert {:ok, %{status: "IN_PROGRESS"}} =
-               IdentityCenter.delete_account_assignment("arn:ins", assignment, @sandbox_opts)
+               IdentityCenter.delete_account_assignment("arn:ins", assignment,
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -132,7 +135,9 @@ defmodule AWS.IdentityCenter.SandboxTest do
       ])
 
       assert {:ok, %{status: "IN_PROGRESS"}} =
-               IdentityCenter.provision_permission_set("arn:ins", "ps-1", @sandbox_opts)
+               IdentityCenter.provision_permission_set("arn:ins", "ps-1",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -145,7 +150,9 @@ defmodule AWS.IdentityCenter.SandboxTest do
       ])
 
       assert {:ok, %{user_id: "u-1"}} =
-               IdentityCenter.create_identity_store_user("d-123", "alice", @sandbox_opts)
+               IdentityCenter.create_identity_store_user("d-123", "alice",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -156,7 +163,7 @@ defmodule AWS.IdentityCenter.SandboxTest do
       ])
 
       assert {:ok, %{}} =
-               IdentityCenter.delete_identity_store_user("d-123", "u-1", @sandbox_opts)
+               IdentityCenter.delete_identity_store_user("d-123", "u-1", sandbox: [enabled: true])
     end
   end
 
@@ -170,7 +177,8 @@ defmodule AWS.IdentityCenter.SandboxTest do
                IdentityCenter.update_identity_store_user(
                  "d-123",
                  "u-1",
-                 Keyword.merge(@sandbox_opts, display_name: "Alice A.")
+                 display_name: "Alice A.",
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -182,7 +190,7 @@ defmodule AWS.IdentityCenter.SandboxTest do
       ])
 
       assert {:ok, %{users: [%{user_name: "alice"}], next_token: "t-1"}} =
-               IdentityCenter.list_identity_store_users("d-123", @sandbox_opts)
+               IdentityCenter.list_identity_store_users("d-123", sandbox: [enabled: true])
     end
   end
 
@@ -193,7 +201,9 @@ defmodule AWS.IdentityCenter.SandboxTest do
       ])
 
       assert {:ok, %{user_id: "u-1", user_name: "alice"}} =
-               IdentityCenter.describe_identity_store_user("d-123", "u-1", @sandbox_opts)
+               IdentityCenter.describe_identity_store_user("d-123", "u-1",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -206,7 +216,9 @@ defmodule AWS.IdentityCenter.SandboxTest do
       ])
 
       assert {:ok, %{group_id: "g-1"}} =
-               IdentityCenter.create_identity_store_group("d-123", "engineers", @sandbox_opts)
+               IdentityCenter.create_identity_store_group("d-123", "engineers",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -217,7 +229,9 @@ defmodule AWS.IdentityCenter.SandboxTest do
       ])
 
       assert {:ok, %{}} =
-               IdentityCenter.delete_identity_store_group("d-123", "g-1", @sandbox_opts)
+               IdentityCenter.delete_identity_store_group("d-123", "g-1",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -228,7 +242,7 @@ defmodule AWS.IdentityCenter.SandboxTest do
       ])
 
       assert {:ok, %{groups: [%{display_name: "engineers"}], next_token: nil}} =
-               IdentityCenter.list_identity_store_groups("d-123", @sandbox_opts)
+               IdentityCenter.list_identity_store_groups("d-123", sandbox: [enabled: true])
     end
   end
 
@@ -239,7 +253,9 @@ defmodule AWS.IdentityCenter.SandboxTest do
       ])
 
       assert {:ok, %{group_id: "g-1", display_name: "engineers"}} =
-               IdentityCenter.describe_identity_store_group("d-123", "g-1", @sandbox_opts)
+               IdentityCenter.describe_identity_store_group("d-123", "g-1",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -250,7 +266,9 @@ defmodule AWS.IdentityCenter.SandboxTest do
       ])
 
       assert {:ok, %{membership_id: "m-1"}} =
-               IdentityCenter.create_group_membership("d-123", "g-1", "u-1", @sandbox_opts)
+               IdentityCenter.create_group_membership("d-123", "g-1", "u-1",
+                 sandbox: [enabled: true]
+               )
     end
   end
 
@@ -261,7 +279,7 @@ defmodule AWS.IdentityCenter.SandboxTest do
       ])
 
       assert {:ok, %{}} =
-               IdentityCenter.delete_group_membership("d-123", "m-1", @sandbox_opts)
+               IdentityCenter.delete_group_membership("d-123", "m-1", sandbox: [enabled: true])
     end
   end
 
@@ -274,7 +292,9 @@ defmodule AWS.IdentityCenter.SandboxTest do
       ])
 
       assert {:ok, %{matched: true}} =
-               IdentityCenter.create_permission_set("arn:ins", "admin-prod", @sandbox_opts)
+               IdentityCenter.create_permission_set("arn:ins", "admin-prod",
+                 sandbox: [enabled: true]
+               )
     end
   end
 end

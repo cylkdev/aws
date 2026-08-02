@@ -52,16 +52,30 @@ defmodule AWS.AutoScaling do
 
   import SweetXml, only: [xpath: 2, xpath: 3, sigil_x: 2]
 
-  alias AWS.AutoScaling.Operation
+  alias AWS.Operation
+
+  use AWS.Service,
+    sandbox: AWS.AutoScaling.Sandbox,
+    operations: [
+      cancel_instance_refresh: 2,
+      complete_lifecycle_action: 4,
+      describe_auto_scaling_groups: 1,
+      describe_auto_scaling_instances: 1,
+      describe_instance_refreshes: 2,
+      record_lifecycle_action_heartbeat: 3,
+      rollback_instance_refresh: 2,
+      set_desired_capacity: 3,
+      set_instance_health: 3,
+      start_instance_refresh: 2,
+      terminate_instance_in_auto_scaling_group: 3
+    ]
+
   alias AWS.Client
-  alias AWS.Config
 
   @service "autoscaling"
   @content_type "application/x-www-form-urlencoded"
   @api_version "2011-01-01"
   @default_region "us-east-1"
-
-  @override_keys [:headers, :body, :http, :url]
 
   # ---------------------------------------------------------------------------
   # Public API
@@ -525,196 +539,22 @@ defmodule AWS.AutoScaling do
     end
   end
 
-  defp apply_overrides(op, overrides) do
-    Enum.reduce(@override_keys, op, fn key, acc ->
-      case Keyword.fetch(overrides, key) do
-        {:ok, value} -> Map.put(acc, key, value)
-        :error -> acc
-      end
-    end)
-  end
-
   defp encode_body(action, params) do
     params
     |> Map.merge(%{"Action" => action, "Version" => @api_version})
     |> URI.encode_query()
   end
 
-  # ---------------------------------------------------------------------------
-  # Generic AWS Query-protocol flattener
-  #
-  # Turns a nested map keyed by AWS PascalCase strings (or snake_case
-  # atoms — auto-converted) into the flat string-keyed map that
-  # `URI.encode_query/1` expects:
-  #
-  #     scalar         -> "Key=Value"
-  #     nil / []       -> dropped
-  #     [scalar, ...]  -> "Key.member.N=Value"
-  #     %{...}         -> "Key.SubKey=Value"  (recursively)
-  #     [%{...}, ...]  -> "Key.member.N.SubKey=Value"
-  #
-  # No operation in this module hand-rolls body encoding; every public
-  # function builds an input map and passes it through `flatten_query/1`.
-  # ---------------------------------------------------------------------------
-
   @doc false
-  def flatten_query(input) when is_map(input) do
-    Enum.reduce(input, %{}, fn {k, v}, acc -> put_query(acc, pascal(k), v) end)
-  end
-
-  defp put_query(acc, _key, nil), do: acc
-  defp put_query(acc, _key, []), do: acc
-
-  defp put_query(acc, key, list) when is_list(list) do
-    list
-    |> Enum.with_index(1)
-    |> Enum.reduce(acc, fn {item, idx}, inner ->
-      put_query(inner, "#{key}.member.#{idx}", item)
-    end)
-  end
-
-  defp put_query(acc, key, map) when is_map(map) do
-    Enum.reduce(map, acc, fn {sub_k, sub_v}, inner ->
-      put_query(inner, "#{key}.#{pascal(sub_k)}", sub_v)
-    end)
-  end
-
-  defp put_query(acc, key, value) when is_boolean(value),
-    do: Map.put(acc, key, to_string(value))
-
-  defp put_query(acc, key, value) when is_atom(value),
-    do: Map.put(acc, key, Atom.to_string(value))
-
-  defp put_query(acc, key, value), do: Map.put(acc, key, to_string(value))
-
-  defp pascal(key) when is_binary(key), do: key
-  defp pascal(key) when is_atom(key), do: key |> Atom.to_string() |> Recase.to_pascal()
+  defdelegate flatten_query(input), to: AWS.Query, as: :encode
 
   # ---------------------------------------------------------------------------
   # Response error wrapping
   # ---------------------------------------------------------------------------
 
-  defp deserialize_response({:ok, body}, _opts, parser) do
-    case parser.(body) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _parser)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _parser)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _parser) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
-  end
-
   # ---------------------------------------------------------------------------
   # Sandbox delegation
   # ---------------------------------------------------------------------------
-
-  defp sandbox?(opts) do
-    sandbox_opts = opts[:sandbox] || []
-    cfg = Config.sandbox()
-    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-
-    enabled and not sandbox_disabled?()
-  end
-
-  if Code.ensure_loaded?(SandboxRegistry) do
-    @doc false
-    defdelegate sandbox_disabled?, to: AWS.AutoScaling.Sandbox
-
-    @doc false
-    defdelegate sandbox_describe_auto_scaling_groups_response(opts),
-      to: AWS.AutoScaling.Sandbox,
-      as: :describe_auto_scaling_groups_response
-
-    @doc false
-    defdelegate sandbox_describe_auto_scaling_instances_response(opts),
-      to: AWS.AutoScaling.Sandbox,
-      as: :describe_auto_scaling_instances_response
-
-    @doc false
-    defdelegate sandbox_describe_instance_refreshes_response(asg, opts),
-      to: AWS.AutoScaling.Sandbox,
-      as: :describe_instance_refreshes_response
-
-    @doc false
-    defdelegate sandbox_start_instance_refresh_response(asg, opts),
-      to: AWS.AutoScaling.Sandbox,
-      as: :start_instance_refresh_response
-
-    @doc false
-    defdelegate sandbox_cancel_instance_refresh_response(asg, opts),
-      to: AWS.AutoScaling.Sandbox,
-      as: :cancel_instance_refresh_response
-
-    @doc false
-    defdelegate sandbox_rollback_instance_refresh_response(asg, opts),
-      to: AWS.AutoScaling.Sandbox,
-      as: :rollback_instance_refresh_response
-
-    @doc false
-    defdelegate sandbox_complete_lifecycle_action_response(hook, asg, result, opts),
-      to: AWS.AutoScaling.Sandbox,
-      as: :complete_lifecycle_action_response
-
-    @doc false
-    defdelegate sandbox_record_lifecycle_action_heartbeat_response(hook, asg, opts),
-      to: AWS.AutoScaling.Sandbox,
-      as: :record_lifecycle_action_heartbeat_response
-
-    @doc false
-    defdelegate sandbox_set_instance_health_response(instance_id, health_status, opts),
-      to: AWS.AutoScaling.Sandbox,
-      as: :set_instance_health_response
-
-    @doc false
-    defdelegate sandbox_terminate_instance_in_auto_scaling_group_response(
-                  instance_id,
-                  should_decrement,
-                  opts
-                ),
-                to: AWS.AutoScaling.Sandbox,
-                as: :terminate_instance_in_auto_scaling_group_response
-
-    @doc false
-    defdelegate sandbox_set_desired_capacity_response(asg, desired, opts),
-      to: AWS.AutoScaling.Sandbox,
-      as: :set_desired_capacity_response
-  else
-    @sandbox_unavailable "sandbox not available; add :sandbox_registry as a dep"
-
-    defp sandbox_disabled?, do: false
-    defp sandbox_describe_auto_scaling_groups_response(_o), do: raise(@sandbox_unavailable)
-    defp sandbox_describe_auto_scaling_instances_response(_o), do: raise(@sandbox_unavailable)
-    defp sandbox_describe_instance_refreshes_response(_a, _o), do: raise(@sandbox_unavailable)
-    defp sandbox_start_instance_refresh_response(_a, _o), do: raise(@sandbox_unavailable)
-    defp sandbox_cancel_instance_refresh_response(_a, _o), do: raise(@sandbox_unavailable)
-    defp sandbox_rollback_instance_refresh_response(_a, _o), do: raise(@sandbox_unavailable)
-
-    defp sandbox_complete_lifecycle_action_response(_h, _a, _r, _o),
-      do: raise(@sandbox_unavailable)
-
-    defp sandbox_record_lifecycle_action_heartbeat_response(_h, _a, _o),
-      do: raise(@sandbox_unavailable)
-
-    defp sandbox_set_instance_health_response(_i, _h, _o), do: raise(@sandbox_unavailable)
-
-    defp sandbox_terminate_instance_in_auto_scaling_group_response(_i, _d, _o),
-      do: raise(@sandbox_unavailable)
-
-    defp sandbox_set_desired_capacity_response(_a, _d, _o), do: raise(@sandbox_unavailable)
-  end
 
   # ---------------------------------------------------------------------------
   # XML parsers

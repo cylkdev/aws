@@ -1,7 +1,6 @@
 defmodule AWS.Client do
   @moduledoc """
-  Shared SigV4 request dispatcher for every per-service
-  `*.Operation` struct.
+  Shared SigV4 request dispatcher for `AWS.Operation` structs.
 
   Owns the parts that are identical across EventBridge, Logs,
   Organizations, Identity Center, IAM, STS, and S3:
@@ -53,10 +52,7 @@ defmodule AWS.Client do
   struct.
 
   The argument can be any struct carrying the SigV4 fields — in
-  practice one of the per-service Operation structs
-  (`AWS.EventBridge.Operation`, `AWS.Logs.Operation`,
-  `AWS.Organizations.Operation`, `AWS.IdentityCenter.Operation`,
-  `AWS.IAM.Operation`, `AWS.STS.Operation`, `AWS.S3.Operation`).
+  practice an `AWS.Operation`.
 
   ## Required struct fields
 

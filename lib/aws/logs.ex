@@ -61,15 +61,34 @@ defmodule AWS.Logs do
       end
   """
 
-  alias AWS.{Client, Config}
-  alias AWS.Logs.Operation
+  use AWS.Service,
+    sandbox: AWS.Logs.Sandbox,
+    operations: [
+      create_log_group: 2,
+      create_log_stream: 3,
+      delete_log_group: 2,
+      delete_log_stream: 3,
+      delete_retention_policy: 2,
+      describe_log_groups: 1,
+      describe_log_streams: 2,
+      filter_log_events: 2,
+      get_log_events: 3,
+      get_query_results: 2,
+      put_log_events: 4,
+      put_retention_policy: 3,
+      start_query: 5,
+      start_query_for_log_groups: 5,
+      start_query_by_identifiers: 5,
+      stop_query: 2
+    ]
+
+  alias AWS.Client
+  alias AWS.Operation
   alias ExUtils.Serializer
 
   @service "logs"
   @content_type "application/x-amz-json-1.1"
   @target_prefix "Logs_20140328"
-
-  @override_keys [:headers, :body, :http, :url]
 
   # Log Groups
 
@@ -83,7 +102,7 @@ defmodule AWS.Logs do
   """
   @spec create_log_group(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def create_log_group(name, opts \\ []) do
+  def create_log_group(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_create_log_group_response(name, opts)
     else
@@ -108,7 +127,7 @@ defmodule AWS.Logs do
   """
   @spec delete_log_group(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def delete_log_group(name, opts \\ []) do
+  def delete_log_group(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_delete_log_group_response(name, opts)
     else
@@ -160,7 +179,7 @@ defmodule AWS.Logs do
   """
   @spec put_retention_policy(name :: String.t(), days :: pos_integer(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def put_retention_policy(name, days, opts \\ []) do
+  def put_retention_policy(name, days, opts \\ []) when is_binary(name) and is_integer(days) do
     if sandbox?(opts) do
       sandbox_put_retention_policy_response(name, days, opts)
     else
@@ -182,7 +201,7 @@ defmodule AWS.Logs do
   """
   @spec delete_retention_policy(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def delete_retention_policy(name, opts \\ []) do
+  def delete_retention_policy(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_delete_retention_policy_response(name, opts)
     else
@@ -204,7 +223,7 @@ defmodule AWS.Logs do
   """
   @spec create_log_stream(group :: String.t(), stream :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def create_log_stream(group, stream, opts \\ []) do
+  def create_log_stream(group, stream, opts \\ []) when is_binary(group) and is_binary(stream) do
     if sandbox?(opts) do
       sandbox_create_log_stream_response(group, stream, opts)
     else
@@ -226,7 +245,7 @@ defmodule AWS.Logs do
   """
   @spec delete_log_stream(group :: String.t(), stream :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def delete_log_stream(group, stream, opts \\ []) do
+  def delete_log_stream(group, stream, opts \\ []) when is_binary(group) and is_binary(stream) do
     if sandbox?(opts) do
       sandbox_delete_log_stream_response(group, stream, opts)
     else
@@ -256,7 +275,7 @@ defmodule AWS.Logs do
   """
   @spec describe_log_streams(group :: String.t(), opts :: keyword()) ::
           {:ok, %{log_streams: list(map()), next_token: String.t() | nil}} | {:error, term()}
-  def describe_log_streams(group, opts \\ []) do
+  def describe_log_streams(group, opts \\ []) when is_binary(group) do
     if sandbox?(opts) do
       sandbox_describe_log_streams_response(group, opts)
     else
@@ -298,7 +317,8 @@ defmodule AWS.Logs do
           opts :: keyword()
         ) ::
           {:ok, map()} | {:error, term()}
-  def put_log_events(group, stream, events, opts \\ []) do
+  def put_log_events(group, stream, [_ | _] = events, opts \\ [])
+      when is_binary(group) and is_binary(stream) do
     if sandbox?(opts) do
       sandbox_put_log_events_response(group, stream, events, opts)
     else
@@ -331,7 +351,7 @@ defmodule AWS.Logs do
   """
   @spec get_log_events(group :: String.t(), stream :: String.t(), opts :: keyword()) ::
           {:ok, %{events: list(map()), next_forward_token: String.t() | nil}} | {:error, term()}
-  def get_log_events(group, stream, opts \\ []) do
+  def get_log_events(group, stream, opts \\ []) when is_binary(group) and is_binary(stream) do
     if sandbox?(opts) do
       sandbox_get_log_events_response(group, stream, opts)
     else
@@ -367,7 +387,7 @@ defmodule AWS.Logs do
   """
   @spec filter_log_events(group :: String.t(), opts :: keyword()) ::
           {:ok, %{events: list(map()), next_token: String.t() | nil}} | {:error, term()}
-  def filter_log_events(group, opts \\ []) do
+  def filter_log_events(group, opts \\ []) when is_binary(group) do
     if sandbox?(opts) do
       sandbox_filter_log_events_response(group, opts)
     else
@@ -394,7 +414,12 @@ defmodule AWS.Logs do
   # Insights Queries
 
   @doc """
-  Starts a CloudWatch Logs Insights query.
+  Starts a CloudWatch Logs Insights query against a single log group.
+
+  Maps to AWS `StartQuery` with `logGroupName`. AWS accepts exactly one of
+  `logGroupName`, `logGroupNames` or `logGroupIdentifiers` (or a `SOURCE`
+  command in the query itself), so each form is its own function:
+  `start_query_for_log_groups/5` and `start_query_by_identifiers/5`.
 
   ## Arguments
 
@@ -411,23 +436,68 @@ defmodule AWS.Logs do
           opts :: keyword()
         ) ::
           {:ok, %{query_id: String.t()}} | {:error, term()}
-  def start_query(group, start_time, end_time, query, opts \\ []) do
+  def start_query(group, start_time, end_time, query, opts \\ [])
+      when is_binary(group) and is_integer(start_time) and is_integer(end_time) and
+             is_binary(query) do
     if sandbox?(opts) do
       sandbox_start_query_response(group, start_time, end_time, query, opts)
     else
-      do_start_query(group, start_time, end_time, query, opts)
+      do_start_query(%{"logGroupName" => group}, start_time, end_time, query, opts)
     end
   end
 
-  defp do_start_query(group, start_time, end_time, query, opts) do
-    base = %{
-      "logGroupName" => group,
-      "startTime" => start_time,
-      "endTime" => end_time,
-      "queryString" => query
-    }
+  @doc """
+  Starts an Insights query across several log groups by name.
 
-    data = maybe_put(base, "limit", opts[:limit])
+  Maps to AWS `StartQuery` with `logGroupNames`.
+  """
+  @spec start_query_for_log_groups(
+          groups :: [String.t()],
+          start_time :: non_neg_integer(),
+          end_time :: non_neg_integer(),
+          query :: String.t(),
+          opts :: keyword()
+        ) ::
+          {:ok, %{query_id: String.t()}} | {:error, term()}
+  def start_query_for_log_groups([_ | _] = groups, start_time, end_time, query, opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_start_query_for_log_groups_response(groups, start_time, end_time, query, opts)
+    else
+      do_start_query(%{"logGroupNames" => groups}, start_time, end_time, query, opts)
+    end
+  end
+
+  @doc """
+  Starts an Insights query by log group identifier (ARN), which is how
+  cross-account queries are expressed.
+
+  Maps to AWS `StartQuery` with `logGroupIdentifiers`.
+  """
+  @spec start_query_by_identifiers(
+          identifiers :: [String.t()],
+          start_time :: non_neg_integer(),
+          end_time :: non_neg_integer(),
+          query :: String.t(),
+          opts :: keyword()
+        ) ::
+          {:ok, %{query_id: String.t()}} | {:error, term()}
+  def start_query_by_identifiers([_ | _] = identifiers, start_time, end_time, query, opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_start_query_by_identifiers_response(identifiers, start_time, end_time, query, opts)
+    else
+      do_start_query(%{"logGroupIdentifiers" => identifiers}, start_time, end_time, query, opts)
+    end
+  end
+
+  defp do_start_query(selector, start_time, end_time, query, opts) do
+    data =
+      selector
+      |> Map.merge(%{
+        "startTime" => start_time,
+        "endTime" => end_time,
+        "queryString" => query
+      })
+      |> maybe_put("limit", opts[:limit])
 
     perform("StartQuery", data, opts)
     |> deserialize_response(opts, fn body ->
@@ -440,7 +510,7 @@ defmodule AWS.Logs do
   """
   @spec get_query_results(query_id :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def get_query_results(query_id, opts \\ []) do
+  def get_query_results(query_id, opts \\ []) when is_binary(query_id) do
     if sandbox?(opts) do
       sandbox_get_query_results_response(query_id, opts)
     else
@@ -460,7 +530,7 @@ defmodule AWS.Logs do
   """
   @spec stop_query(query_id :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def stop_query(query_id, opts \\ []) do
+  def stop_query(query_id, opts \\ []) when is_binary(query_id) do
     if sandbox?(opts) do
       sandbox_stop_query_response(query_id, opts)
     else
@@ -510,15 +580,6 @@ defmodule AWS.Logs do
     end
   end
 
-  defp apply_overrides(op, overrides) do
-    Enum.reduce(@override_keys, op, fn key, acc ->
-      case Keyword.fetch(overrides, key) do
-        {:ok, value} -> Map.put(acc, key, value)
-        :error -> acc
-      end
-    end)
-  end
-
   defp encode_body(data) when map_size(data) === 0, do: "{}"
   defp encode_body(data), do: data |> :json.encode() |> IO.iodata_to_binary()
 
@@ -547,31 +608,7 @@ defmodule AWS.Logs do
 
   defp deserialize_opts(opts), do: Keyword.merge(@deserialize_defaults, opts)
 
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
-  end
-
   defp maybe_put(map, _key, nil), do: map
-  defp maybe_put(map, _key, false), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   # CloudWatch Logs uses camelCase (lowercase first letter) keys on the wire.
@@ -588,108 +625,4 @@ defmodule AWS.Logs do
   # ---------------------------------------------------------------------------
   # Sandbox delegation
   # ---------------------------------------------------------------------------
-
-  defp sandbox?(opts) do
-    sandbox_opts = opts[:sandbox] || []
-    cfg = Config.sandbox()
-    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-
-    enabled and not sandbox_disabled?()
-  end
-
-  if Code.ensure_loaded?(SandboxRegistry) do
-    @doc false
-    defdelegate sandbox_disabled?, to: AWS.Logs.Sandbox
-
-    # Log Groups
-    @doc false
-    defdelegate sandbox_create_log_group_response(name, opts),
-      to: AWS.Logs.Sandbox,
-      as: :create_log_group_response
-
-    @doc false
-    defdelegate sandbox_delete_log_group_response(name, opts),
-      to: AWS.Logs.Sandbox,
-      as: :delete_log_group_response
-
-    @doc false
-    defdelegate sandbox_describe_log_groups_response(opts),
-      to: AWS.Logs.Sandbox,
-      as: :describe_log_groups_response
-
-    @doc false
-    defdelegate sandbox_put_retention_policy_response(name, days, opts),
-      to: AWS.Logs.Sandbox,
-      as: :put_retention_policy_response
-
-    @doc false
-    defdelegate sandbox_delete_retention_policy_response(name, opts),
-      to: AWS.Logs.Sandbox,
-      as: :delete_retention_policy_response
-
-    # Log Streams
-    @doc false
-    defdelegate sandbox_create_log_stream_response(group, stream, opts),
-      to: AWS.Logs.Sandbox,
-      as: :create_log_stream_response
-
-    @doc false
-    defdelegate sandbox_delete_log_stream_response(group, stream, opts),
-      to: AWS.Logs.Sandbox,
-      as: :delete_log_stream_response
-
-    @doc false
-    defdelegate sandbox_describe_log_streams_response(group, opts),
-      to: AWS.Logs.Sandbox,
-      as: :describe_log_streams_response
-
-    # Log Events
-    @doc false
-    defdelegate sandbox_put_log_events_response(group, stream, events, opts),
-      to: AWS.Logs.Sandbox,
-      as: :put_log_events_response
-
-    @doc false
-    defdelegate sandbox_get_log_events_response(group, stream, opts),
-      to: AWS.Logs.Sandbox,
-      as: :get_log_events_response
-
-    @doc false
-    defdelegate sandbox_filter_log_events_response(group, opts),
-      to: AWS.Logs.Sandbox,
-      as: :filter_log_events_response
-
-    # Insights Queries
-    @doc false
-    defdelegate sandbox_start_query_response(group, start_time, end_time, query, opts),
-      to: AWS.Logs.Sandbox,
-      as: :start_query_response
-
-    @doc false
-    defdelegate sandbox_get_query_results_response(query_id, opts),
-      to: AWS.Logs.Sandbox,
-      as: :get_query_results_response
-
-    @doc false
-    defdelegate sandbox_stop_query_response(query_id, opts),
-      to: AWS.Logs.Sandbox,
-      as: :stop_query_response
-  else
-    defp sandbox_disabled?, do: true
-
-    defp sandbox_create_log_group_response(_, _), do: raise("sandbox not available")
-    defp sandbox_delete_log_group_response(_, _), do: raise("sandbox not available")
-    defp sandbox_describe_log_groups_response(_), do: raise("sandbox not available")
-    defp sandbox_put_retention_policy_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_delete_retention_policy_response(_, _), do: raise("sandbox not available")
-    defp sandbox_create_log_stream_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_delete_log_stream_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_describe_log_streams_response(_, _), do: raise("sandbox not available")
-    defp sandbox_put_log_events_response(_, _, _, _), do: raise("sandbox not available")
-    defp sandbox_get_log_events_response(_, _, _), do: raise("sandbox not available")
-    defp sandbox_filter_log_events_response(_, _), do: raise("sandbox not available")
-    defp sandbox_start_query_response(_, _, _, _, _), do: raise("sandbox not available")
-    defp sandbox_get_query_results_response(_, _), do: raise("sandbox not available")
-    defp sandbox_stop_query_response(_, _), do: raise("sandbox not available")
-  end
 end

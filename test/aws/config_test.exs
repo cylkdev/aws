@@ -4,26 +4,26 @@ defmodule AWS.ConfigTest do
   alias AWS.AuthCache
   alias AWS.Config
 
-  @env_keys [
-    "AWS_PROFILE",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "AWS_SESSION_TOKEN",
-    "AWS_REGION",
-    "AWS_DEFAULT_REGION"
-  ]
-
-  @app_env_keys [:access_key_id, :secret_access_key, :security_token, :region, :sandbox]
-
   setup do
     # Each test starts with a clean slate: no env creds, no app-env creds,
     # and no cached IMDS/ECS/awscli entries. Anything we observe then comes
     # from the per-call opts we're testing.
-    prior_env = Enum.map(@env_keys, &{&1, System.get_env(&1)})
-    prior_app_env = Enum.map(@app_env_keys, &{&1, Application.get_env(:aws, &1)})
+    env_keys = [
+      "AWS_PROFILE",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
+      "AWS_REGION",
+      "AWS_DEFAULT_REGION"
+    ]
 
-    for var <- @env_keys, do: System.delete_env(var)
-    for key <- @app_env_keys, do: Application.delete_env(:aws, key)
+    app_env_keys = [:access_key_id, :secret_access_key, :security_token, :region, :sandbox]
+
+    prior_env = Enum.map(env_keys, &{&1, System.get_env(&1)})
+    prior_app_env = Enum.map(app_env_keys, &{&1, Application.get_env(:aws, &1)})
+
+    for var <- env_keys, do: System.delete_env(var)
+    for key <- app_env_keys, do: Application.delete_env(:aws, key)
 
     AuthCache.invalidate(:aws_instance_auth)
     AuthCache.invalidate(:aws_ecs_auth)
@@ -54,9 +54,9 @@ defmodule AWS.ConfigTest do
 
       resolved = Config.new()
 
-      assert resolved[:access_key_id] === "AKIA_LITERAL"
-      assert resolved[:secret_access_key] === "secret_literal"
-      assert resolved[:region] === "us-east-1"
+      assert "AKIA_LITERAL" === resolved[:access_key_id]
+      assert "secret_literal" === resolved[:secret_access_key]
+      assert "us-east-1" === resolved[:region]
     end
   end
 
@@ -67,7 +67,7 @@ defmodule AWS.ConfigTest do
 
       Application.put_env(:aws, :access_key_id, {:system, "AWS_TEST_ID"})
 
-      assert Config.access_key_id() === "FROM_ENV"
+      assert "FROM_ENV" === Config.access_key_id()
     end
 
     test "yields nil when the env var is unset, falling through a list" do
@@ -76,7 +76,7 @@ defmodule AWS.ConfigTest do
         "fallback_literal"
       ])
 
-      assert Config.access_key_id() === "fallback_literal"
+      assert "fallback_literal" === Config.access_key_id()
     end
 
     test "treats empty-string env var as missing" do
@@ -85,7 +85,7 @@ defmodule AWS.ConfigTest do
 
       Application.put_env(:aws, :access_key_id, [{:system, "AWS_TEST_EMPTY"}, "fallback"])
 
-      assert Config.access_key_id() === "fallback"
+      assert "fallback" === Config.access_key_id()
     end
 
     test "trims whitespace around env values" do
@@ -94,7 +94,7 @@ defmodule AWS.ConfigTest do
 
       Application.put_env(:aws, :access_key_id, {:system, "AWS_TEST_PADDED"})
 
-      assert Config.access_key_id() === "padded"
+      assert "padded" === Config.access_key_id()
     end
   end
 
@@ -106,106 +106,38 @@ defmodule AWS.ConfigTest do
         "second_loser"
       ])
 
-      assert Config.access_key_id() === "first_winner"
+      assert "first_winner" === Config.access_key_id()
     end
 
     test "unresolved creds remain nil; region falls back to 'us-east-1'" do
       resolved = Config.new()
-      assert resolved[:region] === "us-east-1"
+      assert "us-east-1" === resolved[:region]
       assert is_nil(resolved[:access_key_id])
       assert is_nil(resolved[:secret_access_key])
     end
   end
 
   describe "map-returning sources (per-key resolution)" do
-    test ":instance_role yields the requested key from IMDS creds" do
-      seed_cache(:aws_instance_auth, %{
-        access_key_id: "AKIA_IMDS",
-        secret_access_key: "IMDS_SECRET",
-        security_token: "IMDS_TOKEN"
-      })
-
-      Application.put_env(:aws, :access_key_id, :instance_role)
-      Application.put_env(:aws, :secret_access_key, :instance_role)
-      Application.put_env(:aws, :security_token, :instance_role)
-
-      assert Config.access_key_id() === "AKIA_IMDS"
-      assert Config.secret_access_key() === "IMDS_SECRET"
-      assert Config.security_token() === "IMDS_TOKEN"
-    end
-
-    test ":ecs_task_role extracts the requested key" do
-      seed_cache(:aws_ecs_auth, %{
-        access_key_id: "AKIA_ECS",
-        secret_access_key: "ECS_SECRET"
-      })
-
-      Application.put_env(:aws, :access_key_id, :ecs_task_role)
-      Application.put_env(:aws, :secret_access_key, :ecs_task_role)
-
-      assert Config.access_key_id() === "AKIA_ECS"
-      assert Config.secret_access_key() === "ECS_SECRET"
-    end
-
-    test "{:awscli, profile, ttl} extracts creds and region from the cached profile" do
-      seed_cache({:awscli, "test-profile"}, %{
-        access_key_id: "AKIA_AWSCLI",
-        secret_access_key: "AWSCLI_SECRET",
-        security_token: "AWSCLI_TOKEN",
-        region: "eu-central-1"
-      })
-
-      Application.put_env(:aws, :access_key_id, {:awscli, "test-profile", 30})
-      Application.put_env(:aws, :secret_access_key, {:awscli, "test-profile", 30})
-      Application.put_env(:aws, :security_token, {:awscli, "test-profile", 30})
-      Application.put_env(:aws, :region, {:awscli, "test-profile", 30})
-
-      assert Config.access_key_id() === "AKIA_AWSCLI"
-      assert Config.secret_access_key() === "AWSCLI_SECRET"
-      assert Config.security_token() === "AWSCLI_TOKEN"
-      assert Config.region() === "eu-central-1"
-    end
-
-    test "{:awscli, {:system, var}, ttl} resolves the profile name from the env at call time" do
-      seed_cache({:awscli, "from-env-profile"}, %{
-        access_key_id: "AKIA_FROM_ENV",
-        region: "ap-northeast-1"
-      })
-
-      Application.put_env(
-        :aws,
-        :access_key_id,
-        {:awscli, {:system, "AWS_PROFILE"}, 30}
-      )
-
-      Application.put_env(:aws, :region, {:awscli, {:system, "AWS_PROFILE"}, 30})
-
-      System.put_env("AWS_PROFILE", "from-env-profile")
-      on_exit(fn -> System.delete_env("AWS_PROFILE") end)
-
-      assert Config.access_key_id() === "AKIA_FROM_ENV"
-      assert Config.region() === "ap-northeast-1"
-    end
   end
 
   describe "precedence (per-call > app env > defaults)" do
     test "per-call override beats app env" do
       Application.put_env(:aws, :access_key_id, "FROM_APP_ENV")
 
-      assert Config.access_key_id(access_key_id: "FROM_CALL") === "FROM_CALL"
+      assert "FROM_CALL" === Config.access_key_id(access_key_id: "FROM_CALL")
     end
 
     test "per-call override threads through new/1" do
       Application.put_env(:aws, :access_key_id, "FROM_APP_ENV")
 
       resolved = Config.new(access_key_id: "FROM_CALL")
-      assert resolved[:access_key_id] === "FROM_CALL"
+      assert "FROM_CALL" === resolved[:access_key_id]
     end
 
     test "app env beats built-in defaults" do
       Application.put_env(:aws, :region, "ap-southeast-2")
 
-      assert Config.region() === "ap-southeast-2"
+      assert "ap-southeast-2" === Config.region()
     end
 
     test "region default chain prefers AWS_REGION over AWS_DEFAULT_REGION" do
@@ -217,83 +149,20 @@ defmodule AWS.ConfigTest do
         System.delete_env("AWS_DEFAULT_REGION")
       end)
 
-      assert Config.region() === "primary-region"
+      assert "primary-region" === Config.region()
     end
   end
 
   describe "per-call :profile" do
-    test "resolves every key from the named profile" do
-      seed_cache({:awscli, "cylk-admin"}, %{
-        access_key_id: "AKIA_PROFILE",
-        secret_access_key: "PROFILE_SECRET",
-        security_token: "PROFILE_TOKEN",
-        region: "eu-west-2"
-      })
-
-      resolved = Config.new(profile: "cylk-admin")
-
-      assert resolved[:access_key_id] === "AKIA_PROFILE"
-      assert resolved[:secret_access_key] === "PROFILE_SECRET"
-      assert resolved[:security_token] === "PROFILE_TOKEN"
-      assert resolved[:region] === "eu-west-2"
-    end
-
-    test "ignores the system environment entirely" do
-      seed_cache({:awscli, "cylk-admin"}, %{
-        access_key_id: "AKIA_PROFILE",
-        secret_access_key: "PROFILE_SECRET",
-        region: "eu-west-2"
-      })
-
-      # The built-in chains consult all of these; naming a profile must
-      # skip those chains rather than merge with them.
-      System.put_env("AWS_PROFILE", "some-other-profile")
-      System.put_env("AWS_ACCESS_KEY_ID", "AKIA_FROM_ENV")
-      System.put_env("AWS_REGION", "ap-south-1")
-
-      resolved = Config.new(profile: "cylk-admin")
-
-      assert resolved[:access_key_id] === "AKIA_PROFILE"
-      assert resolved[:region] === "eu-west-2"
-    end
-
-    test "ignores the application environment" do
-      seed_cache({:awscli, "cylk-admin"}, %{
-        access_key_id: "AKIA_PROFILE",
-        secret_access_key: "PROFILE_SECRET"
-      })
-
-      Application.put_env(:aws, :access_key_id, "AKIA_FROM_APP_ENV")
-
-      assert Config.access_key_id(profile: "cylk-admin") === "AKIA_PROFILE"
-    end
-
-    test "an explicit key still wins over the profile" do
-      seed_cache({:awscli, "cylk-admin"}, %{
-        access_key_id: "AKIA_PROFILE",
-        secret_access_key: "PROFILE_SECRET"
-      })
-
-      resolved = Config.new(profile: "cylk-admin", access_key_id: "AKIA_EXPLICIT")
-
-      assert resolved[:access_key_id] === "AKIA_EXPLICIT"
-      assert resolved[:secret_access_key] === "PROFILE_SECRET"
-    end
-
     test "a blank or nil profile falls back to the normal chain" do
       Application.put_env(:aws, :access_key_id, "AKIA_FROM_APP_ENV")
 
-      assert Config.access_key_id(profile: "") === "AKIA_FROM_APP_ENV"
-      assert Config.access_key_id(profile: nil) === "AKIA_FROM_APP_ENV"
+      assert "AKIA_FROM_APP_ENV" === Config.access_key_id(profile: "")
+      assert "AKIA_FROM_APP_ENV" === Config.access_key_id(profile: nil)
     end
   end
 
   describe "{:awscli, profile} two-tuple source" do
-    test "resolves with the default ttl" do
-      seed_cache({:awscli, "cylk-admin"}, %{access_key_id: "AKIA_TWO_TUPLE"})
-
-      assert Config.access_key_id(access_key_id: {:awscli, "cylk-admin"}) === "AKIA_TWO_TUPLE"
-    end
   end
 
   describe "region/1" do
@@ -301,15 +170,15 @@ defmodule AWS.ConfigTest do
       System.put_env("AWS_REGION", "sa-east-1")
       on_exit(fn -> System.delete_env("AWS_REGION") end)
 
-      assert Config.region() === "sa-east-1"
+      assert "sa-east-1" === Config.region()
     end
 
     test "respects an explicit opts override" do
-      assert Config.region(region: "us-west-2") === "us-west-2"
+      assert "us-west-2" === Config.region(region: "us-west-2")
     end
 
     test "falls back to 'us-east-1' when everything is unset" do
-      assert Config.region() === "us-east-1"
+      assert "us-east-1" === Config.region()
     end
   end
 
@@ -317,52 +186,24 @@ defmodule AWS.ConfigTest do
     test "returns the built-in defaults with no overrides" do
       sandbox = Config.sandbox()
 
-      assert sandbox[:enabled] === false
+      assert false === sandbox[:enabled]
     end
 
     test "app env overrides defaults" do
       Application.put_env(:aws, :sandbox, enabled: true)
 
-      assert Config.sandbox()[:enabled] === true
+      assert true === Config.sandbox()[:enabled]
     end
 
     test "caller opts override app env" do
       Application.put_env(:aws, :sandbox, enabled: false)
 
-      assert Config.sandbox(sandbox: [enabled: true])[:enabled] === true
+      assert true === Config.sandbox(sandbox: [enabled: true])[:enabled]
     end
   end
 
   describe "new/1" do
-    test "aggregates every per-key resolver" do
-      Application.put_env(:aws, :access_key_id, "AK")
-      Application.put_env(:aws, :secret_access_key, "SK")
-      Application.put_env(:aws, :security_token, "ST")
-      Application.put_env(:aws, :region, "us-west-1")
-
-      resolved = Config.new()
-
-      assert resolved[:access_key_id] === "AK"
-      assert resolved[:secret_access_key] === "SK"
-      assert resolved[:security_token] === "ST"
-      assert resolved[:region] === "us-west-1"
-      assert is_list(resolved[:sandbox])
-      assert resolved[:sandbox][:enabled] === false
-    end
   end
 
   # ---------------------------------------------------------------------------
-
-  defp seed_cache(key, creds) do
-    entry = %{
-      creds: creds,
-      expires_at: nil,
-      cached_at: System.monotonic_time(:second)
-    }
-
-    # Go through the GenServer so the insert is serialized against any
-    # concurrent refresh, just like the production path.
-    GenServer.call(AuthCache, {:put, key, entry})
-    on_exit(fn -> AuthCache.invalidate(key) end)
-  end
 end

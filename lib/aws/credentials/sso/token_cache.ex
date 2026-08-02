@@ -12,6 +12,8 @@ defmodule AWS.Credentials.SSO.TokenCache do
   crashed refresh cannot leave a corrupt cache file.
   """
 
+  require Logger
+
   @type cache :: %{
           optional(:accessToken) => String.t(),
           optional(:expiresAt) => String.t(),
@@ -52,18 +54,38 @@ defmodule AWS.Credentials.SSO.TokenCache do
   @spec write(String.t(), map, keyword) :: :ok | {:error, term}
   def write(key, contents, opts \\ []) when is_binary(key) and is_map(contents) do
     target = path(key, opts)
-    target |> Path.dirname() |> File.mkdir_p!()
-
     tmp = "#{target}.tmp.#{System.unique_integer([:positive])}"
     body = contents |> :json.encode() |> IO.iodata_to_binary()
 
-    with :ok <- File.write(tmp, body),
+    # `mkdir_p` belongs in the `with` rather than its raising `!` variant:
+    # the spec promises `{:error, term}`, and an unwritable ~/.aws is exactly
+    # the failure callers need to handle.
+    with :ok <- target |> Path.dirname() |> File.mkdir_p(),
+         :ok <- File.write(tmp, body),
          :ok <- File.chmod(tmp, 0o600),
          :ok <- File.rename(tmp, target) do
       :ok
     else
-      {:error, _} = err ->
-        File.rm(tmp)
+      {:error, _} = err -> discard_temp(tmp, err)
+    end
+  end
+
+  # The write already failed; this only removes the partial temp file. A
+  # missing temp file is the normal case when `File.write/2` itself failed,
+  # so it is not worth reporting -- anything else leaves a stray file behind.
+  defp discard_temp(tmp, err) do
+    case File.rm(tmp) do
+      :ok ->
+        err
+
+      {:error, :enoent} ->
+        err
+
+      {:error, reason} ->
+        Logger.warning(
+          "[AWS.Credentials.SSO.TokenCache] left temp file #{tmp}: #{inspect(reason)}"
+        )
+
         err
     end
   end

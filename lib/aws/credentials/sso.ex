@@ -29,7 +29,6 @@ defmodule AWS.Credentials.SSO do
     case dispatch(op) do
       {:ok, _} = ok -> ok
       {:error, %{reason: reason}} -> {:error, {:sso_transport_error, reason}}
-      {:error, _} = err -> err
     end
   end
 

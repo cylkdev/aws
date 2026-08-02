@@ -109,20 +109,48 @@ defmodule AWS.S3 do
       fn key, opts -> {:ok, "content"} end
   """
 
+  use AWS.Service,
+    sandbox: AWS.S3.Sandbox,
+    operations: [
+      abort_multipart_upload: 4,
+      complete_multipart_upload: 5,
+      copy_object: 5,
+      copy_part: 8,
+      copy_parts: 7,
+      create_bucket: 2,
+      create_multipart_upload: 3,
+      delete_bucket: 2,
+      delete_object: 3,
+      disable_event_bridge: 2,
+      enable_event_bridge: 2,
+      get_notification_configuration: 2,
+      get_object: 3,
+      head_bucket: 2,
+      head_object: 3,
+      list_buckets: 1,
+      list_objects: 2,
+      list_parts: 5,
+      presign: 4,
+      presign_part: 5,
+      presign_post: 3,
+      put_bucket_encryption: 2,
+      put_bucket_lifecycle_configuration: 3,
+      put_object: 4,
+      put_public_access_block: 2,
+      upload_part: 6
+    ]
+
   alias AWS.{
     Client,
     Config,
-    S3.Lock,
+    Operation,
     S3.Multipart,
-    S3.Operation,
     S3.XMLBuilder,
     S3.XMLParser,
     Signer
   }
 
   alias ExUtils.Serializer
-
-  @override_keys [:headers, :body, :http, :url, :stream_upload, :stream_response, :payload_hash]
 
   @service "s3"
   @sixty_four_mib 64 * 1_024 * 1_024
@@ -262,23 +290,6 @@ defmodule AWS.S3 do
   end
 
   @doc """
-  Convenience wrapper for `put_object/4` that sets `:if_none_match` to `true`
-  to ensure the object does not already exist.
-
-  See `put_object/4` for details.
-  """
-  @spec put_new_object(
-          bucket :: binary(),
-          key :: binary(),
-          body :: iodata() | Enumerable.t(),
-          opts :: keyword()
-        ) ::
-          {:ok, map()} | {:error, term()}
-  def put_new_object(bucket, key, body, opts \\ []) do
-    put_object(bucket, key, body, Keyword.put(opts, :if_none_match, true))
-  end
-
-  @doc """
   Uploads an object to a bucket.
 
   ## Permissions
@@ -363,44 +374,6 @@ defmodule AWS.S3 do
       sandbox_head_object_response(bucket, key, opts)
     else
       do_head_object(bucket, key, opts)
-    end
-  end
-
-  @doc """
-  Returns whether an object exists in a bucket.
-
-  Wraps `head_object/3`: returns `true` when the request succeeds and `false`
-  for any error (missing object, denied access, transport failure).
-
-  ## Permissions
-
-  To execute this request, you must have the following permission:
-
-    - s3:GetObject
-
-  ## Arguments
-
-    * `bucket` - The name of the bucket containing the object.
-    * `key` - The key of the object to check.
-    * `opts` - A keyword list of options.
-
-  ## Options
-
-  See the "Shared Options" section in the module documentation for common options.
-
-  ## Examples
-
-      iex> AWS.S3.object_exists?("my-bucket", "my-key")
-      true
-
-      iex> AWS.S3.object_exists?("my-bucket", "missing-key")
-      false
-  """
-  @spec object_exists?(bucket :: binary(), key :: binary(), opts :: keyword()) :: boolean()
-  def object_exists?(bucket, key, opts \\ []) do
-    case head_object(bucket, key, opts) do
-      {:ok, _} -> true
-      {:error, _} -> false
     end
   end
 
@@ -1312,163 +1285,6 @@ defmodule AWS.S3 do
     end
   end
 
-  @doc """
-  Acquires a lock on `key` in `bucket` by writing a lockfile via a conditional
-  PUT (`If-None-Match: *`).
-
-  This implements S3-native locking using strongly-consistent conditional
-  writes — the same mechanism Terraform's S3 backend uses when configured with
-  `use_lockfile = true`. No DynamoDB table is required.
-
-  Acquisition succeeds only if the lockfile does not already exist; otherwise
-  S3 returns 412 Precondition Failed and this function returns
-  `{:error, %ErrorMessage{code: :conflict}}`.
-
-  The default body is JSON shaped to match Terraform's lock-info document
-  (`"ID"`, `"Created"`, `"Who"`, `"Path"`, ...) so the same lockfile can be
-  observed or released by Terraform if desired.
-
-  ## Permissions
-
-    - s3:PutObject
-
-  ## Arguments
-
-    * `bucket` - The name of the bucket to write the lockfile into.
-    * `key` - The full key for the lockfile (e.g. `"path/to/state.tfstate.tflock"`).
-    * `opts` - A keyword list of options.
-
-  ## Options
-
-    * `:lock_id` - The lock ID to embed in the body. Defaults to a generated
-      32-character hex string.
-    * `:operation`, `:info`, `:who`, `:version`, `:path` - Optional string
-      fields embedded in the default JSON body. `:who` defaults to
-      `"<USER>@<hostname>"`; `:path` defaults to `"<bucket>/<key>"`.
-    * `:body` - Override the lockfile body entirely. When provided, the
-      lock-info fields above are ignored for body construction (but
-      `:lock_id` is still returned in the result).
-
-  See the "Shared Options" section in the module documentation for common options.
-
-  ## Examples
-
-      iex> AWS.S3.acquire_lock("my-bucket", "state.tfstate.tflock")
-      {:ok, %{lock_id: "abc...", key: "state.tfstate.tflock", etag: "...", body: "..."}}
-
-      iex> AWS.S3.acquire_lock("my-bucket", "state.tfstate.tflock")
-      {:error, %ErrorMessage{code: :conflict, message: "object already exists", ...}}
-  """
-  @spec acquire_lock(bucket :: binary(), key :: binary(), opts :: keyword()) ::
-          {:ok,
-           %{
-             lock_id: binary(),
-             key: binary(),
-             etag: binary() | nil,
-             body: binary()
-           }}
-          | {:error, term()}
-  def acquire_lock(bucket, key, opts \\ []) do
-    {lock_id, body, put_opts} = Lock.build(bucket, key, opts)
-
-    case put_new_object(bucket, key, body, put_opts) do
-      {:ok, headers} ->
-        {:ok, %{lock_id: lock_id, key: key, etag: headers[:etag], body: body}}
-
-      {:error, _} = err ->
-        err
-    end
-  end
-
-  @doc """
-  Releases a lock previously acquired with `acquire_lock/3` by deleting the
-  lockfile.
-
-  When `:lock_id` is provided, the existing lockfile body is fetched first and
-  must contain that ID before the deletion proceeds. This prevents one caller
-  from accidentally releasing another caller's lock. Without `:lock_id`, the
-  lockfile is deleted unconditionally.
-
-  ## Permissions
-
-    - s3:DeleteObject
-    - s3:GetObject (only when `:lock_id` is provided)
-
-  ## Arguments
-
-    * `bucket` - The name of the bucket containing the lockfile.
-    * `key` - The lockfile key.
-    * `opts` - A keyword list of options.
-
-  ## Options
-
-    * `:lock_id` - When provided, the lockfile body is read and must contain
-      this ID for release to proceed. Returns
-      `{:error, %ErrorMessage{code: :conflict}}` on mismatch.
-
-  See the "Shared Options" section in the module documentation for common options.
-
-  ## Examples
-
-      iex> AWS.S3.release_lock("my-bucket", "state.tfstate.tflock", lock_id: "abc...")
-      {:ok, ""}
-  """
-  @spec release_lock(bucket :: binary(), key :: binary(), opts :: keyword()) ::
-          {:ok, term()} | {:error, term()}
-  def release_lock(bucket, key, opts \\ []) do
-    {expected_id, delete_opts} = Keyword.pop(opts, :lock_id)
-
-    case expected_id do
-      nil ->
-        delete_object(bucket, key, delete_opts)
-
-      _ ->
-        with {:ok, body} <- get_object(bucket, key, delete_opts),
-             :ok <- Lock.verify_id(body, expected_id, bucket, key) do
-          delete_object(bucket, key, delete_opts)
-        end
-    end
-  end
-
-  @doc """
-  Acquires a lock, runs `fun` with the lock info, and releases the lock,
-  even if `fun` raises.
-
-  Returns whatever `fun` returns on successful acquisition. On acquisition
-  failure, returns `{:error, reason}` without invoking `fun`.
-
-  Release errors are not propagated; if you need to observe them, use
-  `acquire_lock/3` and `release_lock/3` directly.
-
-  ## Examples
-
-      iex> AWS.S3.with_lock("my-bucket", "state.tfstate.tflock", fn lock ->
-      ...>   IO.inspect(lock.lock_id)
-      ...>   :work_done
-      ...> end)
-      :work_done
-  """
-  @spec with_lock(
-          bucket :: binary(),
-          key :: binary(),
-          fun :: (map() -> result),
-          opts :: keyword()
-        ) :: result | {:error, term()}
-        when result: var
-  def with_lock(bucket, key, fun, opts \\ []) when is_function(fun, 1) do
-    case acquire_lock(bucket, key, opts) do
-      {:ok, lock} ->
-        try do
-          fun.(lock)
-        after
-          release_lock(bucket, key, Keyword.put(opts, :lock_id, lock.lock_id))
-        end
-
-      {:error, _} = err ->
-        err
-    end
-  end
-
   @doc false
   def build_operation(method, bucket, key, opts) do
     with {:ok, config} <- resolve_config(opts) do
@@ -1741,14 +1557,13 @@ defmodule AWS.S3 do
     end)
   end
 
-  defp resolve_expires(nil) do
-    DateTime.utc_now()
-    |> DateTime.add(1, :minute)
-    |> to_http_date()
-  end
-
+  # `Expires` is object cache-expiry metadata and is optional to AWS; send
+  # it only when the caller asks for it.
+  defp resolve_expires(nil), do: nil
   defp resolve_expires(%DateTime{} = datetime), do: to_http_date(datetime)
   defp resolve_expires(expires) when is_binary(expires), do: expires
+
+  defp maybe_expires_header(nil), do: []
 
   defp maybe_expires_header(expires) when is_binary(expires) do
     [{"expires", expires}]
@@ -1852,30 +1667,60 @@ defmodule AWS.S3 do
 
   defp do_copy_object_multipart(dest_bucket, dest_key, src_bucket, src_key, opts) do
     with {:ok, info} <- head_object(src_bucket, src_key, opts),
-         {:ok, mpu} <- create_multipart_upload(dest_bucket, dest_key, opts),
-         content_length = String.to_integer(info.content_length),
-         {:ok, parts} <-
+         {:ok, mpu} <- create_multipart_upload(dest_bucket, dest_key, opts) do
+      content_length = String.to_integer(info.content_length)
+
+      result =
+        copy_and_complete(
+          dest_bucket,
+          dest_key,
+          src_bucket,
+          src_key,
+          mpu.upload_id,
+          content_length,
+          opts
+        )
+
+      with {:error, _} = copy_error <- result do
+        abort_after_failed_copy(copy_error, dest_bucket, dest_key, mpu.upload_id, opts)
+      end
+    end
+  end
+
+  # This function creates the upload, so on failure the caller never learns
+  # the upload id and cannot abort it themselves.
+  defp abort_after_failed_copy(copy_error, bucket, key, upload_id, opts) do
+    case abort_multipart_upload(bucket, key, upload_id, opts) do
+      # Cleaned up. Report why the copy failed.
+      {:ok, _} -> copy_error
+      # Not cleaned up: an upload is left billing. That outranks the copy.
+      {:error, _} = abort_error -> abort_error
+    end
+  end
+
+  defp copy_and_complete(
+         dest_bucket,
+         dest_key,
+         src_bucket,
+         src_key,
+         upload_id,
+         content_length,
+         opts
+       ) do
+    with {:ok, parts} <-
            copy_parts(
              dest_bucket,
              dest_key,
              src_bucket,
              src_key,
-             mpu.upload_id,
+             upload_id,
              content_length,
              opts
            ) do
-      parts =
-        parts
-        |> Enum.map(fn {%{etag: etag}, part_num} -> {part_num, etag} end)
-        |> Enum.sort()
-
-      complete_multipart_upload(
-        dest_bucket,
-        dest_key,
-        mpu.upload_id,
-        parts,
-        opts
-      )
+      parts
+      |> Enum.map(fn {%{etag: etag}, part_num} -> {part_num, etag} end)
+      |> Enum.sort()
+      |> then(&complete_multipart_upload(dest_bucket, dest_key, upload_id, &1, opts))
     end
   end
 
@@ -2051,34 +1896,6 @@ defmodule AWS.S3 do
 
   defp merge_response_header_opts(opts), do: Keyword.merge(@response_header_opts, opts)
 
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 300..399 do
-    {:error, ErrorMessage.bad_request("redirect not followed.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
-  end
-
   defp copy_part_range(
          dest_bucket,
          dest_key,
@@ -2123,8 +1940,11 @@ defmodule AWS.S3 do
     end)
   end
 
+  # AWS enforces its own 5 TiB limit, so no check runs unless the caller
+  # asks for one. Exceeding an opted-in `:max_size` reports the error; the
+  # caller decides whether to abort.
   defp validate_multipart_size(bucket, key, upload_id, opts) do
-    case Keyword.get(opts, :max_size, @one_gib) do
+    case Keyword.get(opts, :max_size, :infinity) do
       :infinity -> :ok
       false -> :ok
       nil -> :ok
@@ -2135,26 +1955,21 @@ defmodule AWS.S3 do
   defp check_multipart_size(bucket, key, upload_id, max, opts) do
     with {:ok, size} <- aggregate_object_size(bucket, key, upload_id, opts) do
       if size > max do
-        abort_with_size_error(bucket, key, upload_id, max, opts)
+        {:error,
+         ErrorMessage.forbidden(
+           "multipart upload size exceeds maximum allowed size",
+           %{
+             bucket: bucket,
+             key: key,
+             upload_id: upload_id,
+             max_size: max,
+             size: size
+           }
+         )}
       else
         :ok
       end
     end
-  end
-
-  defp abort_with_size_error(bucket, key, upload_id, max, opts) do
-    abort_multipart_upload(bucket, key, upload_id, opts)
-
-    {:error,
-     ErrorMessage.forbidden(
-       "multipart upload size exceeds maximum allowed size",
-       %{
-         bucket: bucket,
-         key: key,
-         upload_id: upload_id,
-         max_size: max
-       }
-     )}
   end
 
   defp aggregate_object_size(bucket, key, upload_id, opts) do
@@ -2221,7 +2036,9 @@ defmodule AWS.S3 do
          }
        )}
 
-    case Keyword.get(opts, :on_content_type_mismatch, :delete) do
+    # Reporting is the default: the upload succeeded, and deleting the
+    # caller's object is unrecoverable on an unversioned bucket.
+    case Keyword.get(opts, :on_content_type_mismatch, :error) do
       :delete -> with {:ok, _} <- delete_object(bucket, key, opts), do: error
       :error -> error
     end
@@ -2321,15 +2138,6 @@ defmodule AWS.S3 do
     end
   end
 
-  defp apply_overrides(op, overrides) do
-    Enum.reduce(@override_keys, op, fn key, acc ->
-      case Keyword.fetch(overrides, key) do
-        {:ok, value} -> Map.put(acc, key, value)
-        :error -> acc
-      end
-    end)
-  end
-
   # ---------------------------------------------------------------------------
   # PRIVATE HELPERS
   # ---------------------------------------------------------------------------
@@ -2395,8 +2203,7 @@ defmodule AWS.S3 do
   defp classify_body(_body), do: {nil, false}
 
   defp iodata?(list) do
-    _ = IO.iodata_length(list)
-    true
+    is_integer(IO.iodata_length(list))
   rescue
     _ -> false
   end
@@ -2440,20 +2247,12 @@ defmodule AWS.S3 do
         S3.head_bucket(source_bucket!(opts), with_default_options(opts))
       end
 
-      def put_new_object(key, body, opts \\ []) do
-        S3.put_new_object(source_bucket!(opts), key, body, with_default_options(opts))
-      end
-
       def put_object(key, body, opts \\ []) do
         S3.put_object(source_bucket!(opts), key, body, with_default_options(opts))
       end
 
       def head_object(key, opts \\ []) do
         S3.head_object(source_bucket!(opts), key, with_default_options(opts))
-      end
-
-      def object_exists?(key, opts \\ []) do
-        S3.object_exists?(source_bucket!(opts), key, with_default_options(opts))
       end
 
       def delete_object(key, opts \\ []) do
@@ -2650,462 +2449,4 @@ defmodule AWS.S3 do
   # ---------------------------------------------------------------------------
   # SANDBOX HELPERS
   # ---------------------------------------------------------------------------
-
-  defp sandbox?(opts) do
-    sandbox_opts = opts[:sandbox] || []
-    cfg = Config.sandbox()
-    enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
-
-    enabled and not sandbox_disabled?()
-  end
-
-  if Code.ensure_loaded?(SandboxRegistry) do
-    @doc false
-    defdelegate sandbox_disabled?, to: AWS.S3.Sandbox
-
-    @doc false
-    defdelegate sandbox_list_buckets_response(opts),
-      to: AWS.S3.Sandbox,
-      as: :list_buckets_response
-
-    @doc false
-    defdelegate sandbox_create_bucket_response(bucket, opts),
-      to: AWS.S3.Sandbox,
-      as: :create_bucket_response
-
-    @doc false
-    defdelegate sandbox_delete_bucket_response(bucket, opts),
-      to: AWS.S3.Sandbox,
-      as: :delete_bucket_response
-
-    @doc false
-    defdelegate sandbox_put_object_response(bucket, key, body, opts),
-      to: AWS.S3.Sandbox,
-      as: :put_object_response
-
-    @doc false
-    defdelegate sandbox_head_object_response(bucket, key, opts),
-      to: AWS.S3.Sandbox,
-      as: :head_object_response
-
-    @doc false
-    defdelegate sandbox_delete_object_response(bucket, key, opts),
-      to: AWS.S3.Sandbox,
-      as: :delete_object_response
-
-    @doc false
-    defdelegate sandbox_get_object_response(bucket, key, opts),
-      to: AWS.S3.Sandbox,
-      as: :get_object_response
-
-    @doc false
-    defdelegate sandbox_list_objects_response(bucket, opts),
-      to: AWS.S3.Sandbox,
-      as: :list_objects_response
-
-    @doc false
-    defdelegate sandbox_copy_object_response(dest_bucket, dest_key, src_bucket, src_key, opts),
-      to: AWS.S3.Sandbox,
-      as: :copy_object_response
-
-    @doc false
-    defdelegate sandbox_presign_response(bucket, http_method, key, opts),
-      to: AWS.S3.Sandbox,
-      as: :presign_response
-
-    @doc false
-    defdelegate sandbox_presign_post_response(bucket, key, opts),
-      to: AWS.S3.Sandbox,
-      as: :presign_post_response
-
-    @doc false
-    defdelegate sandbox_presign_part_response(bucket, object, upload_id, part_number, opts),
-      to: AWS.S3.Sandbox,
-      as: :presign_part_response
-
-    @doc false
-    defdelegate sandbox_create_multipart_upload_response(bucket, key, opts),
-      to: AWS.S3.Sandbox,
-      as: :create_multipart_upload_response
-
-    @doc false
-    defdelegate sandbox_abort_multipart_upload_response(bucket, key, upload_id, opts),
-      to: AWS.S3.Sandbox,
-      as: :abort_multipart_upload_response
-
-    @doc false
-    defdelegate sandbox_upload_part_response(bucket, key, upload_id, part_number, body, opts),
-      to: AWS.S3.Sandbox,
-      as: :upload_part_response
-
-    @doc false
-    defdelegate sandbox_list_parts_response(bucket, key, upload_id, part_number_marker, opts),
-      to: AWS.S3.Sandbox,
-      as: :list_parts_response
-
-    @doc false
-    defdelegate sandbox_copy_part_response(
-                  dest_bucket,
-                  dest_key,
-                  src_bucket,
-                  src_key,
-                  upload_id,
-                  part_number,
-                  src_range,
-                  opts
-                ),
-                to: AWS.S3.Sandbox,
-                as: :copy_part_response
-
-    @doc false
-    defdelegate sandbox_copy_parts_response(
-                  dest_bucket,
-                  dest_key,
-                  src_bucket,
-                  src_key,
-                  upload_id,
-                  content_length,
-                  opts
-                ),
-                to: AWS.S3.Sandbox,
-                as: :copy_parts_response
-
-    @doc false
-    defdelegate sandbox_complete_multipart_upload_response(
-                  bucket,
-                  key,
-                  upload_id,
-                  parts,
-                  opts
-                ),
-                to: AWS.S3.Sandbox,
-                as: :complete_multipart_upload_response
-
-    # S3 EventBridge notification sandbox delegates
-    @doc false
-    defdelegate sandbox_enable_event_bridge_response(bucket, opts),
-      to: AWS.S3.Sandbox,
-      as: :enable_event_bridge_response
-
-    @doc false
-    defdelegate sandbox_disable_event_bridge_response(bucket, opts),
-      to: AWS.S3.Sandbox,
-      as: :disable_event_bridge_response
-
-    @doc false
-    defdelegate sandbox_get_notification_configuration_response(bucket, opts),
-      to: AWS.S3.Sandbox,
-      as: :get_notification_configuration_response
-
-    @doc false
-    defdelegate sandbox_head_bucket_response(bucket, opts),
-      to: AWS.S3.Sandbox,
-      as: :head_bucket_response
-
-    @doc false
-    defdelegate sandbox_put_public_access_block_response(bucket, opts),
-      to: AWS.S3.Sandbox,
-      as: :put_public_access_block_response
-
-    @doc false
-    defdelegate sandbox_put_bucket_encryption_response(bucket, opts),
-      to: AWS.S3.Sandbox,
-      as: :put_bucket_encryption_response
-
-    @doc false
-    defdelegate sandbox_put_bucket_lifecycle_configuration_response(bucket, rules, opts),
-      to: AWS.S3.Sandbox,
-      as: :put_bucket_lifecycle_configuration_response
-  else
-    defp sandbox_disabled?, do: true
-
-    defp sandbox_list_buckets_response(opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_create_bucket_response(bucket, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_delete_bucket_response(bucket, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_put_object_response(bucket, key, body, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      body: #{inspect(body)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_head_object_response(bucket, key, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_delete_object_response(bucket, key, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_get_object_response(bucket, key, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_list_objects_response(bucket, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_copy_object_response(dest_bucket, dest_key, src_bucket, src_key, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      dest_bucket: #{inspect(dest_bucket)}
-      dest_key: #{inspect(dest_key)}
-      src_bucket: #{inspect(src_bucket)}
-      src_key: #{inspect(src_key)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_presign_response(bucket, http_method, key, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      http_method: #{inspect(http_method)}
-      key: #{inspect(key)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_presign_post_response(bucket, key, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_presign_part_response(bucket, object, upload_id, part_number, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      object: #{inspect(object)}
-      upload_id: #{inspect(upload_id)}
-      part_number: #{inspect(part_number)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_create_multipart_upload_response(bucket, key, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_abort_multipart_upload_response(bucket, key, upload_id, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      upload_id: #{inspect(upload_id)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_upload_part_response(bucket, key, upload_id, part_number, body, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      upload_id: #{inspect(upload_id)}
-      part_number: #{inspect(part_number)}
-      body: #{inspect(body)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_list_parts_response(bucket, key, upload_id, part_number_marker, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      upload_id: #{inspect(upload_id)}
-      part_number_marker: #{inspect(part_number_marker)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_copy_part_response(
-           dest_bucket,
-           dest_key,
-           src_bucket,
-           src_key,
-           upload_id,
-           part_number,
-           src_range,
-           opts
-         ) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      dest_bucket: #{inspect(dest_bucket)}
-      dest_key: #{inspect(dest_key)}
-      src_bucket: #{inspect(src_bucket)}
-      src_key: #{inspect(src_key)}
-      upload_id: #{inspect(upload_id)}
-      part_number: #{inspect(part_number)}
-      src_range: #{inspect(src_range)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_copy_parts_response(
-           dest_bucket,
-           dest_key,
-           src_bucket,
-           src_key,
-           upload_id,
-           content_length,
-           opts
-         ) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      dest_bucket: #{inspect(dest_bucket)}
-      dest_key: #{inspect(dest_key)}
-      src_bucket: #{inspect(src_bucket)}
-      src_key: #{inspect(src_key)}
-      upload_id: #{inspect(upload_id)}
-      content_length: #{inspect(content_length)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_complete_multipart_upload_response(bucket, key, upload_id, parts, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      key: #{inspect(key)}
-      upload_id: #{inspect(upload_id)}
-      parts: #{inspect(parts)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_enable_event_bridge_response(bucket, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_disable_event_bridge_response(bucket, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_get_notification_configuration_response(bucket, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_head_bucket_response(bucket, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_put_public_access_block_response(bucket, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_put_bucket_encryption_response(bucket, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      options: #{inspect(opts)}
-      """
-    end
-
-    defp sandbox_put_bucket_lifecycle_configuration_response(bucket, rules, opts) do
-      raise """
-      Cannot use sandbox mode outside of test environment.
-
-      bucket: #{inspect(bucket)}
-      rules: #{inspect(rules)}
-      options: #{inspect(opts)}
-      """
-    end
-  end
 end

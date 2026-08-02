@@ -1,4 +1,3 @@
-AWS.Counter.start()
 AWS.S3.Sandbox.start_link()
 AWS.EventBridge.Sandbox.start_link()
 AWS.Logs.Sandbox.start_link()
