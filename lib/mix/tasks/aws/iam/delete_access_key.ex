@@ -41,7 +41,7 @@ defmodule Mix.Tasks.AWS.IAM.DeleteAccessKey do
     opts = Helpers.build_opts(parsed)
 
     access_key_id
-    |> AWS.IAM.delete_access_key(username, opts)
+    |> AWS.IAM.delete_access_key(Keyword.put(opts, :user_name, username))
     |> Helpers.handle_result()
   end
 end

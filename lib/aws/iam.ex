@@ -123,19 +123,19 @@ defmodule AWS.IAM do
     * `username` - The user name.
     * `opts` - Shared options.
   """
-  @spec get_user(username :: String.t(), opts :: keyword()) ::
+  @spec get_user(opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def get_user(username, opts \\ []) do
+  def get_user(opts \\ []) do
     if sandbox?(opts) do
-      sandbox_get_user_response(username, opts)
+      sandbox_get_user_response(opts)
     else
-      do_get_user(username, opts)
+      do_get_user(opts)
     end
   end
 
-  defp do_get_user(username, opts) do
+  defp do_get_user(opts) do
     "GetUser"
-    |> perform(%{"UserName" => username}, opts)
+    |> perform(maybe_put(%{}, "UserName", opts[:user_name]), opts)
     |> deserialize_response(opts, fn body ->
       {:ok, parse_user(body, ~x"//GetUserResult/User"e)}
     end)
@@ -232,19 +232,19 @@ defmodule AWS.IAM do
     * `username` - The user name.
     * `opts` - Shared options.
   """
-  @spec create_access_key(username :: String.t(), opts :: keyword()) ::
+  @spec create_access_key(opts :: keyword()) ::
           {:ok, %{access_key_id: String.t(), secret_access_key: String.t()}} | {:error, term()}
-  def create_access_key(username, opts \\ []) do
+  def create_access_key(opts \\ []) do
     if sandbox?(opts) do
-      sandbox_create_access_key_response(username, opts)
+      sandbox_create_access_key_response(opts)
     else
-      do_create_access_key(username, opts)
+      do_create_access_key(opts)
     end
   end
 
-  defp do_create_access_key(username, opts) do
+  defp do_create_access_key(opts) do
     "CreateAccessKey"
-    |> perform(%{"UserName" => username}, opts)
+    |> perform(maybe_put(%{}, "UserName", opts[:user_name]), opts)
     |> deserialize_response(opts, fn body ->
       {:ok, parse_access_key(body, ~x"//CreateAccessKeyResult/AccessKey"e)}
     end)
@@ -258,19 +258,25 @@ defmodule AWS.IAM do
     * `username` - The user name.
     * `opts` - Shared options.
   """
-  @spec list_access_keys(username :: String.t(), opts :: keyword()) ::
+  @spec list_access_keys(opts :: keyword()) ::
           {:ok, %{access_keys: list(map())}} | {:error, term()}
-  def list_access_keys(username, opts \\ []) do
+  def list_access_keys(opts \\ []) do
     if sandbox?(opts) do
-      sandbox_list_access_keys_response(username, opts)
+      sandbox_list_access_keys_response(opts)
     else
-      do_list_access_keys(username, opts)
+      do_list_access_keys(opts)
     end
   end
 
-  defp do_list_access_keys(username, opts) do
+  defp do_list_access_keys(opts) do
+    params =
+      %{}
+      |> maybe_put("UserName", opts[:user_name])
+      |> maybe_put("Marker", opts[:marker])
+      |> maybe_put("MaxItems", opts[:max_items])
+
     "ListAccessKeys"
-    |> perform(%{"UserName" => username}, opts)
+    |> perform(params, opts)
     |> deserialize_response(opts, fn body ->
       access_keys =
         xpath(body, ~x"//AccessKeyMetadata/member"l,
@@ -293,19 +299,21 @@ defmodule AWS.IAM do
     * `username` - The user name.
     * `opts` - Shared options.
   """
-  @spec delete_access_key(access_key_id :: String.t(), username :: String.t(), opts :: keyword()) ::
+  @spec delete_access_key(access_key_id :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
-  def delete_access_key(access_key_id, username, opts \\ []) do
+  def delete_access_key(access_key_id, opts \\ []) when is_binary(access_key_id) do
     if sandbox?(opts) do
-      sandbox_delete_access_key_response(access_key_id, username, opts)
+      sandbox_delete_access_key_response(access_key_id, opts)
     else
-      do_delete_access_key(access_key_id, username, opts)
+      do_delete_access_key(access_key_id, opts)
     end
   end
 
-  defp do_delete_access_key(access_key_id, username, opts) do
+  defp do_delete_access_key(access_key_id, opts) do
+    params = maybe_put(%{"AccessKeyId" => access_key_id}, "UserName", opts[:user_name])
+
     "DeleteAccessKey"
-    |> perform(%{"AccessKeyId" => access_key_id, "UserName" => username}, opts)
+    |> perform(params, opts)
     |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
   end
 
@@ -349,7 +357,8 @@ defmodule AWS.IAM do
     * `:path_prefix` - Filter groups whose path begins with this string.
   """
   @spec list_groups(opts :: keyword()) ::
-          {:ok, %{groups: list(map())}} | {:error, term()}
+          {:ok, %{groups: list(map()), is_truncated: boolean(), marker: String.t() | nil}}
+          | {:error, term()}
   def list_groups(opts \\ []) do
     if sandbox?(opts) do
       sandbox_list_groups_response(opts)
@@ -377,7 +386,12 @@ defmodule AWS.IAM do
           create_date: ~x"./CreateDate/text()"s
         )
 
-      {:ok, %{groups: groups}}
+      {:ok,
+       %{
+         groups: groups,
+         is_truncated: xpath(body, ~x"//IsTruncated/text()"s) == "true",
+         marker: xpath(body, ~x"//Marker/text()"so)
+       }}
     end)
   end
 
@@ -541,7 +555,8 @@ defmodule AWS.IAM do
     * `:marker` - Pagination marker.
   """
   @spec list_roles(opts :: keyword()) ::
-          {:ok, %{roles: list(map())}} | {:error, term()}
+          {:ok, %{roles: list(map()), is_truncated: boolean(), marker: String.t() | nil}}
+          | {:error, term()}
   def list_roles(opts \\ []) do
     if sandbox?(opts) do
       sandbox_list_roles_response(opts)
@@ -569,7 +584,12 @@ defmodule AWS.IAM do
           create_date: ~x"./CreateDate/text()"s
         )
 
-      {:ok, %{roles: roles}}
+      {:ok,
+       %{
+         roles: roles,
+         is_truncated: xpath(body, ~x"//IsTruncated/text()"s) == "true",
+         marker: xpath(body, ~x"//Marker/text()"so)
+       }}
     end)
   end
 
@@ -930,7 +950,8 @@ defmodule AWS.IAM do
     * `:marker` - Pagination marker.
   """
   @spec list_policies(opts :: keyword()) ::
-          {:ok, %{policies: list(map())}} | {:error, term()}
+          {:ok, %{policies: list(map()), is_truncated: boolean(), marker: String.t() | nil}}
+          | {:error, term()}
   def list_policies(opts \\ []) do
     if sandbox?(opts) do
       sandbox_list_policies_response(opts)
@@ -961,7 +982,12 @@ defmodule AWS.IAM do
           update_date: ~x"./UpdateDate/text()"s
         )
 
-      {:ok, %{policies: policies}}
+      {:ok,
+       %{
+         policies: policies,
+         is_truncated: xpath(body, ~x"//IsTruncated/text()"s) == "true",
+         marker: xpath(body, ~x"//Marker/text()"so)
+       }}
     end)
   end
 
@@ -1200,7 +1226,8 @@ defmodule AWS.IAM do
   Lists managed policies attached to a role.
   """
   @spec list_attached_role_policies(role_name :: String.t(), opts :: keyword()) ::
-          {:ok, %{policies: list(map())}} | {:error, term()}
+          {:ok, %{policies: list(map()), is_truncated: boolean(), marker: String.t() | nil}}
+          | {:error, term()}
   def list_attached_role_policies(role_name, opts \\ []) do
     if sandbox?(opts) do
       sandbox_list_attached_role_policies_response(role_name, opts)
@@ -1210,8 +1237,14 @@ defmodule AWS.IAM do
   end
 
   defp do_list_attached_role_policies(role_name, opts) do
+    params =
+      %{"RoleName" => role_name}
+      |> maybe_put("PathPrefix", opts[:path_prefix])
+      |> maybe_put("Marker", opts[:marker])
+      |> maybe_put("MaxItems", opts[:max_items])
+
     "ListAttachedRolePolicies"
-    |> perform(%{"RoleName" => role_name}, opts)
+    |> perform(params, opts)
     |> deserialize_response(opts, fn body ->
       policies =
         xpath(body, ~x"//AttachedPolicies/member"l,
@@ -1219,7 +1252,12 @@ defmodule AWS.IAM do
           policy_arn: ~x"./PolicyArn/text()"s
         )
 
-      {:ok, %{policies: policies}}
+      {:ok,
+       %{
+         policies: policies,
+         is_truncated: xpath(body, ~x"//IsTruncated/text()"s) == "true",
+         marker: xpath(body, ~x"//Marker/text()"so)
+       }}
     end)
   end
 
@@ -1315,7 +1353,7 @@ defmodule AWS.IAM do
     * `username` - The IAM user name.
     * `opts` - Options including `:max_items`, `:marker`, plus shared options.
   """
-  @spec list_mfa_devices(username :: String.t(), opts :: keyword()) ::
+  @spec list_mfa_devices(opts :: keyword()) ::
           {:ok,
            %{
              mfa_devices: list(map()),
@@ -1323,17 +1361,17 @@ defmodule AWS.IAM do
              marker: String.t() | nil
            }}
           | {:error, term()}
-  def list_mfa_devices(username, opts \\ []) do
+  def list_mfa_devices(opts \\ []) do
     if sandbox?(opts) do
-      sandbox_list_mfa_devices_response(username, opts)
+      sandbox_list_mfa_devices_response(opts)
     else
-      do_list_mfa_devices(username, opts)
+      do_list_mfa_devices(opts)
     end
   end
 
-  defp do_list_mfa_devices(username, opts) do
+  defp do_list_mfa_devices(opts) do
     params =
-      %{"UserName" => username}
+      maybe_put(%{}, "UserName", opts[:user_name])
       |> maybe_put("Marker", opts[:marker])
       |> maybe_put("MaxItems", opts[:max_items])
 
@@ -1375,23 +1413,22 @@ defmodule AWS.IAM do
     * `opts` - Options including `:thumbprint_list` (required by AWS — list of
       server certificate thumbprints), plus shared options.
   """
-  @spec create_open_id_connect_provider(
-          url :: String.t(),
-          client_id_list :: list(String.t()),
-          opts :: keyword()
-        ) :: {:ok, %{open_id_connect_provider_arn: String.t()}} | {:error, term()}
-  def create_open_id_connect_provider(url, client_id_list, opts \\ []) do
+  @spec create_open_id_connect_provider(url :: String.t(), opts :: keyword()) ::
+          {:ok, %{open_id_connect_provider_arn: String.t()}} | {:error, term()}
+  def create_open_id_connect_provider(url, opts \\ []) when is_binary(url) do
     if sandbox?(opts) do
       sandbox_create_open_id_connect_provider_response(url, opts)
     else
-      do_create_open_id_connect_provider(url, client_id_list, opts)
+      do_create_open_id_connect_provider(url, opts)
     end
   end
 
-  defp do_create_open_id_connect_provider(url, client_id_list, opts) do
+  defp do_create_open_id_connect_provider(url, opts) do
+    # Both ClientIDList and ThumbprintList are optional -- IAM now uses its own
+    # trusted-CA library rather than requiring thumbprints.
     params =
       %{"Url" => url}
-      |> put_member_list("ClientIDList", client_id_list)
+      |> put_member_list("ClientIDList", opts[:client_id_list] || [])
       |> put_member_list("ThumbprintList", opts[:thumbprint_list] || [])
 
     "CreateOpenIDConnectProvider"
@@ -1755,7 +1792,7 @@ defmodule AWS.IAM do
       as: :create_user_response
 
     @doc false
-    defdelegate sandbox_get_user_response(name, opts), to: AWS.IAM.Sandbox, as: :get_user_response
+    defdelegate sandbox_get_user_response(opts), to: AWS.IAM.Sandbox, as: :get_user_response
     @doc false
     defdelegate sandbox_list_users_response(opts), to: AWS.IAM.Sandbox, as: :list_users_response
     @doc false
@@ -1765,17 +1802,17 @@ defmodule AWS.IAM do
 
     # Access Keys
     @doc false
-    defdelegate sandbox_create_access_key_response(username, opts),
+    defdelegate sandbox_create_access_key_response(opts),
       to: AWS.IAM.Sandbox,
       as: :create_access_key_response
 
     @doc false
-    defdelegate sandbox_list_access_keys_response(username, opts),
+    defdelegate sandbox_list_access_keys_response(opts),
       to: AWS.IAM.Sandbox,
       as: :list_access_keys_response
 
     @doc false
-    defdelegate sandbox_delete_access_key_response(key_id, username, opts),
+    defdelegate sandbox_delete_access_key_response(key_id, opts),
       to: AWS.IAM.Sandbox,
       as: :delete_access_key_response
 
@@ -1902,7 +1939,7 @@ defmodule AWS.IAM do
 
     # MFA Devices
     @doc false
-    defdelegate sandbox_list_mfa_devices_response(username, opts),
+    defdelegate sandbox_list_mfa_devices_response(opts),
       to: AWS.IAM.Sandbox,
       as: :list_mfa_devices_response
 
@@ -1977,14 +2014,14 @@ defmodule AWS.IAM do
 
     # Users
     defp sandbox_create_user_response(_, _), do: raise("sandbox not available")
-    defp sandbox_get_user_response(_, _), do: raise("sandbox not available")
+    defp sandbox_get_user_response(_o), do: raise("sandbox not available")
     defp sandbox_list_users_response(_), do: raise("sandbox not available")
     defp sandbox_delete_user_response(_, _), do: raise("sandbox not available")
 
     # Access Keys
-    defp sandbox_create_access_key_response(_, _), do: raise("sandbox not available")
-    defp sandbox_list_access_keys_response(_, _), do: raise("sandbox not available")
-    defp sandbox_delete_access_key_response(_, _, _), do: raise("sandbox not available")
+    defp sandbox_create_access_key_response(_o), do: raise("sandbox not available")
+    defp sandbox_list_access_keys_response(_o), do: raise("sandbox not available")
+    defp sandbox_delete_access_key_response(_k, _o), do: raise("sandbox not available")
 
     # Groups
     defp sandbox_create_group_response(_, _), do: raise("sandbox not available")
@@ -2022,7 +2059,7 @@ defmodule AWS.IAM do
     defp sandbox_detach_group_policy_response(_, _, _), do: raise("sandbox not available")
 
     # MFA Devices
-    defp sandbox_list_mfa_devices_response(_, _), do: raise("sandbox not available")
+    defp sandbox_list_mfa_devices_response(_o), do: raise("sandbox not available")
 
     # Role Policies
     defp sandbox_update_assume_role_policy_response(_, _), do: raise("sandbox not available")

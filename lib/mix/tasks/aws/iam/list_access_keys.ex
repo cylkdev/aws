@@ -40,8 +40,9 @@ defmodule Mix.Tasks.AWS.IAM.ListAccessKeys do
     username = parsed[:user] || Mix.raise("--user is required")
     opts = Helpers.build_opts(parsed)
 
-    username
-    |> AWS.IAM.list_access_keys(opts)
+    opts
+    |> Keyword.put(:user_name, username)
+    |> AWS.IAM.list_access_keys()
     |> Helpers.handle_result()
   end
 end

@@ -16,13 +16,14 @@ defmodule AWS.IAM.SandboxTest do
     end
   end
 
-  describe "get_user/2" do
+  describe "get_user/1" do
     test "returns mocked success" do
       Sandbox.set_get_user_responses([
-        {"alice", fn -> {:ok, %{user_name: "alice", user_id: "AIDA123"}} end}
+        fn -> {:ok, %{user_name: "alice", user_id: "AIDA123"}} end
       ])
 
-      assert {:ok, %{user_id: "AIDA123"}} = IAM.get_user("alice", sandbox: [enabled: true])
+      assert {:ok, %{user_id: "AIDA123"}} =
+               IAM.get_user(user_name: "alice", sandbox: [enabled: true])
     end
   end
 
@@ -49,39 +50,38 @@ defmodule AWS.IAM.SandboxTest do
 
   # Access Keys
 
-  describe "create_access_key/2" do
+  describe "create_access_key/1" do
     test "returns mocked success" do
       Sandbox.set_create_access_key_responses([
-        {"alice",
-         fn ->
-           {:ok, %{access_key_id: "AKIA123", secret_access_key: "secret", user_name: "alice"}}
-         end}
+        fn ->
+          {:ok, %{access_key_id: "AKIA123", secret_access_key: "secret", user_name: "alice"}}
+        end
       ])
 
       assert {:ok, %{access_key_id: "AKIA123", secret_access_key: "secret"}} =
-               IAM.create_access_key("alice", sandbox: [enabled: true])
+               IAM.create_access_key(user_name: "alice", sandbox: [enabled: true])
     end
   end
 
-  describe "list_access_keys/2" do
+  describe "list_access_keys/1" do
     test "returns mocked list" do
       Sandbox.set_list_access_keys_responses([
-        {"alice",
-         fn -> {:ok, %{access_keys: [%{access_key_id: "AKIA123", status: "Active"}]}} end}
+        fn -> {:ok, %{access_keys: [%{access_key_id: "AKIA123", status: "Active"}]}} end
       ])
 
       assert {:ok, %{access_keys: [%{access_key_id: "AKIA123"}]}} =
-               IAM.list_access_keys("alice", sandbox: [enabled: true])
+               IAM.list_access_keys(user_name: "alice", sandbox: [enabled: true])
     end
   end
 
-  describe "delete_access_key/3" do
+  describe "delete_access_key/2" do
     test "returns mocked success" do
       Sandbox.set_delete_access_key_responses([
         {"AKIA123", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = IAM.delete_access_key("AKIA123", "alice", sandbox: [enabled: true])
+      assert {:ok, %{}} =
+               IAM.delete_access_key("AKIA123", user_name: "alice", sandbox: [enabled: true])
     end
   end
 
@@ -426,22 +426,21 @@ defmodule AWS.IAM.SandboxTest do
 
   # MFA Devices
 
-  describe "list_mfa_devices/2" do
+  describe "list_mfa_devices/1" do
     test "returns mocked list" do
       Sandbox.set_list_mfa_devices_responses([
-        {"alice",
-         fn ->
-           {:ok,
-            %{
-              mfa_devices: [%{user_name: "alice", serial_number: "arn:aws:iam::123:mfa/alice"}],
-              is_truncated: false,
-              marker: nil
-            }}
-         end}
+        fn ->
+          {:ok,
+           %{
+             mfa_devices: [%{user_name: "alice", serial_number: "arn:aws:iam::123:mfa/alice"}],
+             is_truncated: false,
+             marker: nil
+           }}
+        end
       ])
 
       assert {:ok, %{mfa_devices: [%{user_name: "alice"}]}} =
-               IAM.list_mfa_devices("alice", sandbox: [enabled: true])
+               IAM.list_mfa_devices(user_name: "alice", sandbox: [enabled: true])
     end
   end
 
@@ -514,7 +513,7 @@ defmodule AWS.IAM.SandboxTest do
 
   # OIDC Providers
 
-  describe "create_open_id_connect_provider/3" do
+  describe "create_open_id_connect_provider/2" do
     test "returns mocked success" do
       Sandbox.set_create_open_id_connect_provider_responses([
         {"https://example.com", fn -> {:ok, %{open_id_connect_provider_arn: "arn:oidc-1"}} end}
@@ -523,7 +522,7 @@ defmodule AWS.IAM.SandboxTest do
       assert {:ok, %{open_id_connect_provider_arn: "arn:oidc-1"}} =
                IAM.create_open_id_connect_provider(
                  "https://example.com",
-                 ["sts.amazonaws.com"],
+                 client_id_list: ["sts.amazonaws.com"],
                  thumbprint_list: ["abc"],
                  sandbox: [enabled: true]
                )

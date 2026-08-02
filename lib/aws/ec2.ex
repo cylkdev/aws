@@ -132,19 +132,25 @@ defmodule AWS.EC2 do
   @doc """
   Deletes a security group.
   """
-  @spec delete_security_group(group_id :: String.t(), opts :: keyword()) ::
-          {:ok, %{}} | {:error, term()}
-  def delete_security_group(group_id, opts \\ []) do
+  @spec delete_security_group(opts :: keyword()) :: {:ok, %{}} | {:error, term()}
+  def delete_security_group(opts \\ []) do
     if sandbox?(opts) do
-      sandbox_delete_security_group_response(group_id, opts)
+      sandbox_delete_security_group_response(opts)
     else
-      do_delete_security_group(group_id, opts)
+      do_delete_security_group(opts)
     end
   end
 
-  defp do_delete_security_group(group_id, opts) do
+  defp do_delete_security_group(opts) do
+    # AWS documents both GroupId and GroupName as optional -- you supply one.
+    # Forcing GroupId made deletion by name unreachable.
+    params =
+      %{}
+      |> maybe_put("GroupId", opts[:group_id])
+      |> maybe_put("GroupName", opts[:group_name])
+
     "DeleteSecurityGroup"
-    |> perform(%{"GroupId" => group_id}, opts)
+    |> perform(params, opts)
     |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
   end
 
@@ -741,7 +747,7 @@ defmodule AWS.EC2 do
       as: :describe_security_groups_response
 
     @doc false
-    defdelegate sandbox_delete_security_group_response(group_id, opts),
+    defdelegate sandbox_delete_security_group_response(opts),
       to: AWS.EC2.Sandbox,
       as: :delete_security_group_response
 
@@ -809,7 +815,7 @@ defmodule AWS.EC2 do
 
     defp sandbox_create_security_group_response(_, _), do: raise("sandbox not available")
     defp sandbox_describe_security_groups_response(_), do: raise("sandbox not available")
-    defp sandbox_delete_security_group_response(_, _), do: raise("sandbox not available")
+    defp sandbox_delete_security_group_response(_o), do: raise("sandbox not available")
 
     defp sandbox_authorize_security_group_ingress_response(_, _),
       do: raise("sandbox not available")

@@ -21,6 +21,10 @@ defmodule AWS.Credentials.Providers.ECS do
 
   @ecs_host "169.254.170.2"
 
+  # The EKS Pod Identity Agent listens on these; without them a Pod Identity
+  # setup was silently skipped rather than reported.
+  @eks_pod_identity_hosts ["169.254.170.23", "[fd00:ec2::23]", "fd00:ec2::23"]
+
   @doc false
   def resolve(opts) do
     cond do
@@ -51,8 +55,14 @@ defmodule AWS.Credentials.Providers.ECS do
       %URI{scheme: "https"} ->
         true
 
-      %URI{scheme: "http", host: host} when host in ["127.0.0.1", "localhost", @ecs_host] ->
+      %URI{scheme: "http", host: "localhost"} ->
         true
+
+      %URI{scheme: "http", host: @ecs_host} ->
+        true
+
+      %URI{scheme: "http", host: host} ->
+        host in @eks_pod_identity_hosts or loopback?(host)
 
       _ ->
         false
@@ -72,13 +82,43 @@ defmodule AWS.Credentials.Providers.ECS do
     end
   end
 
+  # EKS Pod Identity supplies the token through a file that is rotated in
+  # place, alongside AWS_CONTAINER_CREDENTIALS_FULL_URI; the plain env var is
+  # the ECS form. The file takes precedence, matching the SDKs.
   defp auth_headers do
-    case System.get_env("AWS_CONTAINER_AUTHORIZATION_TOKEN") do
+    case token_from_file() || present(System.get_env("AWS_CONTAINER_AUTHORIZATION_TOKEN")) do
       nil -> []
-      "" -> []
       token -> [{"authorization", token}]
     end
   end
+
+  defp token_from_file do
+    with path when is_binary(path) <-
+           present(System.get_env("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE")),
+         {:ok, contents} <- File.read(path) do
+      present(String.trim(contents))
+    else
+      _ -> nil
+    end
+  end
+
+  defp present(nil), do: nil
+  defp present(""), do: nil
+  defp present(value), do: value
+
+  # The whole 127.0.0.0/8 range and IPv6 loopback are link-local to the pod,
+  # not just 127.0.0.1.
+  defp loopback?("::1"), do: true
+  defp loopback?("[::1]"), do: true
+
+  defp loopback?("127." <> _ = host) do
+    case :inet.parse_ipv4_address(String.to_charlist(host)) do
+      {:ok, _} -> true
+      _ -> false
+    end
+  end
+
+  defp loopback?(_), do: false
 
   defp decode(body) do
     decoded = :json.decode(body)

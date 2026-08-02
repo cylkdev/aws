@@ -392,8 +392,23 @@ defmodule AWS.Signer do
     Enum.map(headers, fn {k, v} -> {String.downcase(to_string(k)), to_string(v)} end)
   end
 
+  # The headers that go on the wire are rebuilt from `base` further down, with
+  # the caller's copies dropped. Signing the caller's copies as well would put
+  # a name in CanonicalHeaders/SignedHeaders twice while sending it once, which
+  # AWS rejects with SignatureDoesNotMatch. Sign exactly what is sent.
   defp merge_user_headers(base, user) do
-    base ++ normalize_headers(user)
+    reserved =
+      base
+      |> Enum.map(fn {k, _} -> String.downcase(k) end)
+      |> MapSet.new()
+      |> MapSet.put("authorization")
+
+    deduped =
+      user
+      |> normalize_headers()
+      |> Enum.reject(fn {k, _} -> MapSet.member?(reserved, String.downcase(k)) end)
+
+    base ++ deduped
   end
 
   defp drop_header(headers, name) do

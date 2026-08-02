@@ -530,7 +530,7 @@ defmodule AWS.ElasticLoadBalancingV2 do
         target_health_descriptions: [
           ~x"./TargetHealthDescriptions/member"l,
           target_id: ~x"./Target/Id/text()"s,
-          port: ~x"./Target/Port/text()"i,
+          port: ~x"./Target/Port/text()"oi,
           state: ~x"./TargetHealth/State/text()"s
         ]
       )

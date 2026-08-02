@@ -202,7 +202,7 @@ defmodule AWS.EventBridge do
   defp do_put_targets(rule, targets, opts) do
     data =
       maybe_put(
-        %{"Rule" => rule, "Targets" => Enum.map(targets, &camelize_keys/1)},
+        %{"Rule" => rule, "Targets" => Enum.map(targets, &camelize_with_json(&1, "Input"))},
         "EventBusName",
         opts[:event_bus_name]
       )
@@ -679,7 +679,7 @@ defmodule AWS.EventBridge do
   end
 
   defp do_put_events(entries, opts) do
-    data = %{"Entries" => Enum.map(entries, &camelize_keys/1)}
+    data = %{"Entries" => Enum.map(entries, &camelize_with_json(&1, "Detail"))}
 
     perform("PutEvents", data, opts)
     |> deserialize_response(opts, fn body ->
@@ -871,7 +871,28 @@ defmodule AWS.EventBridge do
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  # Without the nil clause the transform ran on `nil`, and `:json.encode(nil)`
+  # yields the literal string "nil" -- so every rule created without an event
+  # pattern sent `"EventPattern": "nil"` and AWS rejected it with
+  # InvalidEventPatternException.
+  defp maybe_put(map, _key, nil, _transform), do: map
   defp maybe_put(map, key, value, transform), do: Map.put(map, key, transform.(value))
+
+  # `PutEvents` entries carry `Detail` and `PutTargets` targets carry `Input`;
+  # AWS documents both as a String of serialized JSON. Recursing into them
+  # would emit a JSON object instead of a string *and* PascalCase the caller's
+  # own payload keys, silently corrupting the event. Serialize instead.
+  defp camelize_with_json(map, json_key) when is_map(map) do
+    {json_pairs, others} = Enum.split_with(map, fn {k, _} -> camelize(k) == json_key end)
+
+    camelized = Map.new(others, fn {k, v} -> {camelize(k), camelize_keys(v)} end)
+
+    case json_pairs do
+      [{_, value}] -> Map.put(camelized, json_key, encode_json(value))
+      [] -> camelized
+    end
+  end
 
   defp camelize_keys(map) when is_map(map) do
     Map.new(map, fn {k, v} -> {camelize(k), camelize_keys(v)} end)
@@ -883,6 +904,11 @@ defmodule AWS.EventBridge do
   defp camelize(key) when is_atom(key), do: key |> Atom.to_string() |> Recase.to_pascal()
   defp camelize(key) when is_binary(key), do: Recase.to_pascal(key)
 
+  # `EventPattern` is documented as a String holding serialized JSON, so a
+  # caller may reasonably pass either a map or an already-serialized string.
+  # Encoding a string again produces a JSON string of a JSON string, which AWS
+  # rejects.
+  defp encode_json(value) when is_binary(value), do: value
   defp encode_json(value), do: value |> :json.encode() |> IO.iodata_to_binary()
 
   # ---------------------------------------------------------------------------

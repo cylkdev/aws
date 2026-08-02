@@ -5,7 +5,7 @@ if Code.ensure_loaded?(SandboxRegistry) do
       operations: [
         create_security_group: [:name],
         describe_security_groups: [],
-        delete_security_group: [:group_id],
+        delete_security_group: [],
         authorize_security_group_ingress: [:group_id],
         revoke_security_group_ingress: [:group_id],
         authorize_security_group_egress: [:group_id],

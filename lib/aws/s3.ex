@@ -1005,9 +1005,9 @@ defmodule AWS.S3 do
 
   The following permissions may also be required depending on options:
 
-    - s3:ListMultipartUploadParts (required when `:max_size` validation is enabled, which is the default)
+    - s3:ListMultipartUploadParts (required when `:max_size` validation is opted into)
     - s3:GetObject (required when `:content_type` validation is enabled)
-    - s3:DeleteObject (required when `:on_content_type_mismatch` is `:delete`, which is the default)
+    - s3:DeleteObject (required when `:on_content_type_mismatch` is set to `:delete`)
 
   ## Arguments
 
@@ -1019,14 +1019,15 @@ defmodule AWS.S3 do
 
   ## Options
 
-    * `:max_size` - Maximum allowed total size in bytes. Defaults to 1 GiB. Set to `:infinity`,
-      `false`, or `nil` to disable size validation.
+    * `:max_size` - Maximum allowed total size in bytes. Defaults to `:infinity`,
+      i.e. size validation is off unless you opt in. `false` and `nil` also
+      disable it.
 
     * `:content_type` - Expected content type of the completed object. Set to `:any` to skip
       content type validation.
 
     * `:on_content_type_mismatch` - Action to take when content type doesn't match.
-      `:delete` (default) deletes the object, `:error` returns an error without deleting.
+      `:error` (default) returns an error without deleting; `:delete` also deletes the object.
 
   See the "Shared Options" section in the module documentation for common options.
 
@@ -1124,10 +1125,13 @@ defmodule AWS.S3 do
 
   ## Options
 
-    * `:block_public_acls` - Reject public ACLs on this bucket and its objects. Defaults to `true`.
-    * `:ignore_public_acls` - Ignore public ACLs on this bucket and its objects. Defaults to `true`.
-    * `:block_public_policy` - Reject bucket policies that grant public access. Defaults to `true`.
-    * `:restrict_public_buckets` - Restrict cross-account access to buckets with public policies. Defaults to `true`.
+  Only the flags you supply are sent; AWS leaves any omitted flag unchanged.
+  Nothing is defaulted, so setting one flag does not disturb the other three.
+
+    * `:block_public_acls` - Reject public ACLs on this bucket and its objects.
+    * `:ignore_public_acls` - Ignore public ACLs on this bucket and its objects.
+    * `:block_public_policy` - Reject bucket policies that grant public access.
+    * `:restrict_public_buckets` - Restrict cross-account access to buckets with public policies.
 
   See the "Shared Options" section in the module documentation for common options.
 
@@ -1323,12 +1327,17 @@ defmodule AWS.S3 do
   end
 
   defp do_list_buckets(opts) do
+    query =
+      %{}
+      |> maybe_put_query("prefix", opts[:prefix])
+      |> maybe_put_query("max-buckets", opts[:max_buckets])
+      |> maybe_put_query("continuation-token", opts[:continuation_token])
+      |> maybe_put_query("bucket-region", opts[:bucket_region])
+
     :get
-    |> s3_request(nil, nil, opts)
+    |> s3_request(nil, nil, Keyword.put(opts, :query, query))
     |> deserialize_response(opts, fn %{body: body} ->
-      body
-      |> XMLParser.parse_list_buckets()
-      |> Map.fetch!(:buckets)
+      XMLParser.parse_list_buckets(body)
     end)
   end
 
@@ -1421,10 +1430,11 @@ defmodule AWS.S3 do
 
     :get
     |> s3_request(bucket, nil, Keyword.put(opts, :query, query))
+    # Returning only `:contents` discarded `is_truncated` and
+    # `next_continuation_token`, so a caller silently received at most one
+    # page with no way to tell there were more.
     |> deserialize_response(opts, fn %{body: body} ->
-      body
-      |> XMLParser.parse_list_objects()
-      |> Map.fetch!(:contents)
+      XMLParser.parse_list_objects(body)
     end)
   end
 
@@ -1485,10 +1495,12 @@ defmodule AWS.S3 do
 
     result = Signer.presign_post_policy(url, conditions, expires_in, signer_creds(config))
 
-    fields =
-      result.fields
-      |> Map.put("key", key)
-      |> Serializer.deserialize(merge_response_header_opts(opts))
+    # These are literal HTML form field names that S3 matches byte-for-byte
+    # ("policy", "x-amz-algorithm", "x-amz-credential", "x-amz-date",
+    # "x-amz-signature", "x-amz-security-token"). Running them through the
+    # response deserializer snake-cased them into atoms like
+    # `:x_amz_algorithm`, and a form built from those is rejected.
+    fields = Map.put(result.fields, "key", key)
 
     {:ok,
      %{
@@ -2013,12 +2025,16 @@ defmodule AWS.S3 do
     end
   end
 
-  defp content_type_match?(regex, pattern) when is_struct(regex, Regex) do
-    Regex.match?(regex, pattern)
+  defp content_type_match?(expected, actual) when is_struct(expected, Regex) do
+    Regex.match?(expected, actual)
   end
 
-  defp content_type_match?(str, pattern) when is_binary(str) do
-    str =~ pattern
+  # `a =~ b` on two binaries is `String.contains?(a, b)`. The arguments were
+  # the wrong way round, so an expected prefix of "image/" against an actual
+  # "image/png" reported a mismatch -- and with
+  # `on_content_type_mismatch: :delete` that deleted the object.
+  defp content_type_match?(expected, actual) when is_binary(expected) do
+    actual =~ expected
   end
 
   defp validate_parts!(entries) do
@@ -2080,8 +2096,12 @@ defmodule AWS.S3 do
     end
   end
 
+  # CopyObject and UploadPartCopy both document this value as URL-encoded. An
+  # unencoded key breaks in three ways: a `?` is read as the start of
+  # `versionId`, a space or non-ASCII 404s, and because `x-amz-copy-source` is
+  # a signed header the signature no longer matches what is sent.
   defp copy_source(src_bucket, src_key) do
-    "/" <> src_bucket <> "/" <> src_key
+    "/" <> src_bucket <> "/" <> encode_key(src_key)
   end
 
   defp range_header(first..last//_step) do

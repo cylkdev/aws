@@ -16,14 +16,17 @@ defmodule AWS.S3.XMLBuilder do
   Builds the `<PublicAccessBlockConfiguration>` XML body for
   `PutPublicAccessBlock`.
 
-  All four flags default to `true` (the most restrictive setting).
+  Only the flags you supply are emitted. AWS documents all four as optional
+  and leaves an omitted flag unchanged, so nothing is defaulted here —
+  defaulting them all to `true` would mean setting one flag silently flipped
+  the other three.
 
   ## Options
 
-    * `:block_public_acls` - Defaults to `true`.
-    * `:ignore_public_acls` - Defaults to `true`.
-    * `:block_public_policy` - Defaults to `true`.
-    * `:restrict_public_buckets` - Defaults to `true`.
+    * `:block_public_acls` - Optional boolean.
+    * `:ignore_public_acls` - Optional boolean.
+    * `:block_public_policy` - Optional boolean.
+    * `:restrict_public_buckets` - Optional boolean.
   """
   @spec build_public_access_block(opts :: keyword()) :: binary()
   # Only the flags the caller supplied are emitted. Defaulting them all to
@@ -54,7 +57,10 @@ defmodule AWS.S3.XMLBuilder do
   """
   @spec build_bucket_encryption(opts :: keyword()) :: binary()
   def build_bucket_encryption(opts \\ []) do
-    sse_algorithm = opts[:sse_algorithm]
+    # `SSEAlgorithm` is a required member of `ServerSideEncryptionByDefault`.
+    # Interpolating a nil produced `<SSEAlgorithm></SSEAlgorithm>` and S3
+    # answered MalformedXML, so the documented one-argument call never worked.
+    sse_algorithm = opts[:sse_algorithm] || "AES256"
     kms_master_key_id = opts[:kms_master_key_id]
     bucket_key_enabled = opts[:bucket_key_enabled]
 
@@ -92,7 +98,9 @@ defmodule AWS.S3.XMLBuilder do
 
   defp lifecycle_rule_xml(rule) do
     id = Map.fetch!(rule, :id)
-    status = Map.fetch!(rule, :status)
+    # Documented as defaulting to "Enabled"; `Map.fetch!` raised a KeyError
+    # instead, so the documented rule shape did not work.
+    status = Map.get(rule, :status, "Enabled")
     filter = Map.get(rule, :filter, %{})
 
     parts =

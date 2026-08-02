@@ -6,10 +6,16 @@ defmodule AWS.S3.XMLParser do
   def parse_copy_object_result(xml) do
     doc = SweetXml.parse(xml)
 
-    %{
-      etag: xpath(doc, ~x"//ETag/text()"s),
-      last_modified: xpath(doc, ~x"//LastModified/text()"s)
-    }
+    case embedded_error(doc) do
+      nil ->
+        %{
+          etag: xpath(doc, ~x"//ETag/text()"s),
+          last_modified: xpath(doc, ~x"//LastModified/text()"s)
+        }
+
+      error ->
+        {:error, error}
+    end
   end
 
   @doc """
@@ -41,7 +47,9 @@ defmodule AWS.S3.XMLParser do
       owner: %{
         id: xpath(doc, ~x"//Owner/ID/text()"s),
         display_name: xpath(doc, ~x"//Owner/DisplayName/text()"s)
-      }
+      },
+      continuation_token: xpath(doc, ~x"//ListAllMyBucketsResult/ContinuationToken/text()"so),
+      prefix: xpath(doc, ~x"//ListAllMyBucketsResult/Prefix/text()"so)
     }
   end
 
@@ -137,12 +145,36 @@ defmodule AWS.S3.XMLParser do
   def parse_complete_multipart(xml) do
     doc = SweetXml.parse(xml)
 
-    %{
-      location: xpath(doc, ~x"//Location/text()"s),
-      bucket: xpath(doc, ~x"//Bucket/text()"s),
-      key: xpath(doc, ~x"//Key/text()"s),
-      etag: xpath(doc, ~x"//ETag/text()"s)
-    }
+    case embedded_error(doc) do
+      nil ->
+        %{
+          location: xpath(doc, ~x"//Location/text()"s),
+          bucket: xpath(doc, ~x"//Bucket/text()"s),
+          key: xpath(doc, ~x"//Key/text()"s),
+          etag: xpath(doc, ~x"//ETag/text()"s)
+        }
+
+      error ->
+        {:error, error}
+    end
+  end
+
+  # CopyObject and CompleteMultipartUpload can answer 200 OK with an <Error>
+  # body -- AWS documents this explicitly and tells callers to parse the
+  # contents. Without this the failed upload returned
+  # `{:ok, %{location: "", bucket: "", key: "", etag: ""}}`.
+  defp embedded_error(doc) do
+    case xpath(doc, ~x"//Error/Code/text()"s) do
+      "" ->
+        nil
+
+      code ->
+        ErrorMessage.internal_server_error("s3 returned an error in a 200 response", %{
+          code: code,
+          message: xpath(doc, ~x"//Error/Message/text()"s),
+          request_id: xpath(doc, ~x"//Error/RequestId/text()"s)
+        })
+    end
   end
 
   # S3 returns IsTruncated as "true"/"false" text.

@@ -99,7 +99,17 @@ defmodule AWS.Client do
     stream_response? = Map.get(op, :stream_response, false)
     http_opts = Map.get(op, :http, []) || []
 
-    creds = build_creds(op)
+    # A streamed body is never hashed, so signing SHA256("") would sign
+    # something the request does not send. `AWS.S3` pairs `:stream_upload` with
+    # an explicit UNSIGNED-PAYLOAD hash; enforce it here so no other caller can
+    # get the pairing wrong.
+    creds =
+      op
+      |> build_creds()
+      |> then(fn c ->
+        if stream_upload?, do: Map.put_new(c, :payload_hash, "UNSIGNED-PAYLOAD"), else: c
+      end)
+
     signing_body = if stream_upload?, do: "", else: body
     signed_headers = Signer.sign(method, url, headers, signing_body, creds)
 

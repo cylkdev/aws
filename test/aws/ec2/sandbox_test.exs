@@ -33,11 +33,11 @@ defmodule AWS.EC2.SandboxTest do
     end
   end
 
-  describe "delete_security_group/2" do
-    test "returns the response registered for the group id" do
-      Sandbox.set_delete_security_group_responses([{"sg-1", fn -> {:ok, %{}} end}])
+  describe "delete_security_group/1" do
+    test "returns the registered response" do
+      Sandbox.set_delete_security_group_responses([fn -> {:ok, %{}} end])
 
-      assert {:ok, %{}} = EC2.delete_security_group("sg-1", sandbox: [enabled: true])
+      assert {:ok, %{}} = EC2.delete_security_group(group_id: "sg-1", sandbox: [enabled: true])
     end
   end
 

@@ -33,9 +33,8 @@ defmodule AWS.Credentials.Providers.IMDS do
 
   defp disabled? do
     case System.get_env("AWS_EC2_METADATA_DISABLED") do
-      "true" -> true
-      "TRUE" -> true
-      _ -> false
+      nil -> false
+      value -> String.downcase(String.trim(value)) === "true"
     end
   end
 
@@ -74,7 +73,7 @@ defmodule AWS.Credentials.Providers.IMDS do
     headers = [{"x-aws-ec2-metadata-token", token}]
 
     case HTTP.get(url, headers, http) do
-      {:ok, %{status_code: 200, body: body}} -> {:ok, String.trim(body)}
+      {:ok, %{status_code: 200, body: body}} -> {:ok, first_role(body)}
       {:ok, %{status_code: 404}} -> {:error, :imds_no_role}
       {:ok, %{status_code: status}} -> {:error, {:imds_role_error, status}}
       {:error, %{reason: reason}} -> {:error, {:imds_transport_error, reason}}
@@ -120,5 +119,15 @@ defmodule AWS.Credentials.Providers.IMDS do
       {:ok, dt, _} -> dt
       _ -> nil
     end
+  end
+
+  # The role listing is LF-separated. With more than one role attached,
+  # trimming the whole blob produced a multi-line "role name"; the SDKs take
+  # the first entry.
+  defp first_role(body) do
+    body
+    |> String.split(~r/\r?\n/, trim: true)
+    |> List.first("")
+    |> String.trim()
   end
 end

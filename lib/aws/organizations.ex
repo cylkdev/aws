@@ -472,11 +472,20 @@ defmodule AWS.Organizations do
   end
 
   defp do_list_roots(opts) do
+    # ListRoots accepts NextToken and MaxResults; neither was sent and the
+    # returned NextToken was discarded. AWS documents that a List* call can
+    # return an empty page with a non-null NextToken, so this could report no
+    # roots while roots existed.
+    data =
+      %{}
+      |> maybe_put("NextToken", opts[:next_token])
+      |> maybe_put("MaxResults", opts[:max_results])
+
     "ListRoots"
-    |> perform(%{}, opts)
+    |> perform(data, opts)
     |> deserialize_response(opts, fn body ->
       result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{roots: result[:roots] || []}}
+      {:ok, %{roots: result[:roots] || [], next_token: result[:next_token]}}
     end)
   end
 
@@ -873,7 +882,12 @@ defmodule AWS.Organizations do
 
   @doc false
   def build_operation(action, data, opts) do
-    opts = Keyword.put_new(opts, :region, @default_region)
+    # Organizations is global: one endpoint per partition. `put_new` only
+    # supplied a default, so an explicit `region:` -- or, more commonly, a
+    # `profile:` whose config carries one -- produced
+    # `organizations.<that-region>.amazonaws.com`, which does not resolve.
+    # The region is fixed here for both the host and the SigV4 scope.
+    opts = Keyword.put(opts, :region, global_region(opts[:region]))
 
     with {:ok, config} <-
            Client.resolve_config(
@@ -1153,4 +1167,10 @@ defmodule AWS.Organizations do
   defp deserialize_response({:error, reason}, _opts, _func) do
     {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
+
+  # One global endpoint per partition. A caller in GovCloud must still reach
+  # the GovCloud endpoint, so the partition is honoured while the region
+  # within it is fixed.
+  defp global_region("us-gov-" <> _), do: "us-gov-west-1"
+  defp global_region(_region), do: @default_region
 end

@@ -637,7 +637,20 @@ defmodule AWS.AutoScaling do
           end_time: ~x"./EndTime/text()"s,
           percentage_complete: ~x"./PercentageComplete/text()"oi,
           instances_to_update: ~x"./InstancesToUpdate/text()"oi,
-          preferences: ~x"./Preferences/text()"s
+          # `Preferences` is a RefreshPreferences structure. Reading it as a
+          # text node yielded "" for any refresh started with real preferences,
+          # dropping the data silently.
+          preferences: [
+            ~x"./Preferences"o,
+            auto_rollback: ~x"./AutoRollback/text()"os,
+            min_healthy_percentage: ~x"./MinHealthyPercentage/text()"oi,
+            max_healthy_percentage: ~x"./MaxHealthyPercentage/text()"oi,
+            instance_warmup: ~x"./InstanceWarmup/text()"oi,
+            checkpoint_delay: ~x"./CheckpointDelay/text()"oi,
+            skip_matching: ~x"./SkipMatching/text()"os,
+            scale_in_protected_instances: ~x"./ScaleInProtectedInstances/text()"os,
+            standby_instances: ~x"./StandbyInstances/text()"os
+          ]
         ],
         next_token: ~x"./NextToken/text()"s
       )

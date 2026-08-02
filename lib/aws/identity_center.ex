@@ -94,8 +94,8 @@ defmodule AWS.IdentityCenter do
   defp do_list_instances(opts) do
     perform(:sso, "ListInstances", %{}, opts)
     |> deserialize_response(opts, fn body ->
-      %{instances: instances} = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{instances: instances || []}}
+      result = Serializer.deserialize(body, deserialize_opts(opts))
+      {:ok, %{instances: result[:instances] || [], next_token: result[:next_token]}}
     end)
   end
 
@@ -399,7 +399,12 @@ defmodule AWS.IdentityCenter do
     perform(:sso, "ListManagedPoliciesInPermissionSet", data, opts)
     |> deserialize_response(opts, fn body ->
       result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{attached_managed_policies: result[:attached_managed_policies] || []}}
+
+      {:ok,
+       %{
+         attached_managed_policies: result[:attached_managed_policies] || [],
+         next_token: result[:next_token]
+       }}
     end)
   end
 
@@ -450,7 +455,12 @@ defmodule AWS.IdentityCenter do
     perform(:sso, "ListAccountAssignments", data, opts)
     |> deserialize_response(opts, fn body ->
       result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{account_assignments: result[:account_assignments] || []}}
+
+      {:ok,
+       %{
+         account_assignments: result[:account_assignments] || [],
+         next_token: result[:next_token]
+       }}
     end)
   end
 
@@ -489,8 +499,8 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "ListAccountsForProvisionedPermissionSet", data, opts)
     |> deserialize_response(opts, fn body ->
-      %{account_ids: ids} = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{account_ids: ids || []}}
+      result = Serializer.deserialize(body, deserialize_opts(opts))
+      {:ok, %{account_ids: result[:account_ids] || [], next_token: result[:next_token]}}
     end)
   end
 
@@ -726,7 +736,10 @@ defmodule AWS.IdentityCenter do
         "InstanceArn" => instance_arn,
         "PermissionSetArn" => permission_set_arn
       }
-      |> maybe_put("TargetType", opts[:target_type])
+      # `TargetType` is required by AWS. Sending it only when the caller
+      # supplied one made the documented two-argument call fail with a
+      # ValidationException.
+      |> Map.put("TargetType", opts[:target_type] || "ALL_PROVISIONED_ACCOUNTS")
       |> maybe_put("TargetId", opts[:target_id])
 
     perform(:sso, "ProvisionPermissionSet", data, opts)
@@ -773,7 +786,7 @@ defmodule AWS.IdentityCenter do
       %{"IdentityStoreId" => identity_store_id, "UserName" => username}
       |> maybe_put("DisplayName", opts[:display_name])
       |> maybe_put_name(opts[:given_name], opts[:family_name])
-      |> maybe_put("Emails", opts[:emails])
+      |> maybe_put("Emails", normalize_emails(opts[:emails]))
 
     perform(:identitystore, "CreateUser", data, opts)
     |> deserialize_response(opts, fn body ->
@@ -891,7 +904,7 @@ defmodule AWS.IdentityCenter do
       |> maybe_operation("displayName", opts[:display_name])
       |> maybe_operation("name.givenName", opts[:given_name])
       |> maybe_operation("name.familyName", opts[:family_name])
-      |> maybe_operation("emails", opts[:emails])
+      |> maybe_operation("emails", normalize_emails(opts[:emails]))
       |> Enum.reverse()
 
     data = %{
@@ -1553,4 +1566,23 @@ defmodule AWS.IdentityCenter do
   defp deserialize_response({:error, reason}, _opts, _func) do
     {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
+
+  # The identitystore `Email` shape members are `Value`, `Type` and `Primary`.
+  # Callers follow the documented `%{value:, type:, primary:}` shape, which
+  # JSON-encodes to lowercase keys and is rejected with a ValidationException.
+  defp normalize_emails(nil), do: nil
+  defp normalize_emails(emails) when is_list(emails), do: Enum.map(emails, &normalize_email/1)
+  defp normalize_emails(other), do: other
+
+  defp normalize_email(%{} = email) do
+    Map.new(email, fn {k, v} -> {email_member(k), v} end)
+  end
+
+  defp normalize_email(other), do: other
+
+  defp email_member(key) when is_atom(key), do: key |> Atom.to_string() |> email_member()
+  defp email_member("value"), do: "Value"
+  defp email_member("type"), do: "Type"
+  defp email_member("primary"), do: "Primary"
+  defp email_member(key), do: key
 end

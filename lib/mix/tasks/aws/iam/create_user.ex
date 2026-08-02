@@ -51,7 +51,7 @@ defmodule Mix.Tasks.AWS.IAM.CreateUser do
 
     Helpers.idempotent(
       username,
-      fn -> AWS.IAM.get_user(username, opts) end,
+      fn -> AWS.IAM.get_user(Keyword.put(opts, :user_name, username)) end,
       fn ->
         username
         |> AWS.IAM.create_user(opts)

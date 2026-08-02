@@ -36,7 +36,7 @@ defmodule AWS.Credentials.INI do
   end
 
   defp reduce_line(raw_line, {section, acc}) do
-    line = raw_line |> String.split("#", parts: 2) |> hd() |> String.trim()
+    line = raw_line |> strip_comment() |> String.trim()
 
     cond do
       line === "" ->
@@ -61,6 +61,16 @@ defmodule AWS.Credentials.INI do
 
       true ->
         {section, acc}
+    end
+  end
+
+  # The AWS CLI treats `#` as a comment only at the start of a line or after
+  # whitespace. Splitting on any `#` truncated legitimate values -- a URL
+  # fragment, or a secret that happens to contain one.
+  defp strip_comment(line) do
+    case Regex.run(~r/(^|\s)#/, line, return: :index) do
+      nil -> line
+      [{start, len} | _] -> String.slice(line, 0, start + len - 1)
     end
   end
 end
