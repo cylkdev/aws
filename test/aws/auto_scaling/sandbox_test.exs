@@ -41,7 +41,7 @@ defmodule AWS.AutoScaling.SandboxTest do
     end
   end
 
-  describe "complete_lifecycle_action/1" do
+  describe "complete_lifecycle_action/4" do
     test "matches by hook|asg key" do
       Sandbox.set_complete_lifecycle_action_responses([
         {"my-hook|my-asg", fn -> {:ok, %{}} end}
@@ -49,12 +49,37 @@ defmodule AWS.AutoScaling.SandboxTest do
 
       assert {:ok, %{}} =
                AutoScaling.complete_lifecycle_action(
-                 [
-                   lifecycle_hook_name: "my-hook",
-                   auto_scaling_group_name: "my-asg",
-                   lifecycle_action_result: "CONTINUE"
-                 ] ++ @sandbox_opts
+                 "my-hook",
+                 "my-asg",
+                 "CONTINUE",
+                 @sandbox_opts
                )
+    end
+
+    test "passes hook, asg, result, and opts to a 4-arity fn" do
+      Sandbox.set_complete_lifecycle_action_responses([
+        {"my-hook|my-asg",
+         fn hook, asg, result, opts -> {:ok, %{seen: {hook, asg, result, opts[:instance_id]}}} end}
+      ])
+
+      assert {:ok, %{seen: {"my-hook", "my-asg", "ABANDON", "i-aaaa"}}} =
+               AutoScaling.complete_lifecycle_action(
+                 "my-hook",
+                 "my-asg",
+                 "ABANDON",
+                 Keyword.put(@sandbox_opts, :instance_id, "i-aaaa")
+               )
+    end
+  end
+
+  describe "record_lifecycle_action_heartbeat/3" do
+    test "matches by hook|asg key and passes inputs to a 3-arity fn" do
+      Sandbox.set_record_lifecycle_action_heartbeat_responses([
+        {"my-hook|my-asg", fn hook, asg, _opts -> {:ok, %{seen: {hook, asg}}} end}
+      ])
+
+      assert {:ok, %{seen: {"my-hook", "my-asg"}}} =
+               AutoScaling.record_lifecycle_action_heartbeat("my-hook", "my-asg", @sandbox_opts)
     end
   end
 

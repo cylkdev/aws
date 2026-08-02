@@ -370,7 +370,7 @@ defmodule AWS.AutoScalingTest do
     end
   end
 
-  describe "complete_lifecycle_action/1" do
+  describe "complete_lifecycle_action/4" do
     test "encodes hook+asg+result and returns empty success map", %{opts: opts} do
       xml = ~s"""
       <CompleteLifecycleActionResponse>
@@ -388,12 +388,10 @@ defmodule AWS.AutoScalingTest do
 
       assert {:ok, %{}} =
                AutoScaling.complete_lifecycle_action(
-                 [
-                   lifecycle_hook_name: "my-hook",
-                   auto_scaling_group_name: "my-asg",
-                   lifecycle_action_result: "CONTINUE",
-                   instance_id: "i-aaaa"
-                 ] ++ opts
+                 "my-hook",
+                 "my-asg",
+                 "CONTINUE",
+                 [instance_id: "i-aaaa"] ++ opts
                )
 
       assert_receive {:body, body}
@@ -405,16 +403,14 @@ defmodule AWS.AutoScalingTest do
       assert decoded["InstanceId"] === "i-aaaa"
     end
 
-    test "raises ArgumentError when required keys are missing", %{opts: opts} do
-      assert_raise ArgumentError, ~r/lifecycle_action_result/, fn ->
-        AutoScaling.complete_lifecycle_action(
-          [lifecycle_hook_name: "h", auto_scaling_group_name: "a"] ++ opts
-        )
+    test "raises when a required argument is not a binary", %{opts: opts} do
+      assert_raise FunctionClauseError, fn ->
+        AutoScaling.complete_lifecycle_action("h", "a", nil, opts)
       end
     end
   end
 
-  describe "record_lifecycle_action_heartbeat/1" do
+  describe "record_lifecycle_action_heartbeat/3" do
     test "encodes hook+asg and returns empty success map", %{opts: opts} do
       xml = ~s"""
       <RecordLifecycleActionHeartbeatResponse>
@@ -432,11 +428,9 @@ defmodule AWS.AutoScalingTest do
 
       assert {:ok, %{}} =
                AutoScaling.record_lifecycle_action_heartbeat(
-                 [
-                   lifecycle_hook_name: "my-hook",
-                   auto_scaling_group_name: "my-asg",
-                   lifecycle_action_token: "tok-1"
-                 ] ++ opts
+                 "my-hook",
+                 "my-asg",
+                 [lifecycle_action_token: "tok-1"] ++ opts
                )
 
       assert_receive {:body, body}

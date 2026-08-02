@@ -262,38 +262,60 @@ defmodule AWS.AutoScaling do
 
   Maps to AWS `CompleteLifecycleAction`.
 
-  ## Required keys in `opts`
+  ## Arguments
 
-    - `:lifecycle_hook_name`
-    - `:auto_scaling_group_name`
-    - `:lifecycle_action_result` (`"CONTINUE"` or `"ABANDON"`)
+    - `lifecycle_hook_name`
+    - `auto_scaling_group_name`
+    - `lifecycle_action_result` - `"CONTINUE"` or `"ABANDON"`
+    - `opts` - options below, plus shared credentials / region / endpoint
 
-  ## Optional keys
+  ## Options
 
     - `:lifecycle_action_token`
     - `:instance_id`
   """
-  @spec complete_lifecycle_action(keyword) :: {:ok, map} | {:error, term}
-  def complete_lifecycle_action(opts) do
-    require_opts!(opts, [
-      :lifecycle_hook_name,
-      :auto_scaling_group_name,
-      :lifecycle_action_result
-    ])
-
+  @spec complete_lifecycle_action(
+          lifecycle_hook_name :: String.t(),
+          auto_scaling_group_name :: String.t(),
+          lifecycle_action_result :: String.t(),
+          opts :: keyword()
+        ) :: {:ok, map()} | {:error, term()}
+  def complete_lifecycle_action(
+        lifecycle_hook_name,
+        auto_scaling_group_name,
+        lifecycle_action_result,
+        opts \\ []
+      )
+      when is_binary(lifecycle_hook_name) and is_binary(auto_scaling_group_name) and
+             is_binary(lifecycle_action_result) do
     if sandbox?(opts) do
-      sandbox_complete_lifecycle_action_response(opts)
+      sandbox_complete_lifecycle_action_response(
+        lifecycle_hook_name,
+        auto_scaling_group_name,
+        lifecycle_action_result,
+        opts
+      )
     else
-      do_complete_lifecycle_action(opts)
+      do_complete_lifecycle_action(
+        lifecycle_hook_name,
+        auto_scaling_group_name,
+        lifecycle_action_result,
+        opts
+      )
     end
   end
 
-  defp do_complete_lifecycle_action(opts) do
+  defp do_complete_lifecycle_action(
+         lifecycle_hook_name,
+         auto_scaling_group_name,
+         lifecycle_action_result,
+         opts
+       ) do
     params =
       flatten_query(%{
-        "LifecycleHookName" => opts[:lifecycle_hook_name],
-        "AutoScalingGroupName" => opts[:auto_scaling_group_name],
-        "LifecycleActionResult" => opts[:lifecycle_action_result],
+        "LifecycleHookName" => lifecycle_hook_name,
+        "AutoScalingGroupName" => auto_scaling_group_name,
+        "LifecycleActionResult" => lifecycle_action_result,
         "LifecycleActionToken" => opts[:lifecycle_action_token],
         "InstanceId" => opts[:instance_id]
       })
@@ -308,32 +330,44 @@ defmodule AWS.AutoScaling do
 
   Maps to AWS `RecordLifecycleActionHeartbeat`.
 
-  ## Required keys in `opts`
+  ## Arguments
 
-    - `:lifecycle_hook_name`
-    - `:auto_scaling_group_name`
+    - `lifecycle_hook_name`
+    - `auto_scaling_group_name`
+    - `opts` - options below, plus shared credentials / region / endpoint
 
-  ## Optional keys
+  ## Options
 
     - `:lifecycle_action_token`
     - `:instance_id`
   """
-  @spec record_lifecycle_action_heartbeat(keyword) :: {:ok, map} | {:error, term}
-  def record_lifecycle_action_heartbeat(opts) do
-    require_opts!(opts, [:lifecycle_hook_name, :auto_scaling_group_name])
-
+  @spec record_lifecycle_action_heartbeat(
+          lifecycle_hook_name :: String.t(),
+          auto_scaling_group_name :: String.t(),
+          opts :: keyword()
+        ) :: {:ok, map()} | {:error, term()}
+  def record_lifecycle_action_heartbeat(lifecycle_hook_name, auto_scaling_group_name, opts \\ [])
+      when is_binary(lifecycle_hook_name) and is_binary(auto_scaling_group_name) do
     if sandbox?(opts) do
-      sandbox_record_lifecycle_action_heartbeat_response(opts)
+      sandbox_record_lifecycle_action_heartbeat_response(
+        lifecycle_hook_name,
+        auto_scaling_group_name,
+        opts
+      )
     else
-      do_record_lifecycle_action_heartbeat(opts)
+      do_record_lifecycle_action_heartbeat(lifecycle_hook_name, auto_scaling_group_name, opts)
     end
   end
 
-  defp do_record_lifecycle_action_heartbeat(opts) do
+  defp do_record_lifecycle_action_heartbeat(
+         lifecycle_hook_name,
+         auto_scaling_group_name,
+         opts
+       ) do
     params =
       flatten_query(%{
-        "LifecycleHookName" => opts[:lifecycle_hook_name],
-        "AutoScalingGroupName" => opts[:auto_scaling_group_name],
+        "LifecycleHookName" => lifecycle_hook_name,
+        "AutoScalingGroupName" => auto_scaling_group_name,
         "LifecycleActionToken" => opts[:lifecycle_action_token],
         "InstanceId" => opts[:instance_id]
       })
@@ -341,14 +375,6 @@ defmodule AWS.AutoScaling do
     "RecordLifecycleActionHeartbeat"
     |> perform(params, opts)
     |> deserialize_response(opts, fn _body -> %{} end)
-  end
-
-  defp require_opts!(opts, keys) do
-    Enum.each(keys, fn key ->
-      if is_nil(opts[key]) do
-        raise ArgumentError, "missing required option #{inspect(key)}"
-      end
-    end)
   end
 
   @doc """
@@ -638,12 +664,12 @@ defmodule AWS.AutoScaling do
       as: :rollback_instance_refresh_response
 
     @doc false
-    defdelegate sandbox_complete_lifecycle_action_response(opts),
+    defdelegate sandbox_complete_lifecycle_action_response(hook, asg, result, opts),
       to: AWS.AutoScaling.Sandbox,
       as: :complete_lifecycle_action_response
 
     @doc false
-    defdelegate sandbox_record_lifecycle_action_heartbeat_response(opts),
+    defdelegate sandbox_record_lifecycle_action_heartbeat_response(hook, asg, opts),
       to: AWS.AutoScaling.Sandbox,
       as: :record_lifecycle_action_heartbeat_response
 
@@ -675,8 +701,13 @@ defmodule AWS.AutoScaling do
     defp sandbox_start_instance_refresh_response(_a, _o), do: raise(@sandbox_unavailable)
     defp sandbox_cancel_instance_refresh_response(_a, _o), do: raise(@sandbox_unavailable)
     defp sandbox_rollback_instance_refresh_response(_a, _o), do: raise(@sandbox_unavailable)
-    defp sandbox_complete_lifecycle_action_response(_o), do: raise(@sandbox_unavailable)
-    defp sandbox_record_lifecycle_action_heartbeat_response(_o), do: raise(@sandbox_unavailable)
+
+    defp sandbox_complete_lifecycle_action_response(_h, _a, _r, _o),
+      do: raise(@sandbox_unavailable)
+
+    defp sandbox_record_lifecycle_action_heartbeat_response(_h, _a, _o),
+      do: raise(@sandbox_unavailable)
+
     defp sandbox_set_instance_health_response(_i, _h, _o), do: raise(@sandbox_unavailable)
 
     defp sandbox_terminate_instance_in_auto_scaling_group_response(_i, _d, _o),

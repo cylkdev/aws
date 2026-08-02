@@ -52,18 +52,21 @@ if Code.ensure_loaded?(SandboxRegistry) do
       apply_func(func, [asg, opts], doc_examples)
     end
 
-    def complete_lifecycle_action_response(opts) do
-      doc_examples = ["fn -> ... end", "fn opts -> ... end"]
-      key = lifecycle_key(opts)
-      func = find!(:complete_lifecycle_action, key, doc_examples)
-      apply_func(func, [opts], doc_examples)
+    def complete_lifecycle_action_response(hook, asg, result, opts) do
+      doc_examples = [
+        "fn -> ... end",
+        "fn hook -> ... end",
+        "fn hook, asg, result, opts -> ... end"
+      ]
+
+      func = find!(:complete_lifecycle_action, lifecycle_key(hook, asg), doc_examples)
+      apply_func(func, [hook, asg, result, opts], doc_examples)
     end
 
-    def record_lifecycle_action_heartbeat_response(opts) do
-      doc_examples = ["fn -> ... end", "fn opts -> ... end"]
-      key = lifecycle_key(opts)
-      func = find!(:record_lifecycle_action_heartbeat, key, doc_examples)
-      apply_func(func, [opts], doc_examples)
+    def record_lifecycle_action_heartbeat_response(hook, asg, opts) do
+      doc_examples = ["fn -> ... end", "fn hook -> ... end", "fn hook, asg, opts -> ... end"]
+      func = find!(:record_lifecycle_action_heartbeat, lifecycle_key(hook, asg), doc_examples)
+      apply_func(func, [hook, asg, opts], doc_examples)
     end
 
     def set_instance_health_response(instance_id, health_status, opts) do
@@ -161,11 +164,7 @@ if Code.ensure_loaded?(SandboxRegistry) do
     # Private helpers
     # ---------------------------------------------------------------------------
 
-    defp lifecycle_key(opts) do
-      hook = opts[:lifecycle_hook_name] || ""
-      asg = opts[:auto_scaling_group_name] || ""
-      "#{hook}|#{asg}"
-    end
+    defp lifecycle_key(hook, asg), do: "#{hook}|#{asg}"
 
     defp normalize_no_key(items) do
       Enum.map(items, fn

@@ -19,11 +19,16 @@ defmodule AWS.ElasticLoadBalancingV2 do
   `2015-12-01`.
 
   The operations needed by current callers are implemented:
-  `describe_load_balancers/1`, `describe_listeners/1`,
-  `describe_target_groups/1`, `describe_target_health/1`,
-  `describe_rules/1`, and `modify_rule/1`. `modify_rule/1` is the only
+  `describe_load_balancers/1`, `describe_listeners/2`,
+  `describe_listeners_by_arns/2`, `describe_target_groups/1`,
+  `describe_target_health/2`, `describe_rules/2`,
+  `describe_rules_by_arns/2`, and `modify_rule/3`. `modify_rule/3` is the only
   mutating operation; load balancers, listeners, and target groups are
   expected to be declared elsewhere (e.g. terraform) and only read here.
+
+  Inputs AWS requires for an operation are positional arguments; `opts`
+  carries only optional inputs plus credentials, region, endpoint
+  overrides, and the sandbox flag.
 
   ## Shared Options
 
@@ -98,7 +103,7 @@ defmodule AWS.ElasticLoadBalancingV2 do
   Returns one page plus `:next_token`; the caller decides whether to
   follow it.
   """
-  @spec describe_target_groups(keyword) :: {:ok, map} | {:error, term}
+  @spec describe_target_groups(opts :: keyword()) :: {:ok, map()} | {:error, term()}
   def describe_target_groups(opts \\ []) do
     if sandbox?(opts) do
       sandbox_describe_target_groups_response(opts)
@@ -122,29 +127,32 @@ defmodule AWS.ElasticLoadBalancingV2 do
   @doc """
   Describes the health of targets registered with a target group.
 
-  Maps to AWS `DescribeTargetHealth`. `:target_group_arn` is required.
+  Maps to AWS `DescribeTargetHealth`.
+
+  ## Arguments
+
+    - `target_group_arn` - target group ARN
+    - `opts` - options below, plus shared credentials / region / endpoint
 
   ## Options
 
-    - `:target_group_arn` - target group ARN (required)
     - `:targets` - list of `%{id: ..., port: ...}` maps to filter
       results to specific targets
   """
-  @spec describe_target_health(keyword) :: {:ok, map} | {:error, term}
-  def describe_target_health(opts \\ []) do
-    require_opts!(opts, [:target_group_arn])
-
+  @spec describe_target_health(target_group_arn :: String.t(), opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def describe_target_health(target_group_arn, opts \\ []) when is_binary(target_group_arn) do
     if sandbox?(opts) do
-      sandbox_describe_target_health_response(opts)
+      sandbox_describe_target_health_response(target_group_arn, opts)
     else
-      do_describe_target_health(opts)
+      do_describe_target_health(target_group_arn, opts)
     end
   end
 
-  defp do_describe_target_health(opts) do
+  defp do_describe_target_health(target_group_arn, opts) do
     params =
       flatten_query(%{
-        "TargetGroupArn" => opts[:target_group_arn],
+        "TargetGroupArn" => target_group_arn,
         "Targets" => opts[:targets]
       })
 
@@ -171,7 +179,7 @@ defmodule AWS.ElasticLoadBalancingV2 do
   Returns one page plus `:next_token`; the caller decides whether to
   follow it.
   """
-  @spec describe_load_balancers(keyword) :: {:ok, map} | {:error, term}
+  @spec describe_load_balancers(opts :: keyword()) :: {:ok, map()} | {:error, term()}
   def describe_load_balancers(opts \\ []) do
     if sandbox?(opts) do
       sandbox_describe_load_balancers_response(opts)
@@ -195,37 +203,65 @@ defmodule AWS.ElasticLoadBalancingV2 do
   end
 
   @doc """
-  Describes the listeners of a load balancer.
+  Describes every listener of a load balancer.
 
-  Maps to AWS `DescribeListeners`. One of `:load_balancer_arn` or
-  `:listener_arns` is required.
+  Maps to AWS `DescribeListeners` with `LoadBalancerArn`. To describe
+  specific listeners by their own ARNs, use `describe_listeners_by_arns/2`.
+
+  ## Arguments
+
+    - `load_balancer_arn` - describe every listener of this load balancer
+    - `opts` - options below, plus shared credentials / region / endpoint
 
   ## Options
 
-    - `:load_balancer_arn` - describe every listener of this load balancer
-    - `:listener_arns` - list of specific listener ARNs
     - `:next_token` - pagination token (encoded as `Marker` on the wire)
     - `:page_size` - maximum results per page
   """
-  @spec describe_listeners(keyword) :: {:ok, map} | {:error, term}
-  def describe_listeners(opts \\ []) do
-    require_any_opt!(opts, [:load_balancer_arn, :listener_arns])
-
+  @spec describe_listeners(load_balancer_arn :: String.t(), opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def describe_listeners(load_balancer_arn, opts \\ []) when is_binary(load_balancer_arn) do
     if sandbox?(opts) do
-      sandbox_describe_listeners_response(opts)
+      sandbox_describe_listeners_response(load_balancer_arn, opts)
     else
-      do_describe_listeners(opts)
+      do_describe_listeners(%{"LoadBalancerArn" => load_balancer_arn}, opts)
     end
   end
 
-  defp do_describe_listeners(opts) do
+  @doc """
+  Describes specific listeners by their ARNs.
+
+  Maps to AWS `DescribeListeners` with `ListenerArns`. To describe every
+  listener of a load balancer instead, use `describe_listeners/2`.
+
+  ## Arguments
+
+    - `listener_arns` - list of listener ARNs to describe
+    - `opts` - options below, plus shared credentials / region / endpoint
+
+  ## Options
+
+    - `:next_token` - pagination token (encoded as `Marker` on the wire)
+    - `:page_size` - maximum results per page
+  """
+  @spec describe_listeners_by_arns(listener_arns :: [String.t()], opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def describe_listeners_by_arns([_ | _] = listener_arns, opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_describe_listeners_by_arns_response(listener_arns, opts)
+    else
+      do_describe_listeners(%{"ListenerArns" => listener_arns}, opts)
+    end
+  end
+
+  defp do_describe_listeners(selector_params, opts) do
     params =
-      flatten_query(%{
-        "LoadBalancerArn" => opts[:load_balancer_arn],
-        "ListenerArns" => opts[:listener_arns],
+      selector_params
+      |> Map.merge(%{
         "Marker" => opts[:next_token],
         "PageSize" => opts[:page_size]
       })
+      |> flatten_query()
 
     "DescribeListeners"
     |> perform(params, opts)
@@ -233,41 +269,70 @@ defmodule AWS.ElasticLoadBalancingV2 do
   end
 
   @doc """
-  Describes the rules of a listener.
+  Describes every rule of a listener.
 
-  Maps to AWS `DescribeRules`. One of `:listener_arn` or `:rule_arns` is
-  required.
+  Maps to AWS `DescribeRules` with `ListenerArn`. To describe specific
+  rules by their own ARNs, use `describe_rules_by_arns/2`.
 
   Each rule carries its full `:conditions` and `:actions`, including the
   weighted target groups of a `forward` action's `ForwardConfig`, so
   callers can determine which target group currently receives traffic.
 
+  ## Arguments
+
+    - `listener_arn` - describe every rule of this listener
+    - `opts` - options below, plus shared credentials / region / endpoint
+
   ## Options
 
-    - `:listener_arn` - describe every rule of this listener
-    - `:rule_arns` - list of specific rule ARNs
     - `:next_token` - pagination token (encoded as `Marker` on the wire)
     - `:page_size` - maximum results per page
   """
-  @spec describe_rules(keyword) :: {:ok, map} | {:error, term}
-  def describe_rules(opts \\ []) do
-    require_any_opt!(opts, [:listener_arn, :rule_arns])
-
+  @spec describe_rules(listener_arn :: String.t(), opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def describe_rules(listener_arn, opts \\ []) when is_binary(listener_arn) do
     if sandbox?(opts) do
-      sandbox_describe_rules_response(opts)
+      sandbox_describe_rules_response(listener_arn, opts)
     else
-      do_describe_rules(opts)
+      do_describe_rules(%{"ListenerArn" => listener_arn}, opts)
     end
   end
 
-  defp do_describe_rules(opts) do
+  @doc """
+  Describes specific rules by their ARNs.
+
+  Maps to AWS `DescribeRules` with `RuleArns`. To describe every rule of a
+  listener instead, use `describe_rules/2`. Rules carry the same
+  `:conditions` and `:actions` detail described there.
+
+  ## Arguments
+
+    - `rule_arns` - list of rule ARNs to describe
+    - `opts` - options below, plus shared credentials / region / endpoint
+
+  ## Options
+
+    - `:next_token` - pagination token (encoded as `Marker` on the wire)
+    - `:page_size` - maximum results per page
+  """
+  @spec describe_rules_by_arns(rule_arns :: [String.t()], opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def describe_rules_by_arns([_ | _] = rule_arns, opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_describe_rules_by_arns_response(rule_arns, opts)
+    else
+      do_describe_rules(%{"RuleArns" => rule_arns}, opts)
+    end
+  end
+
+  defp do_describe_rules(selector_params, opts) do
     params =
-      flatten_query(%{
-        "ListenerArn" => opts[:listener_arn],
-        "RuleArns" => opts[:rule_arns],
+      selector_params
+      |> Map.merge(%{
         "Marker" => opts[:next_token],
         "PageSize" => opts[:page_size]
       })
+      |> flatten_query()
 
     "DescribeRules"
     |> perform(params, opts)
@@ -277,73 +342,59 @@ defmodule AWS.ElasticLoadBalancingV2 do
   @doc """
   Modifies a listener rule's actions and/or conditions.
 
-  Maps to AWS `ModifyRule`. `:rule_arn` is required; `:actions` and
-  `:conditions` are each optional, and an omitted one is left unchanged.
+  Maps to AWS `ModifyRule`. `:conditions` is optional, and when omitted
+  the rule's existing conditions are left unchanged.
 
-  `:actions` and `:conditions` are nested structures encoded by
+  `actions` and `:conditions` are nested structures encoded by
   `flatten_query/1`, so they are given as ordinary maps and lists. A
   weighted forward action — the shape a blue/green cutover uses, where
   the outgoing target group is kept at weight 0 so every propagation
   state routes somewhere live — looks like:
 
-      AWS.ElasticLoadBalancingV2.modify_rule(
-        rule_arn: rule_arn,
-        actions: [
-          %{
-            "Type" => "forward",
-            "ForwardConfig" => %{
-              "TargetGroups" => [
-                %{"TargetGroupArn" => incoming, "Weight" => 100},
-                %{"TargetGroupArn" => outgoing, "Weight" => 0}
-              ]
-            }
+      AWS.ElasticLoadBalancingV2.modify_rule(rule_arn, [
+        %{
+          "Type" => "forward",
+          "ForwardConfig" => %{
+            "TargetGroups" => [
+              %{"TargetGroupArn" => incoming, "Weight" => 100},
+              %{"TargetGroupArn" => outgoing, "Weight" => 0}
+            ]
           }
-        ]
-      )
+        }
+      ])
+
+  ## Arguments
+
+    - `rule_arn` - the rule to modify
+    - `actions` - list of action maps
+    - `opts` - options below, plus shared credentials / region / endpoint
 
   ## Options
 
-    - `:rule_arn` - the rule to modify (required)
-    - `:actions` - list of action maps
     - `:conditions` - list of condition maps
   """
-  @spec modify_rule(keyword) :: {:ok, map} | {:error, term}
-  def modify_rule(opts \\ []) do
-    require_opts!(opts, [:rule_arn])
-
+  @spec modify_rule(rule_arn :: String.t(), actions :: [map()], opts :: keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def modify_rule(rule_arn, actions, opts \\ [])
+      when is_binary(rule_arn) and is_list(actions) do
     if sandbox?(opts) do
-      sandbox_modify_rule_response(opts)
+      sandbox_modify_rule_response(rule_arn, actions, opts)
     else
-      do_modify_rule(opts)
+      do_modify_rule(rule_arn, actions, opts)
     end
   end
 
-  defp do_modify_rule(opts) do
+  defp do_modify_rule(rule_arn, actions, opts) do
     params =
       flatten_query(%{
-        "RuleArn" => opts[:rule_arn],
-        "Actions" => opts[:actions],
+        "RuleArn" => rule_arn,
+        "Actions" => actions,
         "Conditions" => opts[:conditions]
       })
 
     "ModifyRule"
     |> perform(params, opts)
     |> deserialize_response(opts, &parse_modify_rule/1)
-  end
-
-  defp require_opts!(opts, keys) do
-    Enum.each(keys, fn key ->
-      if is_nil(opts[key]) do
-        raise ArgumentError, "missing required option #{inspect(key)}"
-      end
-    end)
-  end
-
-  defp require_any_opt!(opts, keys) do
-    if Enum.all?(keys, &is_nil(opts[&1])) do
-      raise ArgumentError,
-            "one of #{inspect(keys)} is required"
-    end
   end
 
   # ---------------------------------------------------------------------------
@@ -484,7 +535,7 @@ defmodule AWS.ElasticLoadBalancingV2 do
       as: :describe_target_groups_response
 
     @doc false
-    defdelegate sandbox_describe_target_health_response(opts),
+    defdelegate sandbox_describe_target_health_response(target_group_arn, opts),
       to: AWS.ElasticLoadBalancingV2.Sandbox,
       as: :describe_target_health_response
 
@@ -494,17 +545,27 @@ defmodule AWS.ElasticLoadBalancingV2 do
       as: :describe_load_balancers_response
 
     @doc false
-    defdelegate sandbox_describe_listeners_response(opts),
+    defdelegate sandbox_describe_listeners_response(load_balancer_arn, opts),
       to: AWS.ElasticLoadBalancingV2.Sandbox,
       as: :describe_listeners_response
 
     @doc false
-    defdelegate sandbox_describe_rules_response(opts),
+    defdelegate sandbox_describe_listeners_by_arns_response(listener_arns, opts),
+      to: AWS.ElasticLoadBalancingV2.Sandbox,
+      as: :describe_listeners_by_arns_response
+
+    @doc false
+    defdelegate sandbox_describe_rules_response(listener_arn, opts),
       to: AWS.ElasticLoadBalancingV2.Sandbox,
       as: :describe_rules_response
 
     @doc false
-    defdelegate sandbox_modify_rule_response(opts),
+    defdelegate sandbox_describe_rules_by_arns_response(rule_arns, opts),
+      to: AWS.ElasticLoadBalancingV2.Sandbox,
+      as: :describe_rules_by_arns_response
+
+    @doc false
+    defdelegate sandbox_modify_rule_response(rule_arn, actions, opts),
       to: AWS.ElasticLoadBalancingV2.Sandbox,
       as: :modify_rule_response
   else
@@ -512,11 +573,13 @@ defmodule AWS.ElasticLoadBalancingV2 do
 
     defp sandbox_disabled?, do: false
     defp sandbox_describe_target_groups_response(_o), do: raise(@sandbox_unavailable)
-    defp sandbox_describe_target_health_response(_o), do: raise(@sandbox_unavailable)
+    defp sandbox_describe_target_health_response(_a, _o), do: raise(@sandbox_unavailable)
     defp sandbox_describe_load_balancers_response(_o), do: raise(@sandbox_unavailable)
-    defp sandbox_describe_listeners_response(_o), do: raise(@sandbox_unavailable)
-    defp sandbox_describe_rules_response(_o), do: raise(@sandbox_unavailable)
-    defp sandbox_modify_rule_response(_o), do: raise(@sandbox_unavailable)
+    defp sandbox_describe_listeners_response(_a, _o), do: raise(@sandbox_unavailable)
+    defp sandbox_describe_listeners_by_arns_response(_a, _o), do: raise(@sandbox_unavailable)
+    defp sandbox_describe_rules_response(_a, _o), do: raise(@sandbox_unavailable)
+    defp sandbox_describe_rules_by_arns_response(_a, _o), do: raise(@sandbox_unavailable)
+    defp sandbox_modify_rule_response(_r, _a, _o), do: raise(@sandbox_unavailable)
   end
 
   # ---------------------------------------------------------------------------

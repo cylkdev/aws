@@ -22,10 +22,15 @@ if Code.ensure_loaded?(SandboxRegistry) do
       apply_func(func, [opts], doc_examples)
     end
 
-    def describe_target_health_response(opts) do
-      doc_examples = ["fn -> ... end", "fn opts -> ... end"]
-      func = find!(:describe_target_health, "*", doc_examples)
-      apply_func(func, [opts], doc_examples)
+    def describe_target_health_response(target_group_arn, opts) do
+      doc_examples = [
+        "fn -> ... end",
+        "fn target_group_arn -> ... end",
+        "fn target_group_arn, opts -> ... end"
+      ]
+
+      func = find!(:describe_target_health, target_group_arn, doc_examples)
+      apply_func(func, [target_group_arn, opts], doc_examples)
     end
 
     def describe_load_balancers_response(opts) do
@@ -34,22 +39,59 @@ if Code.ensure_loaded?(SandboxRegistry) do
       apply_func(func, [opts], doc_examples)
     end
 
-    def describe_listeners_response(opts) do
-      doc_examples = ["fn -> ... end", "fn opts -> ... end"]
-      func = find!(:describe_listeners, "*", doc_examples)
-      apply_func(func, [opts], doc_examples)
+    def describe_listeners_response(load_balancer_arn, opts) do
+      doc_examples = [
+        "fn -> ... end",
+        "fn load_balancer_arn -> ... end",
+        "fn load_balancer_arn, opts -> ... end"
+      ]
+
+      func = find!(:describe_listeners, load_balancer_arn, doc_examples)
+      apply_func(func, [load_balancer_arn, opts], doc_examples)
     end
 
-    def describe_rules_response(opts) do
-      doc_examples = ["fn -> ... end", "fn opts -> ... end"]
-      func = find!(:describe_rules, "*", doc_examples)
-      apply_func(func, [opts], doc_examples)
+    def describe_listeners_by_arns_response(listener_arns, opts) do
+      doc_examples = [
+        "fn -> ... end",
+        "fn listener_arns -> ... end",
+        "fn listener_arns, opts -> ... end"
+      ]
+
+      func = find!(:describe_listeners_by_arns, arns_key(listener_arns), doc_examples)
+      apply_func(func, [listener_arns, opts], doc_examples)
     end
 
-    def modify_rule_response(opts) do
-      doc_examples = ["fn -> ... end", "fn opts -> ... end"]
-      func = find!(:modify_rule, "*", doc_examples)
-      apply_func(func, [opts], doc_examples)
+    def describe_rules_response(listener_arn, opts) do
+      doc_examples = [
+        "fn -> ... end",
+        "fn listener_arn -> ... end",
+        "fn listener_arn, opts -> ... end"
+      ]
+
+      func = find!(:describe_rules, listener_arn, doc_examples)
+      apply_func(func, [listener_arn, opts], doc_examples)
+    end
+
+    def describe_rules_by_arns_response(rule_arns, opts) do
+      doc_examples = [
+        "fn -> ... end",
+        "fn rule_arns -> ... end",
+        "fn rule_arns, opts -> ... end"
+      ]
+
+      func = find!(:describe_rules_by_arns, arns_key(rule_arns), doc_examples)
+      apply_func(func, [rule_arns, opts], doc_examples)
+    end
+
+    def modify_rule_response(rule_arn, actions, opts) do
+      doc_examples = [
+        "fn -> ... end",
+        "fn rule_arn -> ... end",
+        "fn rule_arn, actions, opts -> ... end"
+      ]
+
+      func = find!(:modify_rule, rule_arn, doc_examples)
+      apply_func(func, [rule_arn, actions, opts], doc_examples)
     end
 
     # ---------------------------------------------------------------------------
@@ -59,20 +101,26 @@ if Code.ensure_loaded?(SandboxRegistry) do
     def set_describe_target_groups_responses(tuples_or_funcs),
       do: set_responses(:describe_target_groups, normalize_no_key(tuples_or_funcs))
 
-    def set_describe_target_health_responses(tuples_or_funcs),
-      do: set_responses(:describe_target_health, normalize_no_key(tuples_or_funcs))
+    def set_describe_target_health_responses(tuples),
+      do: set_responses(:describe_target_health, tuples)
 
     def set_describe_load_balancers_responses(tuples_or_funcs),
       do: set_responses(:describe_load_balancers, normalize_no_key(tuples_or_funcs))
 
-    def set_describe_listeners_responses(tuples_or_funcs),
-      do: set_responses(:describe_listeners, normalize_no_key(tuples_or_funcs))
+    def set_describe_listeners_responses(tuples),
+      do: set_responses(:describe_listeners, tuples)
 
-    def set_describe_rules_responses(tuples_or_funcs),
-      do: set_responses(:describe_rules, normalize_no_key(tuples_or_funcs))
+    def set_describe_listeners_by_arns_responses(tuples),
+      do: set_responses(:describe_listeners_by_arns, tuples)
 
-    def set_modify_rule_responses(tuples_or_funcs),
-      do: set_responses(:modify_rule, normalize_no_key(tuples_or_funcs))
+    def set_describe_rules_responses(tuples),
+      do: set_responses(:describe_rules, tuples)
+
+    def set_describe_rules_by_arns_responses(tuples),
+      do: set_responses(:describe_rules_by_arns, tuples)
+
+    def set_modify_rule_responses(tuples),
+      do: set_responses(:modify_rule, tuples)
 
     # ---------------------------------------------------------------------------
     # Sandbox control
@@ -98,6 +146,10 @@ if Code.ensure_loaded?(SandboxRegistry) do
     # ---------------------------------------------------------------------------
     # Private helpers
     # ---------------------------------------------------------------------------
+
+    # A list of ARNs has no single natural lookup key; join it so tests can
+    # register an exact string or match it with a regex.
+    defp arns_key(arns) when is_list(arns), do: Enum.join(arns, ",")
 
     defp normalize_no_key(items) do
       Enum.map(items, fn

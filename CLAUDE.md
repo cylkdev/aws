@@ -20,6 +20,7 @@ This library wraps AWS services (S3, EventBridge, CloudWatch Logs, IAM, STS, IAM
 
 Each service (`AWS.S3`, `AWS.EventBridge`, `AWS.Logs`, `AWS.IAM`, `AWS.STS`, `AWS.IdentityCenter`, `AWS.Organizations`) follows the same structure:
 
+- **Every input AWS requires for an operation is a positional argument.** `opts` (always last, always `\\ []`) carries only optional inputs plus credentials, region, endpoint overrides, and the sandbox flag. Requiredness is enforced by pattern match / guard on the function head (`when is_binary(arn)`), never by a runtime `require_opts!`-style check on the keyword list. When AWS requires *one of* two mutually exclusive inputs, expose two distinct named functions rather than one polymorphic head — e.g. `AWS.ElasticLoadBalancingV2.describe_rules/2` (by listener ARN) vs `describe_rules_by_arns/2` (by rule ARNs), which send different wire params.
 - Public functions check `sandbox?/1` first; if true, delegate to the `Sandbox` module
 - Otherwise call `do_*` private functions that dispatch through the service's `Client` module, then pipe through `deserialize_response/3`
 - Every service's `Client` module is a thin wrapper over `AWS.Client`, the shared dispatcher that owns SigV4 signing, HTTP dispatch (`AWS.HTTP`), credential/endpoint/sandbox resolution, and status-code branching. Per-service clients contribute only the protocol-specific pieces: body encoding (JSON / form-urlencoded / passthrough), request headers (X-Amz-Target for JSON 1.1; Action+Version for Query; per-operation for REST/XML), and URL composition (only S3 needs custom addressing). There is no ExAws integration.
@@ -33,7 +34,7 @@ Each service (`AWS.S3`, `AWS.EventBridge`, `AWS.Logs`, `AWS.IAM`, `AWS.STS`, `AW
 
 ### Sandbox pattern
 
-Each service has a `Sandbox` module backed by `SandboxRegistry` (optional dep, `:dev`/`:test` only). Responses are stored as lists of functions keyed by test PID. Sandbox functions support variable arity: `fn -> result end`, `fn key -> result end`, etc.
+Each service has a `Sandbox` module backed by `SandboxRegistry` (optional dep, `:dev`/`:test` only). Responses are stored as lists of functions keyed by test PID. Sandbox functions support variable arity: `fn -> result end`, `fn key -> result end`, etc. The registry lookup key is the operation's first positional argument (so `set_*_responses` takes `{key_or_regex, fun}` tuples); operations with no required input key off `"*"` and accept a bare `fn`.
 
 Activate with `sandbox: [enabled: true]` on any per-call opts (or set `config :aws, :sandbox, enabled: true`). When enabled, the public function delegates to the service's `Sandbox` module instead of making an HTTP call. There is no other sandbox mode.
 

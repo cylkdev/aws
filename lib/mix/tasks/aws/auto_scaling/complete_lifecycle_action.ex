@@ -51,14 +51,11 @@ defmodule Mix.Tasks.AWS.AutoScaling.CompleteLifecycleAction do
     call_opts =
       parsed
       |> Helpers.build_opts()
-      |> Keyword.put(:auto_scaling_group_name, asg)
-      |> Keyword.put(:lifecycle_hook_name, hook_name)
-      |> Keyword.put(:lifecycle_action_result, result)
       |> Helpers.maybe_put(:instance_id, parsed[:instance_id])
       |> Helpers.maybe_put(:lifecycle_action_token, parsed[:token])
 
-    call_opts
-    |> AWS.AutoScaling.complete_lifecycle_action()
+    hook_name
+    |> AWS.AutoScaling.complete_lifecycle_action(asg, result, call_opts)
     |> Helpers.handle_result()
   end
 end
