@@ -2,7 +2,6 @@ defmodule AWS.Credentials.Providers.CredentialProcessTest do
   use ExUnit.Case, async: true
 
   alias AWS.Credentials.Providers.CredentialProcess
-  alias AWS.CredentialsFixtures
 
   @tag :tmp_dir
   test "runs the command and parses its JSON output", %{tmp_dir: tmp} do
@@ -20,13 +19,12 @@ defmodule AWS.Credentials.Providers.CredentialProcessTest do
 
     File.chmod!(script, 0o755)
 
-    home =
-      CredentialsFixtures.build_home(tmp,
-        config: """
-        [profile dev]
-        credential_process = #{script}
-        """
-      )
+    File.mkdir_p!(Path.join(tmp, ".aws"))
+
+    File.write!(Path.join(tmp, ".aws/config"), """
+    [profile dev]
+    credential_process = #{script}
+    """)
 
     assert {:ok,
             %{
@@ -35,20 +33,19 @@ defmodule AWS.Credentials.Providers.CredentialProcessTest do
               security_token: "TOKEN",
               source: :credential_process,
               expires_at: %DateTime{}
-            }} = CredentialProcess.resolve(profile: "dev", home_dir: home)
+            }} = CredentialProcess.resolve(profile: "dev", home_dir: tmp)
   end
 
   @tag :tmp_dir
   test "skip when profile has no credential_process key", %{tmp_dir: tmp} do
-    home =
-      CredentialsFixtures.build_home(tmp,
-        config: """
-        [profile dev]
-        region = us-east-1
-        """
-      )
+    File.mkdir_p!(Path.join(tmp, ".aws"))
 
-    assert :skip = CredentialProcess.resolve(profile: "dev", home_dir: home)
+    File.write!(Path.join(tmp, ".aws/config"), """
+    [profile dev]
+    region = us-east-1
+    """)
+
+    assert :skip = CredentialProcess.resolve(profile: "dev", home_dir: tmp)
   end
 
   @tag :tmp_dir
@@ -57,16 +54,15 @@ defmodule AWS.Credentials.Providers.CredentialProcessTest do
     File.write!(script, "#!/bin/sh\nexit 7\n")
     File.chmod!(script, 0o755)
 
-    home =
-      CredentialsFixtures.build_home(tmp,
-        config: """
-        [profile dev]
-        credential_process = #{script}
-        """
-      )
+    File.mkdir_p!(Path.join(tmp, ".aws"))
+
+    File.write!(Path.join(tmp, ".aws/config"), """
+    [profile dev]
+    credential_process = #{script}
+    """)
 
     assert {:error, {:credential_process_failed, 7, _}} =
-             CredentialProcess.resolve(profile: "dev", home_dir: home)
+             CredentialProcess.resolve(profile: "dev", home_dir: tmp)
   end
 
   @tag :tmp_dir
@@ -80,15 +76,14 @@ defmodule AWS.Credentials.Providers.CredentialProcessTest do
 
     File.chmod!(script, 0o755)
 
-    home =
-      CredentialsFixtures.build_home(tmp,
-        config: """
-        [profile dev]
-        credential_process = #{script}
-        """
-      )
+    File.mkdir_p!(Path.join(tmp, ".aws"))
+
+    File.write!(Path.join(tmp, ".aws/config"), """
+    [profile dev]
+    credential_process = #{script}
+    """)
 
     assert {:error, {:credential_process_invalid, {:unsupported_version, 2}}} =
-             CredentialProcess.resolve(profile: "dev", home_dir: home)
+             CredentialProcess.resolve(profile: "dev", home_dir: tmp)
   end
 end

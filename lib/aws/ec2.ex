@@ -36,15 +36,14 @@ defmodule AWS.EC2 do
   """
 
   import SweetXml, only: [xpath: 2, xpath: 3, sigil_x: 2]
-  alias AWS.{Client, Config}
-  alias AWS.EC2.Operation
+
+  alias AWS.Client
+  alias AWS.Operation
 
   @service "ec2"
   @content_type "application/x-www-form-urlencoded"
   @api_version "2016-11-15"
   @default_region "us-east-1"
-
-  @override_keys [:headers, :body, :http, :url]
 
   # ---------------------------------------------------------------------------
   # Security Groups
@@ -586,9 +585,142 @@ defmodule AWS.EC2 do
   # Sandbox delegation
   # ---------------------------------------------------------------------------
 
+  # ---------------------------------------------------------------------------
+  # Private helpers
+  # ---------------------------------------------------------------------------
+
+  @doc false
+  def build_operation(action, params, opts) do
+    opts = Keyword.put_new(opts, :region, @default_region)
+
+    with {:ok, config} <- Client.resolve_config(:ec2, opts, &default_host/1) do
+      op = %Operation{
+        method: :post,
+        url: Client.simple_url(config),
+        headers: [{"content-type", @content_type}],
+        body: encode_body(action, params),
+        service: @service,
+        region: config.region,
+        access_key_id: config.access_key_id,
+        secret_access_key: config.secret_access_key,
+        security_token: config.security_token,
+        http: Keyword.get(opts, :http, [])
+      }
+
+      {:ok, apply_overrides(op, opts[:ec2] || [])}
+    end
+  end
+
+  defp default_host(region), do: "ec2.#{region}.amazonaws.com"
+
+  defp perform(action, params, opts) do
+    with {:ok, op} <- build_operation(action, params, opts) do
+      case Client.execute(op) do
+        {:ok, %{body: body}} -> {:ok, body}
+        {:error, _} = err -> err
+      end
+    end
+  end
+
+  defp encode_body(action, params) do
+    params
+    |> Map.merge(%{"Action" => action, "Version" => @api_version})
+    |> URI.encode_query()
+  end
+
+  defp put_member_list(map, _prefix, []), do: map
+
+  defp put_member_list(map, prefix, values) when is_list(values) do
+    values
+    |> Enum.with_index(1)
+    |> Enum.reduce(map, fn {value, idx}, acc ->
+      Map.put(acc, "#{prefix}.#{idx}", value)
+    end)
+  end
+
+  defp put_filters(map, []), do: map
+
+  defp put_filters(map, filters) when is_list(filters) do
+    filters
+    |> Enum.with_index(1)
+    |> Enum.reduce(map, fn {filter, idx}, acc ->
+      name = filter[:name] || filter["Name"]
+      values = filter[:values] || filter["Values"] || []
+
+      acc = Map.put(acc, "Filter.#{idx}.Name", name)
+
+      values
+      |> Enum.with_index(1)
+      |> Enum.reduce(acc, fn {value, vidx}, a ->
+        Map.put(a, "Filter.#{idx}.Value.#{vidx}", value)
+      end)
+    end)
+  end
+
+  defp put_tags(map, prefix, tags) do
+    tags
+    |> Enum.with_index(1)
+    |> Enum.reduce(map, fn {tag, idx}, acc ->
+      {key, value} = normalize_tag(tag)
+
+      acc
+      |> Map.put("#{prefix}.#{idx}.Key", key)
+      |> Map.put("#{prefix}.#{idx}.Value", value)
+    end)
+  end
+
+  defp normalize_tag({key, value}), do: {to_string(key), to_string(value)}
+  defp normalize_tag(%{key: k, value: v}), do: {to_string(k), to_string(v)}
+  defp normalize_tag(%{"Key" => k, "Value" => v}), do: {to_string(k), to_string(v)}
+
+  defp put_ip_permissions(map, permissions) do
+    permissions
+    |> Enum.with_index(1)
+    |> Enum.reduce(map, fn {perm, idx}, acc ->
+      base = "IpPermissions.#{idx}"
+
+      acc
+      |> maybe_put("#{base}.IpProtocol", perm[:protocol])
+      |> maybe_put("#{base}.FromPort", perm[:from_port])
+      |> maybe_put("#{base}.ToPort", perm[:to_port])
+      |> put_ip_ranges("#{base}.IpRanges", perm[:ip_ranges] || [])
+      |> put_user_id_group_pairs(
+        "#{base}.Groups",
+        perm[:user_id_group_pairs] || []
+      )
+    end)
+  end
+
+  defp put_ip_ranges(map, prefix, ranges) do
+    ranges
+    |> Enum.with_index(1)
+    |> Enum.reduce(map, fn {range, idx}, acc ->
+      acc
+      |> maybe_put("#{prefix}.#{idx}.CidrIp", range[:cidr_ip])
+      |> maybe_put("#{prefix}.#{idx}.Description", range[:description])
+    end)
+  end
+
+  defp put_user_id_group_pairs(map, prefix, pairs) do
+    pairs
+    |> Enum.with_index(1)
+    |> Enum.reduce(map, fn {pair, idx}, acc ->
+      acc
+      |> maybe_put("#{prefix}.#{idx}.GroupId", pair[:group_id])
+      |> maybe_put("#{prefix}.#{idx}.Description", pair[:description])
+    end)
+  end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, to_string(value))
+
+  # ---------------------------------------------------------------------------
+  # Sandbox delegation
+  # ---------------------------------------------------------------------------
+
   defp sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
-    cfg = Config.sandbox()
+    cfg = AWS.Config.sandbox()
     enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
 
     enabled and not sandbox_disabled?()
@@ -702,41 +834,10 @@ defmodule AWS.EC2 do
   end
 
   # ---------------------------------------------------------------------------
-  # Private helpers
+  # Overrides / response handling
   # ---------------------------------------------------------------------------
 
-  @doc false
-  def build_operation(action, params, opts) do
-    opts = Keyword.put_new(opts, :region, @default_region)
-
-    with {:ok, config} <- Client.resolve_config(:ec2, opts, &default_host/1) do
-      op = %Operation{
-        method: :post,
-        url: Client.simple_url(config),
-        headers: [{"content-type", @content_type}],
-        body: encode_body(action, params),
-        service: @service,
-        region: config.region,
-        access_key_id: config.access_key_id,
-        secret_access_key: config.secret_access_key,
-        security_token: config.security_token,
-        http: Keyword.get(opts, :http, [])
-      }
-
-      {:ok, apply_overrides(op, opts[:ec2] || [])}
-    end
-  end
-
-  defp default_host(region), do: "ec2.#{region}.amazonaws.com"
-
-  defp perform(action, params, opts) do
-    with {:ok, op} <- build_operation(action, params, opts) do
-      case Client.execute(op) do
-        {:ok, %{body: body}} -> {:ok, body}
-        {:error, _} = err -> err
-      end
-    end
-  end
+  @override_keys [:headers, :body, :http, :url]
 
   defp apply_overrides(op, overrides) do
     Enum.reduce(@override_keys, op, fn key, acc ->
@@ -745,12 +846,6 @@ defmodule AWS.EC2 do
         :error -> acc
       end
     end)
-  end
-
-  defp encode_body(action, params) do
-    params
-    |> Map.merge(%{"Action" => action, "Version" => @api_version})
-    |> URI.encode_query()
   end
 
   defp deserialize_response({:ok, response}, _opts, func) do
@@ -775,90 +870,4 @@ defmodule AWS.EC2 do
   defp deserialize_response({:error, reason}, _opts, _func) do
     {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
-
-  defp put_member_list(map, _prefix, []), do: map
-
-  defp put_member_list(map, prefix, values) when is_list(values) do
-    values
-    |> Enum.with_index(1)
-    |> Enum.reduce(map, fn {value, idx}, acc ->
-      Map.put(acc, "#{prefix}.#{idx}", value)
-    end)
-  end
-
-  defp put_filters(map, []), do: map
-
-  defp put_filters(map, filters) when is_list(filters) do
-    filters
-    |> Enum.with_index(1)
-    |> Enum.reduce(map, fn {filter, idx}, acc ->
-      name = filter[:name] || filter["Name"]
-      values = filter[:values] || filter["Values"] || []
-
-      acc = Map.put(acc, "Filter.#{idx}.Name", name)
-
-      values
-      |> Enum.with_index(1)
-      |> Enum.reduce(acc, fn {value, vidx}, a ->
-        Map.put(a, "Filter.#{idx}.Value.#{vidx}", value)
-      end)
-    end)
-  end
-
-  defp put_tags(map, prefix, tags) do
-    tags
-    |> Enum.with_index(1)
-    |> Enum.reduce(map, fn {tag, idx}, acc ->
-      {key, value} = normalize_tag(tag)
-
-      acc
-      |> Map.put("#{prefix}.#{idx}.Key", key)
-      |> Map.put("#{prefix}.#{idx}.Value", value)
-    end)
-  end
-
-  defp normalize_tag({key, value}), do: {to_string(key), to_string(value)}
-  defp normalize_tag(%{key: k, value: v}), do: {to_string(k), to_string(v)}
-  defp normalize_tag(%{"Key" => k, "Value" => v}), do: {to_string(k), to_string(v)}
-
-  defp put_ip_permissions(map, permissions) do
-    permissions
-    |> Enum.with_index(1)
-    |> Enum.reduce(map, fn {perm, idx}, acc ->
-      base = "IpPermissions.#{idx}"
-
-      acc
-      |> maybe_put("#{base}.IpProtocol", perm[:protocol])
-      |> maybe_put("#{base}.FromPort", perm[:from_port])
-      |> maybe_put("#{base}.ToPort", perm[:to_port])
-      |> put_ip_ranges("#{base}.IpRanges", perm[:ip_ranges] || [])
-      |> put_user_id_group_pairs(
-        "#{base}.Groups",
-        perm[:user_id_group_pairs] || []
-      )
-    end)
-  end
-
-  defp put_ip_ranges(map, prefix, ranges) do
-    ranges
-    |> Enum.with_index(1)
-    |> Enum.reduce(map, fn {range, idx}, acc ->
-      acc
-      |> maybe_put("#{prefix}.#{idx}.CidrIp", range[:cidr_ip])
-      |> maybe_put("#{prefix}.#{idx}.Description", range[:description])
-    end)
-  end
-
-  defp put_user_id_group_pairs(map, prefix, pairs) do
-    pairs
-    |> Enum.with_index(1)
-    |> Enum.reduce(map, fn {pair, idx}, acc ->
-      acc
-      |> maybe_put("#{prefix}.#{idx}.GroupId", pair[:group_id])
-      |> maybe_put("#{prefix}.#{idx}.Description", pair[:description])
-    end)
-  end
-
-  defp maybe_put(map, _key, nil), do: map
-  defp maybe_put(map, key, value), do: Map.put(map, key, to_string(value))
 end

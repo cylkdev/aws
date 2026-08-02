@@ -2,47 +2,42 @@ defmodule AWS.Credentials.SSO.TokenCacheTest do
   use ExUnit.Case, async: true
 
   alias AWS.Credentials.SSO.TokenCache
-  alias AWS.CredentialsFixtures
 
   @tag :tmp_dir
   test "path/2 hashes the key with sha1-hex", %{tmp_dir: tmp} do
-    home = CredentialsFixtures.build_home(tmp)
-    path = TokenCache.path("main", home_dir: home)
-
-    expected_hash = :sha |> :crypto.hash("main") |> Base.encode16(case: :lower)
-    assert path === Path.join(home, ".aws/sso/cache/#{expected_hash}.json")
+    assert Path.join(tmp, ".aws/sso/cache/b28b7af69320201d1cf206ebf28373980add1451.json") ===
+             TokenCache.path("main", home_dir: tmp)
   end
 
   @tag :tmp_dir
-  test "read/2 returns {:ok, contents} for a live cache", %{tmp_dir: tmp} do
-    home = CredentialsFixtures.build_home(tmp)
+  test "read/2 returns the contents that were written", %{tmp_dir: tmp} do
+    :ok = TokenCache.write("main", %{"accessToken" => "abc"}, home_dir: tmp)
 
-    CredentialsFixtures.write_sso_cache(home, "main", %{
-      "accessToken" => "abc",
-      "expiresAt" => "2099-01-01T00:00:00Z"
-    })
-
-    assert {:ok, %{"accessToken" => "abc"}} = TokenCache.read("main", home_dir: home)
+    assert {:ok, %{"accessToken" => "abc"}} = TokenCache.read("main", home_dir: tmp)
   end
 
   @tag :tmp_dir
   test "read/2 returns {:error, :enoent} when the file is missing", %{tmp_dir: tmp} do
-    home = CredentialsFixtures.build_home(tmp)
-    assert {:error, :enoent} = TokenCache.read("absent", home_dir: home)
+    assert {:error, :enoent} = TokenCache.read("absent", home_dir: tmp)
   end
 
   @tag :tmp_dir
-  test "write/3 atomically replaces the cache file with 0600 perms", %{tmp_dir: tmp} do
-    home = CredentialsFixtures.build_home(tmp)
-    assert :ok = TokenCache.write("main", %{"accessToken" => "v1"}, home_dir: home)
+  test "write/3 replaces the cache file and restricts it to the owner", %{tmp_dir: tmp} do
+    assert :ok = TokenCache.write("main", %{"accessToken" => "v1"}, home_dir: tmp)
+    assert {:ok, %{"accessToken" => "v1"}} = TokenCache.read("main", home_dir: tmp)
 
-    path = TokenCache.path("main", home_dir: home)
-    stat = File.stat!(path)
-    assert Bitwise.band(stat.mode, 0o777) === 0o600
+    assert 0o600 ===
+             Bitwise.band(File.stat!(TokenCache.path("main", home_dir: tmp)).mode, 0o777)
 
-    assert {:ok, %{"accessToken" => "v1"}} = TokenCache.read("main", home_dir: home)
+    assert :ok = TokenCache.write("main", %{"accessToken" => "v2"}, home_dir: tmp)
+    assert {:ok, %{"accessToken" => "v2"}} = TokenCache.read("main", home_dir: tmp)
+  end
 
-    assert :ok = TokenCache.write("main", %{"accessToken" => "v2"}, home_dir: home)
-    assert {:ok, %{"accessToken" => "v2"}} = TokenCache.read("main", home_dir: home)
+  @tag :tmp_dir
+  test "write/3 returns an error tuple when the cache directory cannot be created",
+       %{tmp_dir: tmp} do
+    File.write!(Path.join(tmp, ".aws"), "")
+
+    assert {:error, :enotdir} = TokenCache.write("main", %{"accessToken" => "v1"}, home_dir: tmp)
   end
 end

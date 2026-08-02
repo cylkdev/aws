@@ -26,18 +26,20 @@ defmodule AWS.S3.XMLBuilder do
     * `:restrict_public_buckets` - Defaults to `true`.
   """
   @spec build_public_access_block(opts :: keyword()) :: binary()
+  # Only the flags the caller supplied are emitted. Defaulting them all to
+  # `true` meant setting one flag silently flipped the other three.
   def build_public_access_block(opts \\ []) do
-    block_public_acls = Keyword.get(opts, :block_public_acls, true)
-    ignore_public_acls = Keyword.get(opts, :ignore_public_acls, true)
-    block_public_policy = Keyword.get(opts, :block_public_policy, true)
-    restrict_public_buckets = Keyword.get(opts, :restrict_public_buckets, true)
+    inner =
+      [
+        {"BlockPublicAcls", opts[:block_public_acls]},
+        {"IgnorePublicAcls", opts[:ignore_public_acls]},
+        {"BlockPublicPolicy", opts[:block_public_policy]},
+        {"RestrictPublicBuckets", opts[:restrict_public_buckets]}
+      ]
+      |> Enum.reject(fn {_element, value} -> is_nil(value) end)
+      |> Enum.map_join(fn {element, value} -> "<#{element}>#{value}</#{element}>" end)
 
-    "<PublicAccessBlockConfiguration xmlns=\"#{@xmlns}\">" <>
-      "<BlockPublicAcls>#{block_public_acls}</BlockPublicAcls>" <>
-      "<IgnorePublicAcls>#{ignore_public_acls}</IgnorePublicAcls>" <>
-      "<BlockPublicPolicy>#{block_public_policy}</BlockPublicPolicy>" <>
-      "<RestrictPublicBuckets>#{restrict_public_buckets}</RestrictPublicBuckets>" <>
-      "</PublicAccessBlockConfiguration>"
+    "<PublicAccessBlockConfiguration xmlns=\"#{@xmlns}\">#{inner}</PublicAccessBlockConfiguration>"
   end
 
   @doc """
@@ -52,7 +54,7 @@ defmodule AWS.S3.XMLBuilder do
   """
   @spec build_bucket_encryption(opts :: keyword()) :: binary()
   def build_bucket_encryption(opts \\ []) do
-    sse_algorithm = Keyword.get(opts, :sse_algorithm, "AES256")
+    sse_algorithm = opts[:sse_algorithm]
     kms_master_key_id = opts[:kms_master_key_id]
     bucket_key_enabled = opts[:bucket_key_enabled]
 
@@ -90,7 +92,7 @@ defmodule AWS.S3.XMLBuilder do
 
   defp lifecycle_rule_xml(rule) do
     id = Map.fetch!(rule, :id)
-    status = Map.get(rule, :status, "Enabled")
+    status = Map.fetch!(rule, :status)
     filter = Map.get(rule, :filter, %{})
 
     parts =

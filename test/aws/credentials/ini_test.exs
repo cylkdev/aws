@@ -14,13 +14,13 @@ defmodule AWS.Credentials.INITest do
       aws_access_key_id = AKIAFOO
       """
 
-      assert INI.parse(contents) === %{
+      assert %{
                "default" => %{
                  "aws_access_key_id" => "AKIADEFAULT",
                  "aws_secret_access_key" => "default-secret"
                },
                "foo" => %{"aws_access_key_id" => "AKIAFOO"}
-             }
+             } === INI.parse(contents)
     end
 
     test "strips inline comments and trims whitespace" do
@@ -30,9 +30,8 @@ defmodule AWS.Credentials.INITest do
         sso_session = main
       """
 
-      assert INI.parse(contents) === %{
-               "profile foo" => %{"region" => "us-east-1", "sso_session" => "main"}
-             }
+      assert %{"profile foo" => %{"region" => "us-east-1", "sso_session" => "main"}} ===
+               INI.parse(contents)
     end
 
     test "ignores orphan key=value pairs before the first header" do
@@ -42,7 +41,7 @@ defmodule AWS.Credentials.INITest do
       key = value
       """
 
-      assert INI.parse(contents) === %{"default" => %{"key" => "value"}}
+      assert %{"default" => %{"key" => "value"}} === INI.parse(contents)
     end
 
     test "preserves section names with spaces" do
@@ -51,9 +50,8 @@ defmodule AWS.Credentials.INITest do
       sso_region = us-east-1
       """
 
-      assert INI.parse(contents) === %{
-               "sso-session my-session" => %{"sso_region" => "us-east-1"}
-             }
+      assert %{"sso-session my-session" => %{"sso_region" => "us-east-1"}} ===
+               INI.parse(contents)
     end
 
     test "ignores full-line comments" do
@@ -64,7 +62,7 @@ defmodule AWS.Credentials.INITest do
       key = value
       """
 
-      assert INI.parse(contents) === %{"default" => %{"key" => "value"}}
+      assert %{"default" => %{"key" => "value"}} === INI.parse(contents)
     end
   end
 

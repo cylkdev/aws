@@ -68,15 +68,13 @@ defmodule AWS.SSM do
       end
   """
 
-  alias AWS.{Client, Config}
-  alias AWS.SSM.Operation
+  alias AWS.Client
+  alias AWS.Operation
   alias ExUtils.Serializer
 
   @service "ssm"
   @content_type "application/x-amz-json-1.1"
   @target_prefix "AmazonSSM"
-
-  @override_keys [:headers, :body, :http, :url]
 
   # ---------------------------------------------------------------------------
   # Parameter Store
@@ -93,7 +91,7 @@ defmodule AWS.SSM do
   """
   @spec get_parameter(name :: String.t(), opts :: keyword()) ::
           {:ok, %{parameter: map()}} | {:error, term()}
-  def get_parameter(name, opts \\ []) do
+  def get_parameter(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_get_parameter_response(name, opts)
     else
@@ -122,7 +120,7 @@ defmodule AWS.SSM do
   """
   @spec get_parameters(names :: [String.t()], opts :: keyword()) ::
           {:ok, %{parameters: [map()], invalid_parameters: [String.t()]}} | {:error, term()}
-  def get_parameters(names, opts \\ []) do
+  def get_parameters([_ | _] = names, opts \\ []) do
     if sandbox?(opts) do
       sandbox_get_parameters_response(names, opts)
     else
@@ -157,7 +155,7 @@ defmodule AWS.SSM do
   """
   @spec get_parameters_by_path(path :: String.t(), opts :: keyword()) ::
           {:ok, %{parameters: [map()], next_token: String.t() | nil}} | {:error, term()}
-  def get_parameters_by_path(path, opts \\ []) do
+  def get_parameters_by_path(path, opts \\ []) when is_binary(path) do
     if sandbox?(opts) do
       sandbox_get_parameters_by_path_response(path, opts)
     else
@@ -202,7 +200,7 @@ defmodule AWS.SSM do
   """
   @spec put_parameter(name :: String.t(), value :: String.t(), opts :: keyword()) ::
           {:ok, %{version: integer(), tier: String.t()}} | {:error, term()}
-  def put_parameter(name, value, opts \\ []) do
+  def put_parameter(name, value, opts \\ []) when is_binary(name) and is_binary(value) do
     if sandbox?(opts) do
       sandbox_put_parameter_response(name, value, opts)
     else
@@ -234,7 +232,7 @@ defmodule AWS.SSM do
   """
   @spec delete_parameter(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def delete_parameter(name, opts \\ []) do
+  def delete_parameter(name, opts \\ []) when is_binary(name) do
     if sandbox?(opts) do
       sandbox_delete_parameter_response(name, opts)
     else
@@ -255,7 +253,7 @@ defmodule AWS.SSM do
   @spec delete_parameters(names :: [String.t()], opts :: keyword()) ::
           {:ok, %{deleted_parameters: [String.t()], invalid_parameters: [String.t()]}}
           | {:error, term()}
-  def delete_parameters(names, opts \\ []) do
+  def delete_parameters([_ | _] = names, opts \\ []) do
     if sandbox?(opts) do
       sandbox_delete_parameters_response(names, opts)
     else
@@ -385,15 +383,6 @@ defmodule AWS.SSM do
     end
   end
 
-  defp apply_overrides(op, overrides) do
-    Enum.reduce(@override_keys, op, fn key, acc ->
-      case Keyword.fetch(overrides, key) do
-        {:ok, value} -> Map.put(acc, key, value)
-        :error -> acc
-      end
-    end)
-  end
-
   defp encode_body(data) when map_size(data) === 0, do: "{}"
   defp encode_body(data), do: data |> :json.encode() |> IO.iodata_to_binary()
 
@@ -422,32 +411,12 @@ defmodule AWS.SSM do
 
   defp deserialize_opts(opts), do: Keyword.merge(@deserialize_defaults, opts)
 
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
-  end
-
   defp maybe_put(map, _key, nil), do: map
-  defp maybe_put(map, _key, false), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  # ---------------------------------------------------------------------------
+  # Sandbox delegation
+  # ---------------------------------------------------------------------------
 
   # ---------------------------------------------------------------------------
   # Sandbox delegation
@@ -455,7 +424,7 @@ defmodule AWS.SSM do
 
   defp sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
-    cfg = Config.sandbox()
+    cfg = AWS.Config.sandbox()
     enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
 
     enabled and not sandbox_disabled?()
@@ -515,5 +484,43 @@ defmodule AWS.SSM do
     defp sandbox_delete_parameters_response(_, _), do: raise("sandbox not available")
     defp sandbox_describe_parameters_response(_), do: raise("sandbox not available")
     defp sandbox_describe_instance_information_response(_), do: raise("sandbox not available")
+  end
+
+  # ---------------------------------------------------------------------------
+  # Overrides / response handling
+  # ---------------------------------------------------------------------------
+
+  @override_keys [:headers, :body, :http, :url]
+
+  defp apply_overrides(op, overrides) do
+    Enum.reduce(@override_keys, op, fn key, acc ->
+      case Keyword.fetch(overrides, key) do
+        {:ok, value} -> Map.put(acc, key, value)
+        :error -> acc
+      end
+    end)
+  end
+
+  defp deserialize_response({:ok, response}, _opts, func) do
+    case func.(response) do
+      {:error, _} = error -> error
+      {:ok, _} = ok -> ok
+      result -> {:ok, result}
+    end
+  end
+
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
+       when status_code in 400..499 do
+    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
+  end
+
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
+       when status_code >= 500 do
+    {:error,
+     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
+  end
+
+  defp deserialize_response({:error, reason}, _opts, _func) do
+    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 end

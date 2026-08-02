@@ -4,8 +4,6 @@ defmodule AWS.EventBridge.SandboxTest do
   alias AWS.EventBridge
   alias AWS.EventBridge.Sandbox
 
-  @sandbox_opts [sandbox: [enabled: true]]
-
   # Rule management
 
   describe "put_rule/2" do
@@ -16,7 +14,8 @@ defmodule AWS.EventBridge.SandboxTest do
 
       assert {:ok, %{rule_arn: "arn:aws:events:us-west-1:123:rule/my-rule"}} =
                EventBridge.put_rule("my-rule", [
-                 {:event_pattern, %{"source" => ["aws.s3"]}} | @sandbox_opts
+                 {:event_pattern, %{"source" => ["aws.s3"]}},
+                 {:sandbox, [enabled: true]}
                ])
     end
   end
@@ -28,7 +27,7 @@ defmodule AWS.EventBridge.SandboxTest do
       ])
 
       assert {:ok, %{name: "my-rule", state: "ENABLED"}} =
-               EventBridge.describe_rule("my-rule", @sandbox_opts)
+               EventBridge.describe_rule("my-rule", sandbox: [enabled: true])
     end
   end
 
@@ -39,7 +38,7 @@ defmodule AWS.EventBridge.SandboxTest do
       ])
 
       assert {:ok, %{rules: [%{name: "my-rule"}]}} =
-               EventBridge.list_rules(@sandbox_opts)
+               EventBridge.list_rules(sandbox: [enabled: true])
     end
   end
 
@@ -49,7 +48,7 @@ defmodule AWS.EventBridge.SandboxTest do
         {"my-rule", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = EventBridge.delete_rule("my-rule", @sandbox_opts)
+      assert {:ok, %{}} = EventBridge.delete_rule("my-rule", sandbox: [enabled: true])
     end
   end
 
@@ -65,7 +64,7 @@ defmodule AWS.EventBridge.SandboxTest do
                EventBridge.put_targets(
                  "my-rule",
                  [%{id: "1", arn: "arn:aws:sqs:us-west-1:123:q"}],
-                 @sandbox_opts
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -77,7 +76,7 @@ defmodule AWS.EventBridge.SandboxTest do
       ])
 
       assert {:ok, %{targets: [%{id: "1"}]}} =
-               EventBridge.list_targets_by_rule("my-rule", @sandbox_opts)
+               EventBridge.list_targets_by_rule("my-rule", sandbox: [enabled: true])
     end
   end
 
@@ -88,7 +87,7 @@ defmodule AWS.EventBridge.SandboxTest do
       ])
 
       assert {:ok, %{failed_entry_count: 0}} =
-               EventBridge.remove_targets("my-rule", ["1"], @sandbox_opts)
+               EventBridge.remove_targets("my-rule", ["1"], sandbox: [enabled: true])
     end
   end
 
@@ -111,7 +110,7 @@ defmodule AWS.EventBridge.SandboxTest do
                      "ApiKeyValue" => "secret"
                    }
                  },
-                 @sandbox_opts
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -123,7 +122,7 @@ defmodule AWS.EventBridge.SandboxTest do
       ])
 
       assert {:ok, %{name: "my-conn"}} =
-               EventBridge.describe_connection("my-conn", @sandbox_opts)
+               EventBridge.describe_connection("my-conn", sandbox: [enabled: true])
     end
   end
 
@@ -133,7 +132,7 @@ defmodule AWS.EventBridge.SandboxTest do
         {"my-conn", fn -> {:ok, %{connection_arn: "arn:...", connection_state: "AUTHORIZED"}} end}
       ])
 
-      assert {:ok, _} = EventBridge.update_connection("my-conn", @sandbox_opts)
+      assert {:ok, _} = EventBridge.update_connection("my-conn", sandbox: [enabled: true])
     end
   end
 
@@ -143,7 +142,7 @@ defmodule AWS.EventBridge.SandboxTest do
         {"my-conn", fn -> {:ok, %{connection_arn: "arn:...", connection_state: "DELETING"}} end}
       ])
 
-      assert {:ok, _} = EventBridge.delete_connection("my-conn", @sandbox_opts)
+      assert {:ok, _} = EventBridge.delete_connection("my-conn", sandbox: [enabled: true])
     end
   end
 
@@ -154,7 +153,7 @@ defmodule AWS.EventBridge.SandboxTest do
       ])
 
       assert {:ok, %{connections: [%{name: "my-conn"}]}} =
-               EventBridge.list_connections(@sandbox_opts)
+               EventBridge.list_connections(sandbox: [enabled: true])
     end
   end
 
@@ -179,7 +178,7 @@ defmodule AWS.EventBridge.SandboxTest do
                  "arn:conn",
                  "https://example.com/webhook",
                  "POST",
-                 @sandbox_opts
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -191,7 +190,7 @@ defmodule AWS.EventBridge.SandboxTest do
       ])
 
       assert {:ok, %{name: "my-dest"}} =
-               EventBridge.describe_api_destination("my-dest", @sandbox_opts)
+               EventBridge.describe_api_destination("my-dest", sandbox: [enabled: true])
     end
   end
 
@@ -201,7 +200,7 @@ defmodule AWS.EventBridge.SandboxTest do
         {"my-dest", fn -> {:ok, %{api_destination_arn: "arn:..."}} end}
       ])
 
-      assert {:ok, _} = EventBridge.update_api_destination("my-dest", @sandbox_opts)
+      assert {:ok, _} = EventBridge.update_api_destination("my-dest", sandbox: [enabled: true])
     end
   end
 
@@ -211,7 +210,7 @@ defmodule AWS.EventBridge.SandboxTest do
         {"my-dest", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = EventBridge.delete_api_destination("my-dest", @sandbox_opts)
+      assert {:ok, %{}} = EventBridge.delete_api_destination("my-dest", sandbox: [enabled: true])
     end
   end
 
@@ -222,7 +221,7 @@ defmodule AWS.EventBridge.SandboxTest do
       ])
 
       assert {:ok, %{api_destinations: [%{name: "my-dest"}]}} =
-               EventBridge.list_api_destinations(@sandbox_opts)
+               EventBridge.list_api_destinations(sandbox: [enabled: true])
     end
   end
 
@@ -236,7 +235,7 @@ defmodule AWS.EventBridge.SandboxTest do
       ])
 
       assert {:ok, %{event_bus_arn: _}} =
-               EventBridge.create_event_bus("my-bus", @sandbox_opts)
+               EventBridge.create_event_bus("my-bus", sandbox: [enabled: true])
     end
   end
 
@@ -247,7 +246,7 @@ defmodule AWS.EventBridge.SandboxTest do
       ])
 
       assert {:ok, %{name: "default"}} =
-               EventBridge.describe_event_bus("default", @sandbox_opts)
+               EventBridge.describe_event_bus("default", sandbox: [enabled: true])
     end
   end
 
@@ -257,7 +256,7 @@ defmodule AWS.EventBridge.SandboxTest do
         {"my-bus", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = EventBridge.delete_event_bus("my-bus", @sandbox_opts)
+      assert {:ok, %{}} = EventBridge.delete_event_bus("my-bus", sandbox: [enabled: true])
     end
   end
 
@@ -268,7 +267,7 @@ defmodule AWS.EventBridge.SandboxTest do
       ])
 
       assert {:ok, %{event_buses: [%{name: "default"}]}} =
-               EventBridge.list_event_buses(@sandbox_opts)
+               EventBridge.list_event_buses(sandbox: [enabled: true])
     end
   end
 
@@ -277,19 +276,13 @@ defmodule AWS.EventBridge.SandboxTest do
   describe "put_events/2" do
     test "returns mocked event result" do
       Sandbox.set_put_events_responses([
-        fn entries ->
-          {:ok,
-           %{
-             entries: Enum.map(entries, fn _ -> %{event_id: "abc-123"} end),
-             failed_entry_count: 0
-           }}
-        end
+        fn -> {:ok, %{entries: [%{event_id: "abc-123"}], failed_entry_count: 0}} end
       ])
 
       assert {:ok, %{failed_entry_count: 0, entries: [%{event_id: "abc-123"}]}} =
                EventBridge.put_events(
                  [%{source: "my-app", detail_type: "Test", detail: "{}"}],
-                 @sandbox_opts
+                 sandbox: [enabled: true]
                )
     end
   end
@@ -302,7 +295,7 @@ defmodule AWS.EventBridge.SandboxTest do
         {"my-rule", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = EventBridge.enable_rule("my-rule", @sandbox_opts)
+      assert {:ok, %{}} = EventBridge.enable_rule("my-rule", sandbox: [enabled: true])
     end
   end
 
@@ -312,7 +305,7 @@ defmodule AWS.EventBridge.SandboxTest do
         {"my-rule", fn -> {:ok, %{}} end}
       ])
 
-      assert {:ok, %{}} = EventBridge.disable_rule("my-rule", @sandbox_opts)
+      assert {:ok, %{}} = EventBridge.disable_rule("my-rule", sandbox: [enabled: true])
     end
   end
 
@@ -347,7 +340,7 @@ defmodule AWS.EventBridge.SandboxTest do
       ])
 
       assert {:ok, %{rule_arn: "arn:matched"}} =
-               EventBridge.put_rule("s3-uploads", @sandbox_opts)
+               EventBridge.put_rule("s3-uploads", sandbox: [enabled: true])
     end
   end
 end

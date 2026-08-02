@@ -2,7 +2,6 @@ defmodule AWS.Credentials.Providers.LoginSessionTest do
   use ExUnit.Case, async: true
 
   alias AWS.Credentials.Providers.LoginSession
-  alias AWS.CredentialsFixtures
 
   @tag :tmp_dir
   test "shells out to export-credentials and parses the JSON", %{tmp_dir: tmp} do
@@ -20,14 +19,13 @@ defmodule AWS.Credentials.Providers.LoginSessionTest do
 
     File.chmod!(script, 0o755)
 
-    home =
-      CredentialsFixtures.build_home(tmp,
-        config: """
-        [profile dev]
-        login_session = arn:aws:iam::123456789012:user/dev
-        region = us-east-1
-        """
-      )
+    File.mkdir_p!(Path.join(tmp, ".aws"))
+
+    File.write!(Path.join(tmp, ".aws/config"), """
+    [profile dev]
+    login_session = arn:aws:iam::123456789012:user/dev
+    region = us-east-1
+    """)
 
     assert {:ok,
             %{
@@ -39,29 +37,28 @@ defmodule AWS.Credentials.Providers.LoginSessionTest do
             }} =
              LoginSession.resolve(
                profile: "dev",
-               home_dir: home,
+               home_dir: tmp,
                export_credentials_command: script
              )
   end
 
   @tag :tmp_dir
   test "skips when profile has no login_session key", %{tmp_dir: tmp} do
-    home =
-      CredentialsFixtures.build_home(tmp,
-        config: """
-        [profile dev]
-        region = us-east-1
-        """
-      )
+    File.mkdir_p!(Path.join(tmp, ".aws"))
 
-    assert :skip = LoginSession.resolve(profile: "dev", home_dir: home)
+    File.write!(Path.join(tmp, ".aws/config"), """
+    [profile dev]
+    region = us-east-1
+    """)
+
+    assert :skip = LoginSession.resolve(profile: "dev", home_dir: tmp)
   end
 
   @tag :tmp_dir
   test "skips when profile is absent", %{tmp_dir: tmp} do
-    home = CredentialsFixtures.build_home(tmp)
+    File.mkdir_p!(Path.join(tmp, ".aws"))
 
-    assert :skip = LoginSession.resolve(profile: "missing", home_dir: home)
+    assert :skip = LoginSession.resolve(profile: "missing", home_dir: tmp)
   end
 
   @tag :tmp_dir
@@ -70,18 +67,17 @@ defmodule AWS.Credentials.Providers.LoginSessionTest do
     File.write!(script, "#!/bin/sh\nexit 9\n")
     File.chmod!(script, 0o755)
 
-    home =
-      CredentialsFixtures.build_home(tmp,
-        config: """
-        [profile dev]
-        login_session = arn:aws:iam::123456789012:user/dev
-        """
-      )
+    File.mkdir_p!(Path.join(tmp, ".aws"))
+
+    File.write!(Path.join(tmp, ".aws/config"), """
+    [profile dev]
+    login_session = arn:aws:iam::123456789012:user/dev
+    """)
 
     assert {:error, {:credential_process_failed, 9, _}} =
              LoginSession.resolve(
                profile: "dev",
-               home_dir: home,
+               home_dir: tmp,
                export_credentials_command: script
              )
   end
@@ -97,18 +93,17 @@ defmodule AWS.Credentials.Providers.LoginSessionTest do
 
     File.chmod!(script, 0o755)
 
-    home =
-      CredentialsFixtures.build_home(tmp,
-        config: """
-        [profile dev]
-        login_session = arn:aws:iam::123456789012:user/dev
-        """
-      )
+    File.mkdir_p!(Path.join(tmp, ".aws"))
+
+    File.write!(Path.join(tmp, ".aws/config"), """
+    [profile dev]
+    login_session = arn:aws:iam::123456789012:user/dev
+    """)
 
     assert {:error, {:credential_process_invalid, {:unsupported_version, 2}}} =
              LoginSession.resolve(
                profile: "dev",
-               home_dir: home,
+               home_dir: tmp,
                export_credentials_command: script
              )
   end

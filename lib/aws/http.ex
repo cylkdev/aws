@@ -32,6 +32,8 @@ defmodule AWS.HTTP do
       messages to that process.
   """
 
+  require Logger
+
   alias AWS.HTTP.FinchPool
 
   @default_request_timeout 30_000
@@ -66,7 +68,7 @@ defmodule AWS.HTTP do
   @spec request(method, String.t(), iodata, [header], keyword) ::
           {:ok, response} | {:error, %{reason: term}}
   def request(method, url, body, headers, opts \\ []) when is_atom(method) do
-    validate_url!(url)
+    :ok = validate_url!(url)
 
     [method: method, url: url, headers: headers, body: body]
     |> Keyword.merge(base_opts(opts))
@@ -98,7 +100,7 @@ defmodule AWS.HTTP do
   @spec stream_upload(method, String.t(), Enumerable.t(), [header], keyword) ::
           {:ok, response} | {:error, %{reason: term}}
   def stream_upload(method, url, body_stream, headers, opts \\ []) when is_atom(method) do
-    _ = validate_url!(url)
+    :ok = validate_url!(url)
 
     [method: method, url: url, headers: headers, body: body_stream]
     |> Keyword.merge(base_opts(opts))
@@ -114,7 +116,7 @@ defmodule AWS.HTTP do
   @spec stream_download(String.t(), [header], keyword) ::
           {:ok, stream_response} | {:error, %{reason: term}}
   def stream_download(url, headers \\ [], opts \\ []) do
-    _ = validate_url!(url)
+    :ok = validate_url!(url)
     timeout = request_timeout(opts)
 
     result =
@@ -162,11 +164,22 @@ defmodule AWS.HTTP do
     Stream.resource(
       fn -> {response, []} end,
       fn state -> step(state, timeout) end,
-      fn {response, _pending} ->
-        _ = Req.cancel_async_response(response)
-        :ok
-      end
+      fn {response, _pending} -> cancel_stream(response) end
     )
+  end
+
+  # Runs in `Stream.resource/3`'s after-fun, which must return the accumulator
+  # and cannot report failure. `cancel_fun` is supplied by the adapter, so its
+  # return is not a fixed shape; match both outcomes rather than discard it.
+  defp cancel_stream(response) do
+    case Req.cancel_async_response(response) do
+      :ok ->
+        :ok
+
+      other ->
+        Logger.warning("[AWS.HTTP] cancelling the response stream returned #{inspect(other)}")
+        :ok
+    end
   end
 
   defp step({response, []}, timeout) do

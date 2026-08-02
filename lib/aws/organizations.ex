@@ -60,16 +60,14 @@ defmodule AWS.Organizations do
       end
   """
 
-  alias AWS.{Client, Config}
-  alias AWS.Organizations.Operation
+  alias AWS.Client
+  alias AWS.Operation
   alias ExUtils.Serializer
 
   @service "organizations"
   @content_type "application/x-amz-json-1.1"
   @target_prefix "AWSOrganizationsV20161128"
   @default_region "us-east-1"
-
-  @override_keys [:headers, :body, :http, :url]
 
   # ---------------------------------------------------------------------------
   # Organization
@@ -97,7 +95,7 @@ defmodule AWS.Organizations do
   end
 
   defp do_create_organization(opts) do
-    data = %{"FeatureSet" => opts[:feature_set] || "ALL"}
+    data = maybe_put(%{}, "FeatureSet", opts[:feature_set])
 
     "CreateOrganization"
     |> perform(data, opts)
@@ -124,7 +122,8 @@ defmodule AWS.Organizations do
   """
   @spec create_organizational_unit(parent_id :: String.t(), name :: String.t(), opts :: keyword()) ::
           {:ok, %{organizational_unit: map()}} | {:error, term()}
-  def create_organizational_unit(parent_id, name, opts \\ []) do
+  def create_organizational_unit(parent_id, name, opts \\ [])
+      when is_binary(parent_id) and is_binary(name) do
     if sandbox?(opts) do
       sandbox_create_organizational_unit_response(name, opts)
     else
@@ -159,7 +158,7 @@ defmodule AWS.Organizations do
   """
   @spec create_account(name :: String.t(), email :: String.t(), opts :: keyword()) ::
           {:ok, %{create_account_status: map()}} | {:error, term()}
-  def create_account(name, email, opts \\ []) do
+  def create_account(name, email, opts \\ []) when is_binary(name) and is_binary(email) do
     if sandbox?(opts) do
       sandbox_create_account_response(name, opts)
     else
@@ -172,7 +171,7 @@ defmodule AWS.Organizations do
       maybe_put(
         %{"AccountName" => name, "Email" => email},
         "IamUserAccessToBilling",
-        opts[:iam_user_access_to_billing] || "ALLOW"
+        opts[:iam_user_access_to_billing]
       )
 
     "CreateAccount"
@@ -197,7 +196,7 @@ defmodule AWS.Organizations do
   """
   @spec describe_create_account_status(request_id :: String.t(), opts :: keyword()) ::
           {:ok, %{create_account_status: map()}} | {:error, term()}
-  def describe_create_account_status(request_id, opts \\ []) do
+  def describe_create_account_status(request_id, opts \\ []) when is_binary(request_id) do
     if sandbox?(opts) do
       sandbox_describe_create_account_status_response(request_id, opts)
     else
@@ -234,7 +233,9 @@ defmodule AWS.Organizations do
           destination_parent_id :: String.t(),
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
-  def move_account(account_id, source_parent_id, destination_parent_id, opts \\ []) do
+  def move_account(account_id, source_parent_id, destination_parent_id, opts \\ [])
+      when is_binary(account_id) and is_binary(source_parent_id) and
+             is_binary(destination_parent_id) do
     if sandbox?(opts) do
       sandbox_move_account_response(account_id, opts)
     else
@@ -293,7 +294,7 @@ defmodule AWS.Organizations do
   """
   @spec delete_organizational_unit(ou_id :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
-  def delete_organizational_unit(ou_id, opts \\ []) do
+  def delete_organizational_unit(ou_id, opts \\ []) when is_binary(ou_id) do
     if sandbox?(opts) do
       sandbox_delete_organizational_unit_response(ou_id, opts)
     else
@@ -324,7 +325,7 @@ defmodule AWS.Organizations do
   """
   @spec close_account(account_id :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
-  def close_account(account_id, opts \\ []) do
+  def close_account(account_id, opts \\ []) when is_binary(account_id) do
     if sandbox?(opts) do
       sandbox_close_account_response(account_id, opts)
     else
@@ -363,7 +364,8 @@ defmodule AWS.Organizations do
           service_principal :: String.t(),
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
-  def register_delegated_administrator(account_id, service_principal, opts \\ []) do
+  def register_delegated_administrator(account_id, service_principal, opts \\ [])
+      when is_binary(account_id) and is_binary(service_principal) do
     if sandbox?(opts) do
       sandbox_register_delegated_administrator_response(account_id, opts)
     else
@@ -397,7 +399,8 @@ defmodule AWS.Organizations do
   """
   @spec enable_aws_service_access(service_principal :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
-  def enable_aws_service_access(service_principal, opts \\ []) do
+  def enable_aws_service_access(service_principal, opts \\ [])
+      when is_binary(service_principal) do
     if sandbox?(opts) do
       sandbox_enable_aws_service_access_response(service_principal, opts)
     else
@@ -493,7 +496,7 @@ defmodule AWS.Organizations do
   """
   @spec list_organizational_units_for_parent(parent_id :: String.t(), opts :: keyword()) ::
           {:ok, %{organizational_units: list(map())}} | {:error, term()}
-  def list_organizational_units_for_parent(parent_id, opts \\ []) do
+  def list_organizational_units_for_parent(parent_id, opts \\ []) when is_binary(parent_id) do
     if sandbox?(opts) do
       sandbox_list_organizational_units_for_parent_response(parent_id, opts)
     else
@@ -645,7 +648,7 @@ defmodule AWS.Organizations do
   """
   @spec list_parents(child_id :: String.t(), opts :: keyword()) ::
           {:ok, %{parents: list(map()), next_token: String.t() | nil}} | {:error, term()}
-  def list_parents(child_id, opts \\ []) do
+  def list_parents(child_id, opts \\ []) when is_binary(child_id) do
     if sandbox?(opts) do
       sandbox_list_parents_response(child_id, opts)
     else
@@ -684,7 +687,7 @@ defmodule AWS.Organizations do
   """
   @spec describe_account(account_id :: String.t(), opts :: keyword()) ::
           {:ok, %{account: map()}} | {:error, term()}
-  def describe_account(account_id, opts \\ []) do
+  def describe_account(account_id, opts \\ []) when is_binary(account_id) do
     if sandbox?(opts) do
       sandbox_describe_account_response(account_id, opts)
     else
@@ -714,7 +717,7 @@ defmodule AWS.Organizations do
   """
   @spec describe_organizational_unit(ou_id :: String.t(), opts :: keyword()) ::
           {:ok, %{organizational_unit: map()}} | {:error, term()}
-  def describe_organizational_unit(ou_id, opts \\ []) do
+  def describe_organizational_unit(ou_id, opts \\ []) when is_binary(ou_id) do
     if sandbox?(opts) do
       sandbox_describe_organizational_unit_response(ou_id, opts)
     else
@@ -745,7 +748,8 @@ defmodule AWS.Organizations do
           name :: String.t(),
           opts :: keyword()
         ) :: {:ok, %{organizational_unit: map()}} | {:error, term()}
-  def update_organizational_unit(ou_id, name, opts \\ []) do
+  def update_organizational_unit(ou_id, name, opts \\ [])
+      when is_binary(ou_id) and is_binary(name) do
     if sandbox?(opts) do
       sandbox_update_organizational_unit_response(ou_id, opts)
     else
@@ -772,7 +776,8 @@ defmodule AWS.Organizations do
   """
   @spec disable_aws_service_access(service_principal :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
-  def disable_aws_service_access(service_principal, opts \\ []) do
+  def disable_aws_service_access(service_principal, opts \\ [])
+      when is_binary(service_principal) do
     if sandbox?(opts) do
       sandbox_disable_aws_service_access_response(service_principal, opts)
     else
@@ -800,7 +805,8 @@ defmodule AWS.Organizations do
           service_principal :: String.t(),
           opts :: keyword()
         ) :: {:ok, %{}} | {:error, term()}
-  def deregister_delegated_administrator(account_id, service_principal, opts \\ []) do
+  def deregister_delegated_administrator(account_id, service_principal, opts \\ [])
+      when is_binary(account_id) and is_binary(service_principal) do
     if sandbox?(opts) do
       sandbox_deregister_delegated_administrator_response(account_id, opts)
     else
@@ -834,7 +840,8 @@ defmodule AWS.Organizations do
           child_type :: String.t(),
           opts :: keyword()
         ) :: {:ok, %{children: list(map()), next_token: String.t() | nil}} | {:error, term()}
-  def list_children(parent_id, child_type, opts \\ []) do
+  def list_children(parent_id, child_type, opts \\ [])
+      when is_binary(parent_id) and is_binary(child_type) do
     if sandbox?(opts) do
       sandbox_list_children_response(parent_id, opts)
     else
@@ -860,9 +867,86 @@ defmodule AWS.Organizations do
   # Sandbox delegation
   # ---------------------------------------------------------------------------
 
+  # ---------------------------------------------------------------------------
+  # Private helpers
+  # ---------------------------------------------------------------------------
+
+  @doc false
+  def build_operation(action, data, opts) do
+    opts = Keyword.put_new(opts, :region, @default_region)
+
+    with {:ok, config} <-
+           Client.resolve_config(
+             :organizations,
+             opts,
+             &"organizations.#{&1}.amazonaws.com"
+           ) do
+      op = %Operation{
+        method: :post,
+        url: Client.simple_url(config),
+        headers: [
+          {"content-type", @content_type},
+          {"x-amz-target", "#{@target_prefix}.#{action}"}
+        ],
+        body: encode_body(data),
+        service: @service,
+        region: config.region,
+        access_key_id: config.access_key_id,
+        secret_access_key: config.secret_access_key,
+        security_token: config.security_token,
+        http: Keyword.get(opts, :http, [])
+      }
+
+      {:ok, apply_overrides(op, opts[:organizations] || [])}
+    end
+  end
+
+  defp perform(action, data, opts) do
+    with {:ok, op} <- build_operation(action, data, opts) do
+      op
+      |> Client.execute()
+      |> decode_response()
+    end
+  end
+
+  defp encode_body(data) when map_size(data) === 0, do: "{}"
+  defp encode_body(data), do: data |> :json.encode() |> IO.iodata_to_binary()
+
+  defp decode_response({:ok, %{body: body}}), do: {:ok, decode_body(body)}
+
+  defp decode_response({:error, {:http_error, status, body}}),
+    do: {:error, {:http_error, status, decode_body(body)}}
+
+  defp decode_response({:error, _reason} = err), do: err
+
+  defp decode_body(""), do: %{}
+
+  defp decode_body(binary) when is_binary(binary) do
+    :json.decode(binary)
+  rescue
+    _ -> binary
+  end
+
+  # AWS owns the response-body namespace and adds new fields over time.
+  # `Serializer.deserialize/2`'s default is `to_existing_atom: true, strict: true`,
+  # which crashes on any field whose snake-cased atom hasn't been referenced
+  # elsewhere in the project. Bodies must round-trip without crashing, so
+  # atom-safety is relaxed here by default. Callers can still override any of
+  # these options by passing their own `opts` -- caller-supplied keys win the merge.
+  @deserialize_defaults [to_existing_atom: false, strict: false]
+
+  defp deserialize_opts(opts), do: Keyword.merge(@deserialize_defaults, opts)
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  # ---------------------------------------------------------------------------
+  # Sandbox delegation
+  # ---------------------------------------------------------------------------
+
   defp sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
-    cfg = Config.sandbox()
+    cfg = AWS.Config.sandbox()
     enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
 
     enabled and not sandbox_disabled?()
@@ -1033,46 +1117,10 @@ defmodule AWS.Organizations do
   end
 
   # ---------------------------------------------------------------------------
-  # Private helpers
+  # Overrides / response handling
   # ---------------------------------------------------------------------------
 
-  @doc false
-  def build_operation(action, data, opts) do
-    opts = Keyword.put_new(opts, :region, @default_region)
-
-    with {:ok, config} <-
-           Client.resolve_config(
-             :organizations,
-             opts,
-             &"organizations.#{&1}.amazonaws.com"
-           ) do
-      op = %Operation{
-        method: :post,
-        url: Client.simple_url(config),
-        headers: [
-          {"content-type", @content_type},
-          {"x-amz-target", "#{@target_prefix}.#{action}"}
-        ],
-        body: encode_body(data),
-        service: @service,
-        region: config.region,
-        access_key_id: config.access_key_id,
-        secret_access_key: config.secret_access_key,
-        security_token: config.security_token,
-        http: Keyword.get(opts, :http, [])
-      }
-
-      {:ok, apply_overrides(op, opts[:organizations] || [])}
-    end
-  end
-
-  defp perform(action, data, opts) do
-    with {:ok, op} <- build_operation(action, data, opts) do
-      op
-      |> Client.execute()
-      |> decode_response()
-    end
-  end
+  @override_keys [:headers, :body, :http, :url]
 
   defp apply_overrides(op, overrides) do
     Enum.reduce(@override_keys, op, fn key, acc ->
@@ -1082,34 +1130,6 @@ defmodule AWS.Organizations do
       end
     end)
   end
-
-  defp encode_body(data) when map_size(data) === 0, do: "{}"
-  defp encode_body(data), do: data |> :json.encode() |> IO.iodata_to_binary()
-
-  defp decode_response({:ok, %{body: body}}), do: {:ok, decode_body(body)}
-
-  defp decode_response({:error, {:http_error, status, body}}),
-    do: {:error, {:http_error, status, decode_body(body)}}
-
-  defp decode_response({:error, _reason} = err), do: err
-
-  defp decode_body(""), do: %{}
-
-  defp decode_body(binary) when is_binary(binary) do
-    :json.decode(binary)
-  rescue
-    _ -> binary
-  end
-
-  # AWS owns the response-body namespace and adds new fields over time.
-  # `Serializer.deserialize/2`'s default is `to_existing_atom: true, strict: true`,
-  # which crashes on any field whose snake-cased atom hasn't been referenced
-  # elsewhere in the project. Bodies must round-trip without crashing, so
-  # atom-safety is relaxed here by default. Callers can still override any of
-  # these options by passing their own `opts` -- caller-supplied keys win the merge.
-  @deserialize_defaults [to_existing_atom: false, strict: false]
-
-  defp deserialize_opts(opts), do: Keyword.merge(@deserialize_defaults, opts)
 
   defp deserialize_response({:ok, response}, _opts, func) do
     case func.(response) do
@@ -1133,7 +1153,4 @@ defmodule AWS.Organizations do
   defp deserialize_response({:error, reason}, _opts, _func) do
     {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
-
-  defp maybe_put(map, _key, nil), do: map
-  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 end

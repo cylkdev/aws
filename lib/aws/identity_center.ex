@@ -60,8 +60,8 @@ defmodule AWS.IdentityCenter do
       end
   """
 
-  alias AWS.{Client, Config}
-  alias AWS.IdentityCenter.Operation
+  alias AWS.Client
+  alias AWS.Operation
   alias ExUtils.Serializer
 
   @content_type "application/x-amz-json-1.1"
@@ -71,8 +71,6 @@ defmodule AWS.IdentityCenter do
 
   @identitystore_service "identitystore"
   @identitystore_target_prefix "AWSIdentityStore"
-
-  @override_keys [:headers, :body, :http, :url]
 
   # ---------------------------------------------------------------------------
   # Instances (sso-admin)
@@ -117,7 +115,8 @@ defmodule AWS.IdentityCenter do
   """
   @spec create_permission_set(instance_arn :: String.t(), name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
-  def create_permission_set(instance_arn, name, opts \\ []) do
+  def create_permission_set(instance_arn, name, opts \\ [])
+      when is_binary(instance_arn) and is_binary(name) do
     if sandbox?(opts) do
       sandbox_create_permission_set_response(name, opts)
     else
@@ -154,7 +153,8 @@ defmodule AWS.IdentityCenter do
           opts :: keyword()
         ) ::
           {:ok, %{}} | {:error, term()}
-  def delete_permission_set(instance_arn, permission_set_arn, opts \\ []) do
+  def delete_permission_set(instance_arn, permission_set_arn, opts \\ [])
+      when is_binary(instance_arn) and is_binary(permission_set_arn) do
     if sandbox?(opts) do
       sandbox_delete_permission_set_response(permission_set_arn, opts)
     else
@@ -186,7 +186,7 @@ defmodule AWS.IdentityCenter do
   @spec list_permission_sets(instance_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{permission_sets: list(String.t()), next_token: String.t() | nil}}
           | {:error, term()}
-  def list_permission_sets(instance_arn, opts \\ []) do
+  def list_permission_sets(instance_arn, opts \\ []) when is_binary(instance_arn) do
     if sandbox?(opts) do
       sandbox_list_permission_sets_response(instance_arn, opts)
     else
@@ -233,7 +233,9 @@ defmodule AWS.IdentityCenter do
         permission_set_arn,
         managed_policy_arn,
         opts \\ []
-      ) do
+      )
+      when is_binary(instance_arn) and is_binary(permission_set_arn) and
+             is_binary(managed_policy_arn) do
     if sandbox?(opts) do
       sandbox_attach_managed_policy_to_permission_set_response(permission_set_arn, opts)
     else
@@ -279,7 +281,16 @@ defmodule AWS.IdentityCenter do
           permission_set_arn :: String.t(),
           opts :: keyword()
         ) :: {:ok, %{permission_set: map()}} | {:error, term()}
-  def describe_permission_set(instance_arn, permission_set_arn, opts \\ []) do
+  def describe_permission_set(instance_arn, permission_set_arn, opts \\ [])
+      when is_binary(instance_arn) and is_binary(permission_set_arn) do
+    if sandbox?(opts) do
+      sandbox_describe_permission_set_response(instance_arn, permission_set_arn, opts)
+    else
+      do_describe_permission_set(instance_arn, permission_set_arn, opts)
+    end
+  end
+
+  defp do_describe_permission_set(instance_arn, permission_set_arn, opts) do
     perform(
       :sso,
       "DescribePermissionSet",
@@ -312,7 +323,20 @@ defmodule AWS.IdentityCenter do
           permission_set_arn :: String.t(),
           opts :: keyword()
         ) :: {:ok, %{inline_policy: map() | nil}} | {:error, term()}
-  def get_inline_policy_for_permission_set(instance_arn, permission_set_arn, opts \\ []) do
+  def get_inline_policy_for_permission_set(instance_arn, permission_set_arn, opts \\ [])
+      when is_binary(instance_arn) and is_binary(permission_set_arn) do
+    if sandbox?(opts) do
+      sandbox_get_inline_policy_for_permission_set_response(
+        instance_arn,
+        permission_set_arn,
+        opts
+      )
+    else
+      do_get_inline_policy_for_permission_set(instance_arn, permission_set_arn, opts)
+    end
+  end
+
+  defp do_get_inline_policy_for_permission_set(instance_arn, permission_set_arn, opts) do
     perform(
       :sso,
       "GetInlinePolicyForPermissionSet",
@@ -353,7 +377,20 @@ defmodule AWS.IdentityCenter do
           permission_set_arn :: String.t(),
           opts :: keyword()
         ) :: {:ok, %{attached_managed_policies: list(map())}} | {:error, term()}
-  def list_managed_policies_in_permission_set(instance_arn, permission_set_arn, opts \\ []) do
+  def list_managed_policies_in_permission_set(instance_arn, permission_set_arn, opts \\ [])
+      when is_binary(instance_arn) and is_binary(permission_set_arn) do
+    if sandbox?(opts) do
+      sandbox_list_managed_policies_in_permission_set_response(
+        instance_arn,
+        permission_set_arn,
+        opts
+      )
+    else
+      do_list_managed_policies_in_permission_set(instance_arn, permission_set_arn, opts)
+    end
+  end
+
+  defp do_list_managed_policies_in_permission_set(instance_arn, permission_set_arn, opts) do
     data =
       %{"InstanceArn" => instance_arn, "PermissionSetArn" => permission_set_arn}
       |> maybe_put("MaxResults", opts[:max_results])
@@ -386,7 +423,21 @@ defmodule AWS.IdentityCenter do
           permission_set_arn :: String.t(),
           opts :: keyword()
         ) :: {:ok, %{account_assignments: list(map())}} | {:error, term()}
-  def list_account_assignments(instance_arn, account_id, permission_set_arn, opts \\ []) do
+  def list_account_assignments(instance_arn, account_id, permission_set_arn, opts \\ [])
+      when is_binary(instance_arn) and is_binary(account_id) and is_binary(permission_set_arn) do
+    if sandbox?(opts) do
+      sandbox_list_account_assignments_response(
+        instance_arn,
+        account_id,
+        permission_set_arn,
+        opts
+      )
+    else
+      do_list_account_assignments(instance_arn, account_id, permission_set_arn, opts)
+    end
+  end
+
+  defp do_list_account_assignments(instance_arn, account_id, permission_set_arn, opts) do
     data =
       %{
         "InstanceArn" => instance_arn,
@@ -417,7 +468,20 @@ defmodule AWS.IdentityCenter do
           permission_set_arn :: String.t(),
           opts :: keyword()
         ) :: {:ok, %{account_ids: [String.t()]}} | {:error, term()}
-  def list_accounts_for_provisioned_permission_set(instance_arn, permission_set_arn, opts \\ []) do
+  def list_accounts_for_provisioned_permission_set(instance_arn, permission_set_arn, opts \\ [])
+      when is_binary(instance_arn) and is_binary(permission_set_arn) do
+    if sandbox?(opts) do
+      sandbox_list_accounts_for_provisioned_permission_set_response(
+        instance_arn,
+        permission_set_arn,
+        opts
+      )
+    else
+      do_list_accounts_for_provisioned_permission_set(instance_arn, permission_set_arn, opts)
+    end
+  end
+
+  defp do_list_accounts_for_provisioned_permission_set(instance_arn, permission_set_arn, opts) do
     data =
       %{"InstanceArn" => instance_arn, "PermissionSetArn" => permission_set_arn}
       |> maybe_put("MaxResults", opts[:max_results])
@@ -446,7 +510,21 @@ defmodule AWS.IdentityCenter do
           policy :: map(),
           opts :: keyword()
         ) :: {:ok, map()} | {:error, term()}
-  def put_inline_policy_to_permission_set(instance_arn, permission_set_arn, policy, opts \\ []) do
+  def put_inline_policy_to_permission_set(instance_arn, permission_set_arn, policy, opts \\ [])
+      when is_binary(instance_arn) and is_binary(permission_set_arn) and is_map(policy) do
+    if sandbox?(opts) do
+      sandbox_put_inline_policy_to_permission_set_response(
+        instance_arn,
+        permission_set_arn,
+        policy,
+        opts
+      )
+    else
+      do_put_inline_policy_to_permission_set(instance_arn, permission_set_arn, policy, opts)
+    end
+  end
+
+  defp do_put_inline_policy_to_permission_set(instance_arn, permission_set_arn, policy, opts) do
     perform(
       :sso,
       "PutInlinePolicyToPermissionSet",
@@ -483,7 +561,9 @@ defmodule AWS.IdentityCenter do
         permission_set_arn,
         managed_policy_arn,
         opts \\ []
-      ) do
+      )
+      when is_binary(instance_arn) and is_binary(permission_set_arn) and
+             is_binary(managed_policy_arn) do
     if sandbox?(opts) do
       sandbox_detach_managed_policy_from_permission_set_response(permission_set_arn, opts)
     else
@@ -540,7 +620,8 @@ defmodule AWS.IdentityCenter do
           opts :: keyword()
         ) ::
           {:ok, map()} | {:error, term()}
-  def create_account_assignment(instance_arn, assignment, opts \\ []) do
+  def create_account_assignment(instance_arn, assignment, opts \\ [])
+      when is_binary(instance_arn) and is_map(assignment) do
     if sandbox?(opts) do
       sandbox_create_account_assignment_response(instance_arn, opts)
     else
@@ -582,7 +663,8 @@ defmodule AWS.IdentityCenter do
           opts :: keyword()
         ) ::
           {:ok, map()} | {:error, term()}
-  def delete_account_assignment(instance_arn, assignment, opts \\ []) do
+  def delete_account_assignment(instance_arn, assignment, opts \\ [])
+      when is_binary(instance_arn) and is_map(assignment) do
     if sandbox?(opts) do
       sandbox_delete_account_assignment_response(instance_arn, opts)
     else
@@ -629,7 +711,8 @@ defmodule AWS.IdentityCenter do
           permission_set_arn :: String.t(),
           opts :: keyword()
         ) :: {:ok, map()} | {:error, term()}
-  def provision_permission_set(instance_arn, permission_set_arn, opts \\ []) do
+  def provision_permission_set(instance_arn, permission_set_arn, opts \\ [])
+      when is_binary(instance_arn) and is_binary(permission_set_arn) do
     if sandbox?(opts) do
       sandbox_provision_permission_set_response(permission_set_arn, opts)
     else
@@ -641,9 +724,9 @@ defmodule AWS.IdentityCenter do
     data =
       %{
         "InstanceArn" => instance_arn,
-        "PermissionSetArn" => permission_set_arn,
-        "TargetType" => opts[:target_type] || "ALL_PROVISIONED_ACCOUNTS"
+        "PermissionSetArn" => permission_set_arn
       }
+      |> maybe_put("TargetType", opts[:target_type])
       |> maybe_put("TargetId", opts[:target_id])
 
     perform(:sso, "ProvisionPermissionSet", data, opts)
@@ -676,7 +759,8 @@ defmodule AWS.IdentityCenter do
           opts :: keyword()
         ) ::
           {:ok, %{user_id: String.t()}} | {:error, term()}
-  def create_identity_store_user(identity_store_id, username, opts \\ []) do
+  def create_identity_store_user(identity_store_id, username, opts \\ [])
+      when is_binary(identity_store_id) and is_binary(username) do
     if sandbox?(opts) do
       sandbox_create_identity_store_user_response(username, opts)
     else
@@ -713,7 +797,8 @@ defmodule AWS.IdentityCenter do
           opts :: keyword()
         ) ::
           {:ok, %{}} | {:error, term()}
-  def delete_identity_store_user(identity_store_id, user_id, opts \\ []) do
+  def delete_identity_store_user(identity_store_id, user_id, opts \\ [])
+      when is_binary(identity_store_id) and is_binary(user_id) do
     if sandbox?(opts) do
       sandbox_delete_identity_store_user_response(user_id, opts)
     else
@@ -750,7 +835,8 @@ defmodule AWS.IdentityCenter do
           user_id :: String.t(),
           opts :: keyword()
         ) :: {:ok, map()} | {:error, term()}
-  def describe_identity_store_user(identity_store_id, user_id, opts \\ []) do
+  def describe_identity_store_user(identity_store_id, user_id, opts \\ [])
+      when is_binary(identity_store_id) and is_binary(user_id) do
     if sandbox?(opts) do
       sandbox_describe_identity_store_user_response(user_id, opts)
     else
@@ -790,7 +876,8 @@ defmodule AWS.IdentityCenter do
           opts :: keyword()
         ) ::
           {:ok, %{}} | {:error, term()}
-  def update_identity_store_user(identity_store_id, user_id, opts \\ []) do
+  def update_identity_store_user(identity_store_id, user_id, opts \\ [])
+      when is_binary(identity_store_id) and is_binary(user_id) do
     if sandbox?(opts) do
       sandbox_update_identity_store_user_response(user_id, opts)
     else
@@ -827,7 +914,8 @@ defmodule AWS.IdentityCenter do
   """
   @spec list_identity_store_users(identity_store_id :: String.t(), opts :: keyword()) ::
           {:ok, %{users: list(map()), next_token: String.t() | nil}} | {:error, term()}
-  def list_identity_store_users(identity_store_id, opts \\ []) do
+  def list_identity_store_users(identity_store_id, opts \\ [])
+      when is_binary(identity_store_id) do
     if sandbox?(opts) do
       sandbox_list_identity_store_users_response(identity_store_id, opts)
     else
@@ -867,7 +955,8 @@ defmodule AWS.IdentityCenter do
           opts :: keyword()
         ) ::
           {:ok, %{group_id: String.t()}} | {:error, term()}
-  def create_identity_store_group(identity_store_id, display_name, opts \\ []) do
+  def create_identity_store_group(identity_store_id, display_name, opts \\ [])
+      when is_binary(identity_store_id) and is_binary(display_name) do
     if sandbox?(opts) do
       sandbox_create_identity_store_group_response(display_name, opts)
     else
@@ -905,7 +994,8 @@ defmodule AWS.IdentityCenter do
           opts :: keyword()
         ) ::
           {:ok, %{}} | {:error, term()}
-  def delete_identity_store_group(identity_store_id, group_id, opts \\ []) do
+  def delete_identity_store_group(identity_store_id, group_id, opts \\ [])
+      when is_binary(identity_store_id) and is_binary(group_id) do
     if sandbox?(opts) do
       sandbox_delete_identity_store_group_response(group_id, opts)
     else
@@ -942,7 +1032,8 @@ defmodule AWS.IdentityCenter do
           group_id :: String.t(),
           opts :: keyword()
         ) :: {:ok, map()} | {:error, term()}
-  def describe_identity_store_group(identity_store_id, group_id, opts \\ []) do
+  def describe_identity_store_group(identity_store_id, group_id, opts \\ [])
+      when is_binary(identity_store_id) and is_binary(group_id) do
     if sandbox?(opts) do
       sandbox_describe_identity_store_group_response(group_id, opts)
     else
@@ -972,7 +1063,8 @@ defmodule AWS.IdentityCenter do
   """
   @spec list_identity_store_groups(identity_store_id :: String.t(), opts :: keyword()) ::
           {:ok, %{groups: list(map()), next_token: String.t() | nil}} | {:error, term()}
-  def list_identity_store_groups(identity_store_id, opts \\ []) do
+  def list_identity_store_groups(identity_store_id, opts \\ [])
+      when is_binary(identity_store_id) do
     if sandbox?(opts) do
       sandbox_list_identity_store_groups_response(identity_store_id, opts)
     else
@@ -1009,7 +1101,8 @@ defmodule AWS.IdentityCenter do
           user_id :: String.t(),
           opts :: keyword()
         ) :: {:ok, %{membership_id: String.t()}} | {:error, term()}
-  def create_group_membership(identity_store_id, group_id, user_id, opts \\ []) do
+  def create_group_membership(identity_store_id, group_id, user_id, opts \\ [])
+      when is_binary(identity_store_id) and is_binary(group_id) and is_binary(user_id) do
     if sandbox?(opts) do
       sandbox_create_group_membership_response(group_id, opts)
     else
@@ -1051,7 +1144,8 @@ defmodule AWS.IdentityCenter do
           opts :: keyword()
         ) ::
           {:ok, %{}} | {:error, term()}
-  def delete_group_membership(identity_store_id, membership_id, opts \\ []) do
+  def delete_group_membership(identity_store_id, membership_id, opts \\ [])
+      when is_binary(identity_store_id) and is_binary(membership_id) do
     if sandbox?(opts) do
       sandbox_delete_group_membership_response(membership_id, opts)
     else
@@ -1129,15 +1223,6 @@ defmodule AWS.IdentityCenter do
     end
   end
 
-  defp apply_overrides(op, overrides) do
-    Enum.reduce(@override_keys, op, fn key, acc ->
-      case Keyword.fetch(overrides, key) do
-        {:ok, value} -> Map.put(acc, key, value)
-        :error -> acc
-      end
-    end)
-  end
-
   defp encode_body(data) when map_size(data) === 0, do: "{}"
   defp encode_body(data), do: data |> :json.encode() |> IO.iodata_to_binary()
 
@@ -1166,29 +1251,6 @@ defmodule AWS.IdentityCenter do
 
   defp deserialize_opts(opts), do: Keyword.merge(@deserialize_defaults, opts)
 
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
-  end
-
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
@@ -1212,9 +1274,13 @@ defmodule AWS.IdentityCenter do
   # Sandbox delegation
   # ---------------------------------------------------------------------------
 
+  # ---------------------------------------------------------------------------
+  # Sandbox delegation
+  # ---------------------------------------------------------------------------
+
   defp sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
-    cfg = Config.sandbox()
+    cfg = AWS.Config.sandbox()
     enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
 
     enabled and not sandbox_disabled?()
@@ -1328,6 +1394,58 @@ defmodule AWS.IdentityCenter do
     defdelegate sandbox_delete_group_membership_response(membership_id, opts),
       to: AWS.IdentityCenter.Sandbox,
       as: :delete_group_membership_response
+
+    @doc false
+    defdelegate sandbox_describe_permission_set_response(instance_arn, permission_set_arn, opts),
+      to: AWS.IdentityCenter.Sandbox,
+      as: :describe_permission_set_response
+
+    @doc false
+    defdelegate sandbox_get_inline_policy_for_permission_set_response(
+                  instance_arn,
+                  permission_set_arn,
+                  opts
+                ),
+                to: AWS.IdentityCenter.Sandbox,
+                as: :get_inline_policy_for_permission_set_response
+
+    @doc false
+    defdelegate sandbox_list_account_assignments_response(
+                  instance_arn,
+                  account_id,
+                  permission_set_arn,
+                  opts
+                ),
+                to: AWS.IdentityCenter.Sandbox,
+                as: :list_account_assignments_response
+
+    @doc false
+    defdelegate sandbox_list_accounts_for_provisioned_permission_set_response(
+                  instance_arn,
+                  permission_set_arn,
+                  opts
+                ),
+                to: AWS.IdentityCenter.Sandbox,
+                as: :list_accounts_for_provisioned_permission_set_response
+
+    @doc false
+    defdelegate sandbox_list_managed_policies_in_permission_set_response(
+                  instance_arn,
+                  permission_set_arn,
+                  opts
+                ),
+                to: AWS.IdentityCenter.Sandbox,
+                as: :list_managed_policies_in_permission_set_response
+
+    @doc false
+    defdelegate sandbox_put_inline_policy_to_permission_set_response(
+                  instance_arn,
+                  permission_set_arn,
+                  policy,
+                  opts
+                ),
+                to: AWS.IdentityCenter.Sandbox,
+                as: :put_inline_policy_to_permission_set_response
   else
     defp sandbox_disabled?, do: true
 
@@ -1356,5 +1474,83 @@ defmodule AWS.IdentityCenter do
     defp sandbox_list_identity_store_groups_response(_, _), do: raise("sandbox not available")
     defp sandbox_create_group_membership_response(_, _), do: raise("sandbox not available")
     defp sandbox_delete_group_membership_response(_, _), do: raise("sandbox not available")
+
+    defp sandbox_describe_permission_set_response(_instance_arn, _permission_set_arn, _opts),
+      do: raise("sandbox not available")
+
+    defp sandbox_get_inline_policy_for_permission_set_response(
+           _instance_arn,
+           _permission_set_arn,
+           _opts
+         ),
+         do: raise("sandbox not available")
+
+    defp sandbox_list_account_assignments_response(
+           _instance_arn,
+           _account_id,
+           _permission_set_arn,
+           _opts
+         ),
+         do: raise("sandbox not available")
+
+    defp sandbox_list_accounts_for_provisioned_permission_set_response(
+           _instance_arn,
+           _permission_set_arn,
+           _opts
+         ),
+         do: raise("sandbox not available")
+
+    defp sandbox_list_managed_policies_in_permission_set_response(
+           _instance_arn,
+           _permission_set_arn,
+           _opts
+         ),
+         do: raise("sandbox not available")
+
+    defp sandbox_put_inline_policy_to_permission_set_response(
+           _instance_arn,
+           _permission_set_arn,
+           _policy,
+           _opts
+         ),
+         do: raise("sandbox not available")
+  end
+
+  # ---------------------------------------------------------------------------
+  # Overrides / response handling
+  # ---------------------------------------------------------------------------
+
+  @override_keys [:headers, :body, :http, :url]
+
+  defp apply_overrides(op, overrides) do
+    Enum.reduce(@override_keys, op, fn key, acc ->
+      case Keyword.fetch(overrides, key) do
+        {:ok, value} -> Map.put(acc, key, value)
+        :error -> acc
+      end
+    end)
+  end
+
+  defp deserialize_response({:ok, response}, _opts, func) do
+    case func.(response) do
+      {:error, _} = error -> error
+      {:ok, _} = ok -> ok
+      result -> {:ok, result}
+    end
+  end
+
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
+       when status_code in 400..499 do
+    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
+  end
+
+  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
+       when status_code >= 500 do
+    {:error,
+     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
+  end
+
+  defp deserialize_response({:error, reason}, _opts, _func) do
+    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 end

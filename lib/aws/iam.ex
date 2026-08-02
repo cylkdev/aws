@@ -69,16 +69,15 @@ defmodule AWS.IAM do
   """
 
   import SweetXml, only: [xpath: 2, xpath: 3, sigil_x: 2]
-  alias AWS.{Client, Config}
-  alias AWS.IAM.Operation
+
+  alias AWS.Client
+  alias AWS.Operation
 
   @service "iam"
   @content_type "application/x-www-form-urlencoded"
   @api_version "2010-05-08"
   @default_region "us-east-1"
   @default_host "iam.amazonaws.com"
-
-  @override_keys [:headers, :body, :http, :url]
 
   # ---------------------------------------------------------------------------
   # Users
@@ -90,8 +89,8 @@ defmodule AWS.IAM do
   ## Arguments
 
     * `username` - The user name (1–128 chars).
-    * `opts` - Options including `:path`, `:permissions_boundary`, `:tags`,
-      plus shared options.
+    * `opts` - Options including `:path` and `:permissions_boundary`, plus
+      shared options. AWS's `Tags` parameter is not encoded.
   """
   @spec create_user(username :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -1603,6 +1602,14 @@ defmodule AWS.IAM do
   @spec get_account_summary(opts :: keyword()) ::
           {:ok, %{summary_map: map()}} | {:error, term()}
   def get_account_summary(opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_get_account_summary_response(opts)
+    else
+      do_get_account_summary(opts)
+    end
+  end
+
+  defp do_get_account_summary(opts) do
     "GetAccountSummary"
     |> perform(%{}, opts)
     |> deserialize_response(opts, fn body ->
@@ -1621,9 +1628,117 @@ defmodule AWS.IAM do
   # Sandbox delegation
   # ---------------------------------------------------------------------------
 
+  # ---------------------------------------------------------------------------
+  # Private helpers
+  # ---------------------------------------------------------------------------
+
+  @doc false
+  def build_operation(action, params, opts) do
+    opts = Keyword.put_new(opts, :region, @default_region)
+
+    with {:ok, config} <- Client.resolve_config(:iam, opts, fn _region -> @default_host end) do
+      op = %Operation{
+        method: :post,
+        url: Client.simple_url(config),
+        headers: [{"content-type", @content_type}],
+        body: encode_body(action, params),
+        service: @service,
+        region: config.region,
+        access_key_id: config.access_key_id,
+        secret_access_key: config.secret_access_key,
+        security_token: config.security_token,
+        http: Keyword.get(opts, :http, [])
+      }
+
+      {:ok, apply_overrides(op, opts[:iam] || [])}
+    end
+  end
+
+  defp perform(action, params, opts) do
+    with {:ok, op} <- build_operation(action, params, opts) do
+      case Client.execute(op) do
+        {:ok, %{body: body}} -> {:ok, body}
+        {:error, _} = err -> err
+      end
+    end
+  end
+
+  defp encode_body(action, params) do
+    params
+    |> Map.merge(%{"Action" => action, "Version" => @api_version})
+    |> URI.encode_query()
+  end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp put_member_list(map, prefix, values) when is_list(values) do
+    values
+    |> Enum.with_index(1)
+    |> Enum.reduce(map, fn {value, idx}, acc ->
+      Map.put(acc, "#{prefix}.member.#{idx}", value)
+    end)
+  end
+
+  defp parse_user(body, path) do
+    xpath(body, path,
+      user_name: ~x"./UserName/text()"s,
+      user_id: ~x"./UserId/text()"s,
+      arn: ~x"./Arn/text()"s,
+      path: ~x"./Path/text()"s,
+      create_date: ~x"./CreateDate/text()"s
+    )
+  end
+
+  defp parse_access_key(body, path) do
+    xpath(body, path,
+      access_key_id: ~x"./AccessKeyId/text()"s,
+      secret_access_key: ~x"./SecretAccessKey/text()"s,
+      user_name: ~x"./UserName/text()"s,
+      status: ~x"./Status/text()"s,
+      create_date: ~x"./CreateDate/text()"s
+    )
+  end
+
+  defp parse_group(body, path) do
+    xpath(body, path,
+      group_name: ~x"./GroupName/text()"s,
+      group_id: ~x"./GroupId/text()"s,
+      arn: ~x"./Arn/text()"s,
+      path: ~x"./Path/text()"s,
+      create_date: ~x"./CreateDate/text()"s
+    )
+  end
+
+  defp parse_role(body, path) do
+    xpath(body, path,
+      role_name: ~x"./RoleName/text()"s,
+      role_id: ~x"./RoleId/text()"s,
+      arn: ~x"./Arn/text()"s,
+      path: ~x"./Path/text()"s,
+      create_date: ~x"./CreateDate/text()"s
+    )
+  end
+
+  defp parse_policy(body, path) do
+    xpath(body, path,
+      policy_name: ~x"./PolicyName/text()"s,
+      policy_id: ~x"./PolicyId/text()"s,
+      arn: ~x"./Arn/text()"s,
+      path: ~x"./Path/text()"s,
+      create_date: ~x"./CreateDate/text()"s,
+      update_date: ~x"./UpdateDate/text()"s,
+      default_version_id: ~x"./DefaultVersionId/text()"s
+    )
+  end
+
+  # ---------------------------------------------------------------------------
+  # Sandbox delegation
+  # ---------------------------------------------------------------------------
+
   defp sandbox?(opts) do
     sandbox_opts = opts[:sandbox] || []
-    cfg = Config.sandbox()
+    cfg = AWS.Config.sandbox()
     enabled = Keyword.get(sandbox_opts, :enabled, cfg[:enabled])
 
     enabled and not sandbox_disabled?()
@@ -1852,6 +1967,11 @@ defmodule AWS.IAM do
     defdelegate sandbox_remove_client_id_from_open_id_connect_provider_response(arn, opts),
       to: AWS.IAM.Sandbox,
       as: :remove_client_id_from_open_id_connect_provider_response
+
+    @doc false
+    defdelegate sandbox_get_account_summary_response(opts),
+      to: AWS.IAM.Sandbox,
+      as: :get_account_summary_response
   else
     defp sandbox_disabled?, do: true
 
@@ -1932,42 +2052,15 @@ defmodule AWS.IAM do
 
     defp sandbox_remove_client_id_from_open_id_connect_provider_response(_, _),
       do: raise("sandbox not available")
+
+    defp sandbox_get_account_summary_response(_opts), do: raise("sandbox not available")
   end
 
   # ---------------------------------------------------------------------------
-  # Private helpers
+  # Overrides / response handling
   # ---------------------------------------------------------------------------
 
-  @doc false
-  def build_operation(action, params, opts) do
-    opts = Keyword.put_new(opts, :region, @default_region)
-
-    with {:ok, config} <- Client.resolve_config(:iam, opts, fn _region -> @default_host end) do
-      op = %Operation{
-        method: :post,
-        url: Client.simple_url(config),
-        headers: [{"content-type", @content_type}],
-        body: encode_body(action, params),
-        service: @service,
-        region: config.region,
-        access_key_id: config.access_key_id,
-        secret_access_key: config.secret_access_key,
-        security_token: config.security_token,
-        http: Keyword.get(opts, :http, [])
-      }
-
-      {:ok, apply_overrides(op, opts[:iam] || [])}
-    end
-  end
-
-  defp perform(action, params, opts) do
-    with {:ok, op} <- build_operation(action, params, opts) do
-      case Client.execute(op) do
-        {:ok, %{body: body}} -> {:ok, body}
-        {:error, _} = err -> err
-      end
-    end
-  end
+  @override_keys [:headers, :body, :http, :url]
 
   defp apply_overrides(op, overrides) do
     Enum.reduce(@override_keys, op, fn key, acc ->
@@ -1976,12 +2069,6 @@ defmodule AWS.IAM do
         :error -> acc
       end
     end)
-  end
-
-  defp encode_body(action, params) do
-    params
-    |> Map.merge(%{"Action" => action, "Version" => @api_version})
-    |> URI.encode_query()
   end
 
   defp deserialize_response({:ok, response}, _opts, func) do
@@ -2005,68 +2092,5 @@ defmodule AWS.IAM do
 
   defp deserialize_response({:error, reason}, _opts, _func) do
     {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
-  end
-
-  defp maybe_put(map, _key, nil), do: map
-  defp maybe_put(map, key, value), do: Map.put(map, key, value)
-
-  defp put_member_list(map, prefix, values) when is_list(values) do
-    values
-    |> Enum.with_index(1)
-    |> Enum.reduce(map, fn {value, idx}, acc ->
-      Map.put(acc, "#{prefix}.member.#{idx}", value)
-    end)
-  end
-
-  defp parse_user(body, path) do
-    xpath(body, path,
-      user_name: ~x"./UserName/text()"s,
-      user_id: ~x"./UserId/text()"s,
-      arn: ~x"./Arn/text()"s,
-      path: ~x"./Path/text()"s,
-      create_date: ~x"./CreateDate/text()"s
-    )
-  end
-
-  defp parse_access_key(body, path) do
-    xpath(body, path,
-      access_key_id: ~x"./AccessKeyId/text()"s,
-      secret_access_key: ~x"./SecretAccessKey/text()"s,
-      user_name: ~x"./UserName/text()"s,
-      status: ~x"./Status/text()"s,
-      create_date: ~x"./CreateDate/text()"s
-    )
-  end
-
-  defp parse_group(body, path) do
-    xpath(body, path,
-      group_name: ~x"./GroupName/text()"s,
-      group_id: ~x"./GroupId/text()"s,
-      arn: ~x"./Arn/text()"s,
-      path: ~x"./Path/text()"s,
-      create_date: ~x"./CreateDate/text()"s
-    )
-  end
-
-  defp parse_role(body, path) do
-    xpath(body, path,
-      role_name: ~x"./RoleName/text()"s,
-      role_id: ~x"./RoleId/text()"s,
-      arn: ~x"./Arn/text()"s,
-      path: ~x"./Path/text()"s,
-      create_date: ~x"./CreateDate/text()"s
-    )
-  end
-
-  defp parse_policy(body, path) do
-    xpath(body, path,
-      policy_name: ~x"./PolicyName/text()"s,
-      policy_id: ~x"./PolicyId/text()"s,
-      arn: ~x"./Arn/text()"s,
-      path: ~x"./Path/text()"s,
-      create_date: ~x"./CreateDate/text()"s,
-      update_date: ~x"./UpdateDate/text()"s,
-      default_version_id: ~x"./DefaultVersionId/text()"s
-    )
   end
 end
