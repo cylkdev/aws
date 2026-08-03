@@ -40,6 +40,28 @@ Activate with `sandbox: [enabled: true]` on any per-call opts (or set `config :a
 
 `test/test_helper.exs` starts the sandboxes and `AWS.Counter` (ETS-based call counter for test assertions).
 
+### Response fidelity (non-negotiable)
+
+**Parsers extract fields. They do not redesign the response.** A caller who knows the AWS API reference for an operation must be able to predict the returned map without reading this library's source. Concretely, every parser satisfies all of:
+
+1. **Nesting preserved.** Every AWS sub-structure is a nested map. No prefix-flattening — `<placement><groupName>` is `placement: %{group_name: ...}`, never `placement_group_name:`.
+2. **Names preserved.** Each key is the `snake_case` of the AWS member name and nothing else. No renaming (`<ipAddress>` is `:ip_address`, not `:public_ip_address`), no synthesized keys.
+3. **Lists preserved.** `<xxxSet><item>...</item></xxxSet>` emits `xxx_set: [%{...}]` — the `Set` suffix is part of the member name and is kept; `<item>` is the list element, not a key. A `<entry><key/><value/></entry>` map-encoding stays a list of `%{key:, value:}`.
+4. **Nothing dropped.** Every documented member is parsed, including `next_token` and other pagination fields. No hand-picked field subsets, no `fn _ -> {:ok, %{}} end` callbacks that discard the body.
+5. **Envelope dropped.** The outer `<XxxResponse>`/`<XxxResult>` wrapper and the `RequestId` metadata layer are not surfaced. This is the only exception to rule 4.
+
+Leaf-value **type coercion is expected**: cast numeric members to integers, booleans to booleans, and timestamps to `DateTime` per the AWS model — that changes values, not shape. `AWS.STS` parsing `Expiration` into a `DateTime` and `AWS.IdentityCenter` JSON-decoding the `inline_policy` string are both this, not reshaping.
+
+For XML services, nest with an anchored keyword block and an optional (`o`) anchor, so an absent sub-structure is `nil` rather than a map of empty strings:
+
+```elixir
+placement: [~x"./placement"o, group_name: ~x"./groupName/text()"os, tenancy: ~x"./tenancy/text()"os]
+```
+
+Always anchor selectors to their result element (`~x"//ListPartsResult/Part"l`, not `~x"//Part"l`) — S3 responses in particular can carry an `<Error>` body on a 200.
+
+`test/aws/conformance_test.exs` parses real XML fixtures and is where this rule is enforced. The sandbox tests assert against fixtures they register themselves, so they prove nothing about a parser; add conformance cases there instead.
+
 ### Serialization
 
 Response deserialization is delegated to `ExUtils.Serializer.deserialize/1` (from the `:ex_utils` git dep), which recursively transforms map keys to snake_case atoms. `ExUtils.Strings` is configured with `to_existing_atom: false, strict: false` in `config/config.exs`, which disables atom-safety so unknown response keys are converted via `String.to_atom/1` rather than `String.to_existing_atom/1`. This matches the previous `AWS.Serializer` behavior; tightening it would require an explicit `:allowed_keys` allowlist.
