@@ -101,6 +101,41 @@ defmodule AWS.ElasticLoadBalancingV2 do
 
   Returns one page plus `:next_marker` (AWS's own member name); the caller decides whether to
   follow it.
+
+  ## Examples
+
+      AWS.ElasticLoadBalancingV2.describe_target_groups()
+      #=> {:ok,
+      #=>  %{
+      #=>    target_groups: [
+      #=>      %{
+      #=>        target_group_arn: "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/73e2d6bc24d8a067",
+      #=>        target_group_name: "web",
+      #=>        protocol: "HTTP",
+      #=>        protocol_version: "HTTP1",
+      #=>        port: 80,
+      #=>        vpc_id: "vpc-1a2b3c4d",
+      #=>        target_type: "instance",
+      #=>        ip_address_type: "ipv4",
+      #=>        health_check_enabled: "true",
+      #=>        health_check_protocol: "HTTP",
+      #=>        # A String, not an Integer -- "traffic-port" is a legal value.
+      #=>        health_check_port: "traffic-port",
+      #=>        health_check_path: "/health",
+      #=>        health_check_interval_seconds: 30,
+      #=>        health_check_timeout_seconds: 5,
+      #=>        healthy_threshold_count: 5,
+      #=>        unhealthy_threshold_count: 2,
+      #=>        load_balancer_arns: ["arn:aws:elasticloadbalancing:...:loadbalancer/app/web/50dc..."],
+      #=>        matcher: %{http_code: "200", grpc_code: ""}
+      #=>      }
+      #=>    ],
+      #=>    next_marker: nil
+      #=>  }}
+
+  `:next_marker` is AWS's own member name for the pagination cursor; the
+  request-side option that sends it back is `:next_token` (encoded as
+  `Marker` on the wire).
   """
   @spec describe_target_groups(opts :: keyword()) :: {:ok, map()} | {:error, term()}
   def describe_target_groups(opts \\ []) do
@@ -115,6 +150,13 @@ defmodule AWS.ElasticLoadBalancingV2 do
   Describes target groups by name.
 
   Maps to AWS `DescribeTargetGroups` with `Names`.
+
+  ## Examples
+
+      AWS.ElasticLoadBalancingV2.describe_target_groups_by_names(["web"])
+      #=> {:ok, %{target_groups: [%{target_group_name: "web", port: 80}], next_marker: nil}}
+
+  Same response shape as `describe_target_groups/1`.
   """
   @spec describe_target_groups_by_names(names :: [String.t()], opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -130,6 +172,13 @@ defmodule AWS.ElasticLoadBalancingV2 do
   Describes target groups by ARN.
 
   Maps to AWS `DescribeTargetGroups` with `TargetGroupArns`.
+
+  ## Examples
+
+      AWS.ElasticLoadBalancingV2.describe_target_groups_by_arns([
+        "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/73e2d6bc24d8a067"
+      ])
+      #=> {:ok, %{target_groups: [%{target_group_name: "web", port: 80}], next_marker: nil}}
   """
   @spec describe_target_groups_by_arns(target_group_arns :: [String.t()], opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -145,6 +194,13 @@ defmodule AWS.ElasticLoadBalancingV2 do
   Describes every target group attached to a load balancer.
 
   Maps to AWS `DescribeTargetGroups` with `LoadBalancerArn`.
+
+  ## Examples
+
+      AWS.ElasticLoadBalancingV2.describe_target_groups_by_load_balancer(
+        "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/web/50dc6c495c0c9188"
+      )
+      #=> {:ok, %{target_groups: [%{target_group_name: "web", port: 80}], next_marker: nil}}
   """
   @spec describe_target_groups_by_load_balancer(
           load_balancer_arn :: String.t(),
@@ -187,6 +243,39 @@ defmodule AWS.ElasticLoadBalancingV2 do
 
     - `:targets` - list of `%{id: ..., port: ...}` maps to filter
       results to specific targets
+
+  ## Examples
+
+      AWS.ElasticLoadBalancingV2.describe_target_health(
+        "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/73e2d6bc24d8a067"
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    target_health_descriptions: [
+      #=>      %{
+      #=>        target: %{
+      #=>          id: "i-1234567890abcdef0",
+      #=>          port: 80,
+      #=>          availability_zone: "us-east-1a",
+      #=>          quic_server_id: ""
+      #=>        },
+      #=>        health_check_port: "80",
+      #=>        target_health: %{
+      #=>          state: "unhealthy",
+      #=>          reason: "Target.Timeout",
+      #=>          description: "Request timed out"
+      #=>        },
+      #=>        anomaly_detection: nil,
+      #=>        administrative_override: nil
+      #=>      }
+      #=>    ]
+      #=>  }}
+
+  `:target_health` and `:administrative_override` both carry
+  `state`/`reason`/`description`, which is why neither is flattened onto the
+  description. `:reason` distinguishes an ELB-side failure
+  (`"Elb.InternalError"`) from the target's own (`"Target.Timeout"`), and is
+  absent when the state is healthy.
   """
   @spec describe_target_health(target_group_arn :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -227,6 +316,39 @@ defmodule AWS.ElasticLoadBalancingV2 do
 
   Returns one page plus `:next_marker` (AWS's own member name); the caller decides whether to
   follow it.
+
+  ## Examples
+
+      AWS.ElasticLoadBalancingV2.describe_load_balancers()
+      #=> {:ok,
+      #=>  %{
+      #=>    load_balancers: [
+      #=>      %{
+      #=>        load_balancer_arn: "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/web/50dc6c495c0c9188",
+      #=>        load_balancer_name: "web",
+      #=>        dns_name: "web-1234567890.us-east-1.elb.amazonaws.com",
+      #=>        canonical_hosted_zone_id: "Z35SXDOTRQ7X7K",
+      #=>        created_time: "2026-01-01T00:00:00.000Z",
+      #=>        scheme: "internet-facing",
+      #=>        type: "application",
+      #=>        vpc_id: "vpc-1a2b3c4d",
+      #=>        ip_address_type: "ipv4",
+      #=>        security_groups: ["sg-1a2b3c4d"],
+      #=>        state: %{code: "active", reason: ""},
+      #=>        ipam_pools: nil,
+      #=>        availability_zones: [
+      #=>          %{
+      #=>            zone_name: "us-east-1a",
+      #=>            subnet_id: "subnet-9d4a7b6c",
+      #=>            outpost_id: "",
+      #=>            source_nat_ipv6_prefixes: [],
+      #=>            load_balancer_addresses: []
+      #=>          }
+      #=>        ]
+      #=>      }
+      #=>    ],
+      #=>    next_marker: nil
+      #=>  }}
   """
   @spec describe_load_balancers(opts :: keyword()) :: {:ok, map()} | {:error, term()}
   def describe_load_balancers(opts \\ []) do
@@ -266,6 +388,43 @@ defmodule AWS.ElasticLoadBalancingV2 do
 
     - `:next_token` - pagination token (encoded as `Marker` on the wire)
     - `:page_size` - maximum results per page
+
+  ## Examples
+
+      AWS.ElasticLoadBalancingV2.describe_listeners(
+        "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/web/50dc6c495c0c9188"
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    listeners: [
+      #=>      %{
+      #=>        listener_arn: "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/web/50dc6c495c0c9188/f2f7dc8efc522ab2",
+      #=>        load_balancer_arn: "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/web/50dc6c495c0c9188",
+      #=>        port: 443,
+      #=>        protocol: "HTTPS",
+      #=>        ssl_policy: "ELBSecurityPolicy-TLS13-1-2-2021-06",
+      #=>        alpn_policy: [],
+      #=>        certificates: [%{certificate_arn: "arn:aws:acm:...:certificate/abc", is_default: ""}],
+      #=>        mutual_authentication: %{mode: "off", trust_store_arn: ""},
+      #=>        default_actions: [
+      #=>          %{
+      #=>            type: "forward",
+      #=>            order: nil,
+      #=>            target_group_arn: "arn:aws:elasticloadbalancing:...:targetgroup/web/73e2d6bc24d8a067",
+      #=>            forward_config: %{
+      #=>              target_groups: [
+      #=>                %{target_group_arn: "arn:...:targetgroup/web/73e2d6bc24d8a067", weight: 1}
+      #=>              ],
+      #=>              target_group_stickiness_config: nil
+      #=>            },
+      #=>            redirect_config: nil,
+      #=>            fixed_response_config: nil
+      #=>          }
+      #=>        ]
+      #=>      }
+      #=>    ],
+      #=>    next_marker: nil
+      #=>  }}
   """
   @spec describe_listeners(load_balancer_arn :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -292,6 +451,15 @@ defmodule AWS.ElasticLoadBalancingV2 do
 
     - `:next_token` - pagination token (encoded as `Marker` on the wire)
     - `:page_size` - maximum results per page
+
+  ## Examples
+
+      AWS.ElasticLoadBalancingV2.describe_listeners_by_arns([
+        "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/web/50dc6c495c0c9188/f2f7dc8efc522ab2"
+      ])
+      #=> {:ok, %{listeners: [%{port: 443, protocol: "HTTPS"}], next_marker: nil}}
+
+  Same response shape as `describe_listeners/2`.
   """
   @spec describe_listeners_by_arns(listener_arns :: [String.t()], opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -336,6 +504,55 @@ defmodule AWS.ElasticLoadBalancingV2 do
 
     - `:next_token` - pagination token (encoded as `Marker` on the wire)
     - `:page_size` - maximum results per page
+
+  ## Examples
+
+      AWS.ElasticLoadBalancingV2.describe_rules(
+        "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/web/50dc6c495c0c9188/f2f7dc8efc522ab2"
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    rules: [
+      #=>      %{
+      #=>        rule_arn: "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener-rule/app/web/50dc.../f2f7.../9683b2d02a6cba17",
+      #=>        priority: "10",
+      #=>        is_default: false,
+      #=>        conditions: [
+      #=>          %{
+      #=>            field: "host-header",
+      #=>            values: ["a.example.com"],
+      #=>            regex_values: [],
+      #=>            host_header_config: %{values: ["a.example.com"], regex_values: []},
+      #=>            path_pattern_config: nil,
+      #=>            http_header_config: nil,
+      #=>            http_request_method_config: nil,
+      #=>            source_ip_config: nil,
+      #=>            query_string_config: nil
+      #=>          }
+      #=>        ],
+      #=>        actions: [
+      #=>          %{
+      #=>            type: "forward",
+      #=>            target_group_arn: "arn:...:targetgroup/web/73e2d6bc24d8a067",
+      #=>            forward_config: %{
+      #=>              target_groups: [
+      #=>                %{target_group_arn: "arn:...:targetgroup/blue/aaa", weight: 90},
+      #=>                %{target_group_arn: "arn:...:targetgroup/green/bbb", weight: 10}
+      #=>              ],
+      #=>              target_group_stickiness_config: %{enabled: "true", duration_seconds: 3600}
+      #=>            },
+      #=>            redirect_config: nil
+      #=>          }
+      #=>        ],
+      #=>        transforms: []
+      #=>      }
+      #=>    ],
+      #=>    next_marker: nil
+      #=>  }}
+
+  Each condition keeps its typed `*_config` sub-map, so you can tell which
+  one AWS populated without inferring it from `:field`. The default rule
+  returns the literal string `"default"` for `:priority`.
   """
   @spec describe_rules(listener_arn :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -363,6 +580,16 @@ defmodule AWS.ElasticLoadBalancingV2 do
 
     - `:next_token` - pagination token (encoded as `Marker` on the wire)
     - `:page_size` - maximum results per page
+
+  ## Examples
+
+      AWS.ElasticLoadBalancingV2.describe_rules_by_arns([
+        "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener-rule/app/web/50dc.../f2f7.../9683b2d02a6cba17"
+      ])
+      #=> {:ok, %{rules: [%{priority: "10", is_default: false}], next_marker: nil}}
+
+  Same response shape as `describe_rules/2`, but sends `RuleArns` instead of
+  `ListenerArn`.
   """
   @spec describe_rules_by_arns(rule_arns :: [String.t()], opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -421,6 +648,50 @@ defmodule AWS.ElasticLoadBalancingV2 do
   ## Options
 
     - `:conditions` - list of condition maps
+
+  ## Examples
+
+  Shift traffic 90/10 between two target groups:
+
+      AWS.ElasticLoadBalancingV2.modify_rule(
+        "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener-rule/app/web/50dc.../f2f7.../9683b2d02a6cba17",
+        [
+          %{
+            type: "forward",
+            forward_config: %{
+              target_groups: [
+                %{target_group_arn: "arn:...:targetgroup/blue/aaa", weight: 90},
+                %{target_group_arn: "arn:...:targetgroup/green/bbb", weight: 10}
+              ]
+            }
+          }
+        ]
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    rules: [
+      #=>      %{
+      #=>        rule_arn: "arn:aws:elasticloadbalancing:...:listener-rule/app/web/50dc.../f2f7.../9683b2d02a6cba17",
+      #=>        priority: "10",
+      #=>        is_default: false,
+      #=>        conditions: [%{field: "host-header", values: ["a.example.com"]}],
+      #=>        actions: [
+      #=>          %{
+      #=>            type: "forward",
+      #=>            forward_config: %{
+      #=>              target_groups: [
+      #=>                %{target_group_arn: "arn:...:targetgroup/blue/aaa", weight: 90},
+      #=>                %{target_group_arn: "arn:...:targetgroup/green/bbb", weight: 10}
+      #=>              ]
+      #=>            }
+      #=>          }
+      #=>        ],
+      #=>        transforms: []
+      #=>      }
+      #=>    ]
+      #=>  }}
+
+  `ModifyRule` returns the rule as it now stands, with no `:next_marker`.
   """
   @spec modify_rule(rule_arn :: String.t(), actions :: [map()], opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
