@@ -91,6 +91,26 @@ defmodule AWS.IAM do
     * `username` - The user name (1–128 chars).
     * `opts` - Options including `:path` and `:permissions_boundary`, plus
       shared options. AWS's `Tags` parameter is not encoded.
+
+  ## Examples
+
+      AWS.IAM.create_user("alice", path: "/engineering/")
+      #=> {:ok,
+      #=>  %{
+      #=>    user: %{
+      #=>      user_name: "alice",
+      #=>      user_id: "AIDA1EXAMPLE",
+      #=>      arn: "arn:aws:iam::123456789012:user/alice",
+      #=>      path: "/",
+      #=>      create_date: "2026-01-01T00:00:00Z",
+      #=>      password_last_used: "",
+      #=>      permissions_boundary: nil,
+      #=>      tags: []
+      #=>    }
+      #=>  }}
+
+  The result keeps AWS's `CreateUserResult/User` envelope, so the user sits
+  under `:user`.
   """
   @spec create_user(username :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -122,6 +142,30 @@ defmodule AWS.IAM do
 
     * `username` - The user name.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.get_user(user_name: "alice")
+      #=> {:ok,
+      #=>  %{
+      #=>    user: %{
+      #=>      user_name: "alice",
+      #=>      user_id: "AIDA1EXAMPLE",
+      #=>      arn: "arn:aws:iam::123456789012:user/alice",
+      #=>      path: "/",
+      #=>      create_date: "2026-01-01T00:00:00Z",
+      #=>      password_last_used: "2026-02-01T12:00:00Z",
+      #=>      permissions_boundary: %{
+      #=>        permissions_boundary_arn: "arn:aws:iam::123456789012:policy/boundary",
+      #=>        permissions_boundary_type: "Policy"
+      #=>      },
+      #=>      tags: [%{key: "team", value: "infra"}]
+      #=>    }
+      #=>  }}
+
+      # Omit :user_name to describe the caller's own user.
+      AWS.IAM.get_user()
+      #=> {:ok, %{user: %{user_name: "alice"}}}
   """
   @spec get_user(opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -149,6 +193,29 @@ defmodule AWS.IAM do
     * `:path_prefix` - Filter users whose path begins with this string.
     * `:max_items` - Maximum number of items to return.
     * `:marker` - Pagination marker from a previous call.
+
+  ## Examples
+
+      AWS.IAM.list_users(path_prefix: "/engineering/")
+      #=> {:ok,
+      #=>  %{
+      #=>    users: [
+      #=>      %{
+      #=>        user_name: "alice",
+      #=>        user_id: "AIDA1EXAMPLE",
+      #=>        arn: "arn:aws:iam::123456789012:user/engineering/alice",
+      #=>        path: "/engineering/",
+      #=>        create_date: "2026-01-01T00:00:00Z",
+      #=>        permissions_boundary: nil,
+      #=>        tags: []
+      #=>      }
+      #=>    ],
+      #=>    is_truncated: false,
+      #=>    marker: nil
+      #=>  }}
+
+  Each user carries the same members as `get_user/1` returns. When
+  `:is_truncated` is true, pass `:marker` back to fetch the next page.
   """
   @spec list_users(opts :: keyword()) ::
           {:ok, %{users: list(map()), is_truncated: boolean(), marker: String.t() | nil}}
@@ -189,6 +256,14 @@ defmodule AWS.IAM do
 
     * `username` - The user name.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.delete_user("alice")
+      #=> {:ok, %{}}
+
+  AWS returns an empty body. Access keys, policies and group memberships
+  must be removed first or AWS rejects the call.
   """
   @spec delete_user(username :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -219,6 +294,21 @@ defmodule AWS.IAM do
 
     * `username` - The user name.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.create_access_key(user_name: "alice")
+      #=> {:ok,
+      #=>  %{
+      #=>    access_key: %{
+      #=>      access_key_id: "AKIA1EXAMPLE",
+      #=>      # The only time AWS ever returns the secret.
+      #=>      secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+      #=>      user_name: "alice",
+      #=>      status: "Active",
+      #=>      create_date: "2026-01-01T00:00:00Z"
+      #=>    }
+      #=>  }}
   """
   @spec create_access_key(opts :: keyword()) ::
           {:ok, %{access_key_id: String.t(), secret_access_key: String.t()}} | {:error, term()}
@@ -245,6 +335,26 @@ defmodule AWS.IAM do
 
     * `username` - The user name.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.list_access_keys(user_name: "alice")
+      #=> {:ok,
+      #=>  %{
+      #=>    access_key_metadata: [
+      #=>      %{
+      #=>        access_key_id: "AKIA1EXAMPLE",
+      #=>        user_name: "alice",
+      #=>        status: "Active",
+      #=>        create_date: "2026-01-01T00:00:00Z"
+      #=>      }
+      #=>    ],
+      #=>    is_truncated: false,
+      #=>    marker: nil
+      #=>  }}
+
+  The key is `:access_key_metadata`, which is AWS's member name; secrets are
+  never returned here.
   """
   @spec list_access_keys(opts :: keyword()) ::
           {:ok,
@@ -297,6 +407,11 @@ defmodule AWS.IAM do
     * `access_key_id` - The access key ID.
     * `username` - The user name.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.delete_access_key("AKIA1EXAMPLE", user_name: "alice")
+      #=> {:ok, %{}}
   """
   @spec delete_access_key(access_key_id :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -327,6 +442,20 @@ defmodule AWS.IAM do
 
     * `name` - The group name.
     * `opts` - Options including `:path`, plus shared options.
+
+  ## Examples
+
+      AWS.IAM.create_group("developers")
+      #=> {:ok,
+      #=>  %{
+      #=>    group: %{
+      #=>      group_name: "developers",
+      #=>      group_id: "AGPA1EXAMPLE",
+      #=>      arn: "arn:aws:iam::123456789012:group/developers",
+      #=>      path: "/",
+      #=>      create_date: "2026-01-01T00:00:00Z"
+      #=>    }
+      #=>  }}
   """
   @spec create_group(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -354,6 +483,24 @@ defmodule AWS.IAM do
   ## Options
 
     * `:path_prefix` - Filter groups whose path begins with this string.
+
+  ## Examples
+
+      AWS.IAM.list_groups()
+      #=> {:ok,
+      #=>  %{
+      #=>    groups: [
+      #=>      %{
+      #=>        group_name: "developers",
+      #=>        group_id: "AGPA1EXAMPLE",
+      #=>        arn: "arn:aws:iam::123456789012:group/developers",
+      #=>        path: "/",
+      #=>        create_date: "2026-01-01T00:00:00Z"
+      #=>      }
+      #=>    ],
+      #=>    is_truncated: false,
+      #=>    marker: nil
+      #=>  }}
   """
   @spec list_groups(opts :: keyword()) ::
           {:ok, %{groups: list(map()), is_truncated: boolean(), marker: String.t() | nil}}
@@ -401,6 +548,11 @@ defmodule AWS.IAM do
 
     * `name` - The group name.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.delete_group("developers")
+      #=> {:ok, %{}}
   """
   @spec delete_group(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -430,6 +582,11 @@ defmodule AWS.IAM do
     * `group_name` - The group name.
     * `username` - The user name.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.add_user_to_group("developers", "alice")
+      #=> {:ok, %{}}
   """
   @spec add_user_to_group(group_name :: String.t(), username :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -455,6 +612,11 @@ defmodule AWS.IAM do
     * `group_name` - The group name.
     * `username` - The user name.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.remove_user_from_group("developers", "alice")
+      #=> {:ok, %{}}
   """
   @spec remove_user_from_group(
           group_name :: String.t(),
@@ -490,6 +652,38 @@ defmodule AWS.IAM do
       This is JSON-encoded before being sent to AWS.
     * `opts` - Options including `:path`, `:description`, `:max_session_duration`,
       plus shared options.
+
+  ## Examples
+
+      trust_policy = %{
+        "Version" => "2012-10-17",
+        "Statement" => [
+          %{
+            "Effect" => "Allow",
+            "Principal" => %{"Service" => "ec2.amazonaws.com"},
+            "Action" => "sts:AssumeRole"
+          }
+        ]
+      }
+
+      AWS.IAM.create_role("AppRole", trust_policy, description: "App instance role")
+      #=> {:ok,
+      #=>  %{
+      #=>    role: %{
+      #=>      role_name: "AppRole",
+      #=>      role_id: "AROA1EXAMPLE",
+      #=>      arn: "arn:aws:iam::123456789012:role/AppRole",
+      #=>      path: "/",
+      #=>      create_date: "2026-01-01T00:00:00Z",
+      #=>      description: "App instance role",
+      #=>      # URL-encoded per RFC 3986, as AWS returns it.
+      #=>      assume_role_policy_document: "%7B%22Version%22%3A%222012-10-17%22...",
+      #=>      max_session_duration: 3600,
+      #=>      permissions_boundary: nil,
+      #=>      role_last_used: nil,
+      #=>      tags: []
+      #=>    }
+      #=>  }}
   """
   @spec create_role(name :: String.t(), trust_policy :: map(), opts :: keyword()) ::
           {:ok, %{role_name: String.t(), role_id: String.t(), arn: String.t()}} | {:error, term()}
@@ -525,6 +719,35 @@ defmodule AWS.IAM do
 
     * `name` - The role name.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.get_role("AppRole")
+      #=> {:ok,
+      #=>  %{
+      #=>    role: %{
+      #=>      role_name: "AppRole",
+      #=>      role_id: "AROA1EXAMPLE",
+      #=>      arn: "arn:aws:iam::123456789012:role/AppRole",
+      #=>      path: "/",
+      #=>      create_date: "2026-01-01T00:00:00Z",
+      #=>      description: "App instance role",
+      #=>      assume_role_policy_document: "%7B%22Version%22%3A%222012-10-17%22...",
+      #=>      max_session_duration: 3600,
+      #=>      permissions_boundary: %{
+      #=>        permissions_boundary_arn: "arn:aws:iam::123456789012:policy/boundary",
+      #=>        permissions_boundary_type: "Policy"
+      #=>      },
+      #=>      role_last_used: %{
+      #=>        last_used_date: "2026-02-01T12:00:00Z",
+      #=>        region: "us-east-1"
+      #=>      },
+      #=>      tags: [%{key: "team", value: "infra"}]
+      #=>    }
+      #=>  }}
+
+  `:permissions_boundary` and `:role_last_used` are structures on the wire
+  and stay structures here; both are `nil` when AWS omits them.
   """
   @spec get_role(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -552,6 +775,31 @@ defmodule AWS.IAM do
     * `:path_prefix` - Filter roles whose path begins with this string.
     * `:max_items` - Maximum number of items.
     * `:marker` - Pagination marker.
+
+  ## Examples
+
+      AWS.IAM.list_roles(path_prefix: "/service-role/")
+      #=> {:ok,
+      #=>  %{
+      #=>    roles: [
+      #=>      %{
+      #=>        role_name: "AppRole",
+      #=>        role_id: "AROA1EXAMPLE",
+      #=>        arn: "arn:aws:iam::123456789012:role/service-role/AppRole",
+      #=>        path: "/service-role/",
+      #=>        create_date: "2026-01-01T00:00:00Z",
+      #=>        assume_role_policy_document: "%7B%22Version%22%3A%222012-10-17%22...",
+      #=>        max_session_duration: 3600,
+      #=>        permissions_boundary: nil,
+      #=>        role_last_used: nil,
+      #=>        tags: []
+      #=>      }
+      #=>    ],
+      #=>    is_truncated: false,
+      #=>    marker: nil
+      #=>  }}
+
+  Each role carries the same members as `get_role/2` returns.
   """
   @spec list_roles(opts :: keyword()) ::
           {:ok, %{roles: list(map()), is_truncated: boolean(), marker: String.t() | nil}}
@@ -590,6 +838,13 @@ defmodule AWS.IAM do
 
     * `name` - The role name.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.delete_role("AppRole")
+      #=> {:ok, %{}}
+
+  Inline and attached policies must be removed first.
   """
   @spec delete_role(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -615,6 +870,22 @@ defmodule AWS.IAM do
     * `role_name` - The role name.
     * `policy_document` - Elixir map of the trust policy. JSON-encoded before sending.
     * `opts` - Shared options.
+
+  ## Examples
+
+      trust_policy = %{
+        "Version" => "2012-10-17",
+        "Statement" => [
+          %{
+            "Effect" => "Allow",
+            "Principal" => %{"Service" => "ec2.amazonaws.com"},
+            "Action" => "sts:AssumeRole"
+          }
+        ]
+      }
+
+      AWS.IAM.update_assume_role_policy("AppRole", trust_policy)
+      #=> {:ok, %{}}
   """
   @spec update_assume_role_policy(
           role_name :: String.t(),
@@ -653,6 +924,18 @@ defmodule AWS.IAM do
     * `policy_name` - The inline policy name.
     * `document` - Elixir map of the policy. JSON-encoded before sending.
     * `opts` - Shared options.
+
+  ## Examples
+
+      policy = %{
+        "Version" => "2012-10-17",
+        "Statement" => [
+          %{"Effect" => "Allow", "Action" => "s3:GetObject", "Resource" => "arn:aws:s3:::bucket/*"}
+        ]
+      }
+
+      AWS.IAM.put_role_policy("AppRole", "read-bucket", policy)
+      #=> {:ok, %{}}
   """
   @spec put_role_policy(
           role_name :: String.t(),
@@ -692,6 +975,17 @@ defmodule AWS.IAM do
     * `role_name` - The role name.
     * `policy_name` - The inline policy name.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.get_role_policy("AppRole", "read-bucket")
+      #=> {:ok,
+      #=>  %{
+      #=>    role_name: "AppRole",
+      #=>    policy_name: "read-bucket",
+      #=>    # URL-encoded JSON, as AWS returns it.
+      #=>    policy_document: "%7B%22Version%22%3A%222012-10-17%22..."
+      #=>  }}
   """
   @spec get_role_policy(
           role_name :: String.t(),
@@ -738,6 +1032,11 @@ defmodule AWS.IAM do
     * `role_name` - The role name.
     * `policy_name` - The inline policy name.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.delete_role_policy("AppRole", "read-bucket")
+      #=> {:ok, %{}}
   """
   @spec delete_role_policy(
           role_name :: String.t(),
@@ -767,6 +1066,19 @@ defmodule AWS.IAM do
     * `opts` - Options including `:marker`, `:max_items`, plus shared options.
 
   Returns `{:ok, %{policy_names: [String.t()], is_truncated: boolean(), marker: String.t() | nil}}`.
+
+  ## Examples
+
+      AWS.IAM.list_role_policies("AppRole")
+      #=> {:ok,
+      #=>  %{
+      #=>    policy_names: ["read-bucket", "write-logs"],
+      #=>    is_truncated: false,
+      #=>    marker: nil
+      #=>  }}
+
+  Inline policies only; managed policies come from
+  `list_attached_role_policies/2`.
   """
   @spec list_role_policies(role_name :: String.t(), opts :: keyword()) ::
           {:ok,
@@ -818,6 +1130,34 @@ defmodule AWS.IAM do
     * `name` - The policy name.
     * `policy_document` - Elixir map defining the policy. JSON-encoded before sending.
     * `opts` - Options including `:path`, `:description`, plus shared options.
+
+  ## Examples
+
+      document = %{
+        "Version" => "2012-10-17",
+        "Statement" => [
+          %{"Effect" => "Allow", "Action" => "s3:GetObject", "Resource" => "arn:aws:s3:::bucket/*"}
+        ]
+      }
+
+      AWS.IAM.create_policy("ReadBucket", document, description: "Read one bucket")
+      #=> {:ok,
+      #=>  %{
+      #=>    policy: %{
+      #=>      policy_name: "ReadBucket",
+      #=>      policy_id: "ANPA1EXAMPLE",
+      #=>      arn: "arn:aws:iam::123456789012:policy/ReadBucket",
+      #=>      path: "/",
+      #=>      default_version_id: "v1",
+      #=>      attachment_count: 0,
+      #=>      permissions_boundary_usage_count: 0,
+      #=>      is_attachable: "true",
+      #=>      description: "Read one bucket",
+      #=>      create_date: "2026-01-01T00:00:00Z",
+      #=>      update_date: "2026-01-01T00:00:00Z",
+      #=>      tags: []
+      #=>    }
+      #=>  }}
   """
   @spec create_policy(name :: String.t(), policy_document :: map(), opts :: keyword()) ::
           {:ok, %{policy_name: String.t(), policy_id: String.t(), arn: String.t()}}
@@ -853,6 +1193,30 @@ defmodule AWS.IAM do
 
     * `policy_arn` - The policy ARN.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.get_policy("arn:aws:iam::123456789012:policy/ReadBucket")
+      #=> {:ok,
+      #=>  %{
+      #=>    policy: %{
+      #=>      policy_name: "ReadBucket",
+      #=>      policy_id: "ANPA1EXAMPLE",
+      #=>      arn: "arn:aws:iam::123456789012:policy/ReadBucket",
+      #=>      path: "/",
+      #=>      default_version_id: "v3",
+      #=>      attachment_count: 2,
+      #=>      permissions_boundary_usage_count: 0,
+      #=>      is_attachable: "true",
+      #=>      description: "Read one bucket",
+      #=>      create_date: "2026-01-01T00:00:00Z",
+      #=>      update_date: "2026-02-01T00:00:00Z",
+      #=>      tags: []
+      #=>    }
+      #=>  }}
+
+  The policy body is not here -- fetch a version with
+  `get_policy_version/3`.
   """
   @spec get_policy(policy_arn :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -883,6 +1247,29 @@ defmodule AWS.IAM do
     * `policy_arn` - The policy ARN.
     * `version_id` - The version ID (e.g. `"v1"`).
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.get_policy_version("arn:aws:iam::123456789012:policy/ReadBucket", "v3")
+      #=> {:ok,
+      #=>  %{
+      #=>    policy_version: %{
+      #=>      version_id: "v3",
+      #=>      is_default_version: true,
+      #=>      create_date: "2026-02-01T00:00:00Z",
+      #=>      # URL-decoded and JSON-decoded, unlike the raw strings elsewhere.
+      #=>      document: %{
+      #=>        "Version" => "2012-10-17",
+      #=>        "Statement" => [
+      #=>          %{
+      #=>            "Effect" => "Allow",
+      #=>            "Action" => "s3:GetObject",
+      #=>            "Resource" => "arn:aws:s3:::bucket/*"
+      #=>          }
+      #=>        ]
+      #=>      }
+      #=>    }
+      #=>  }}
   """
   @spec get_policy_version(policy_arn :: String.t(), version_id :: String.t(), opts :: keyword()) ::
           {:ok,
@@ -940,6 +1327,29 @@ defmodule AWS.IAM do
     * `:path_prefix` - Filter by path prefix.
     * `:max_items` - Maximum number of items.
     * `:marker` - Pagination marker.
+
+  ## Examples
+
+      AWS.IAM.list_policies(scope: "Local", only_attached: true)
+      #=> {:ok,
+      #=>  %{
+      #=>    policies: [
+      #=>      %{
+      #=>        policy_name: "ReadBucket",
+      #=>        policy_id: "ANPA1EXAMPLE",
+      #=>        arn: "arn:aws:iam::123456789012:policy/ReadBucket",
+      #=>        path: "/",
+      #=>        default_version_id: "v3",
+      #=>        attachment_count: 2,
+      #=>        is_attachable: "true",
+      #=>        create_date: "2026-01-01T00:00:00Z",
+      #=>        update_date: "2026-02-01T00:00:00Z",
+      #=>        tags: []
+      #=>      }
+      #=>    ],
+      #=>    is_truncated: false,
+      #=>    marker: nil
+      #=>  }}
   """
   @spec list_policies(opts :: keyword()) ::
           {:ok, %{policies: list(map()), is_truncated: boolean(), marker: String.t() | nil}}
@@ -980,6 +1390,13 @@ defmodule AWS.IAM do
 
     * `policy_arn` - The policy ARN.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.delete_policy("arn:aws:iam::123456789012:policy/ReadBucket")
+      #=> {:ok, %{}}
+
+  Non-default versions and all attachments must be removed first.
   """
   @spec delete_policy(policy_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -1007,6 +1424,24 @@ defmodule AWS.IAM do
     * `opts` - Options including `:set_as_default` (boolean), plus shared options.
 
   Returns `{:ok, %{policy_version: %{version_id, is_default_version, create_date}}}`.
+
+  ## Examples
+
+      AWS.IAM.create_policy_version(
+        "arn:aws:iam::123456789012:policy/ReadBucket",
+        document,
+        set_as_default: true
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    policy_version: %{
+      #=>      version_id: "v4",
+      #=>      is_default_version: true,
+      #=>      create_date: "2026-03-01T00:00:00Z"
+      #=>    }
+      #=>  }}
+
+  A policy is capped at five versions; delete one before adding a sixth.
   """
   @spec create_policy_version(
           policy_arn :: String.t(),
@@ -1058,6 +1493,11 @@ defmodule AWS.IAM do
     * `policy_arn` - The policy ARN.
     * `version_id` - The version ID to promote (e.g. `"v3"`).
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.set_default_policy_version("arn:aws:iam::123456789012:policy/ReadBucket", "v3")
+      #=> {:ok, %{}}
   """
   @spec set_default_policy_version(
           policy_arn :: String.t(),
@@ -1086,6 +1526,13 @@ defmodule AWS.IAM do
     * `policy_arn` - The policy ARN.
     * `version_id` - The version ID to delete.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.delete_policy_version("arn:aws:iam::123456789012:policy/ReadBucket", "v2")
+      #=> {:ok, %{}}
+
+  The default version cannot be deleted; promote another first.
   """
   @spec delete_policy_version(
           policy_arn :: String.t(),
@@ -1116,6 +1563,21 @@ defmodule AWS.IAM do
 
   Returns `{:ok, %{versions: [map()], is_truncated: boolean(), marker: String.t() | nil}}`
   where each version has `:version_id`, `:is_default_version`, `:create_date`.
+
+  ## Examples
+
+      AWS.IAM.list_policy_versions("arn:aws:iam::123456789012:policy/ReadBucket")
+      #=> {:ok,
+      #=>  %{
+      #=>    versions: [
+      #=>      %{version_id: "v3", is_default_version: true, create_date: "2026-02-01T00:00:00Z"},
+      #=>      %{version_id: "v2", is_default_version: false, create_date: "2026-01-15T00:00:00Z"}
+      #=>    ],
+      #=>    is_truncated: false,
+      #=>    marker: nil
+      #=>  }}
+
+  The documents are not included; fetch one with `get_policy_version/3`.
   """
   @spec list_policy_versions(policy_arn :: String.t(), opts :: keyword()) ::
           {:ok,
@@ -1168,6 +1630,11 @@ defmodule AWS.IAM do
 
   @doc """
   Attaches a managed policy to a role.
+
+  ## Examples
+
+      AWS.IAM.attach_role_policy("AppRole", "arn:aws:iam::aws:policy/ReadOnlyAccess")
+      #=> {:ok, %{}}
   """
   @spec attach_role_policy(role_name :: String.t(), policy_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -1187,6 +1654,11 @@ defmodule AWS.IAM do
 
   @doc """
   Detaches a managed policy from a role.
+
+  ## Examples
+
+      AWS.IAM.detach_role_policy("AppRole", "arn:aws:iam::aws:policy/ReadOnlyAccess")
+      #=> {:ok, %{}}
   """
   @spec detach_role_policy(role_name :: String.t(), policy_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -1206,6 +1678,24 @@ defmodule AWS.IAM do
 
   @doc """
   Lists managed policies attached to a role.
+
+  ## Examples
+
+      AWS.IAM.list_attached_role_policies("AppRole")
+      #=> {:ok,
+      #=>  %{
+      #=>    attached_policies: [
+      #=>      %{
+      #=>        policy_name: "ReadOnlyAccess",
+      #=>        policy_arn: "arn:aws:iam::aws:policy/ReadOnlyAccess"
+      #=>      }
+      #=>    ],
+      #=>    is_truncated: false,
+      #=>    marker: nil
+      #=>  }}
+
+  The key is `:attached_policies`, AWS's own member name. Inline policies
+  come from `list_role_policies/2` instead.
   """
   @spec list_attached_role_policies(role_name :: String.t(), opts :: keyword()) ::
           {:ok,
@@ -1247,6 +1737,11 @@ defmodule AWS.IAM do
 
   @doc """
   Attaches a managed policy to a user.
+
+  ## Examples
+
+      AWS.IAM.attach_user_policy("alice", "arn:aws:iam::aws:policy/ReadOnlyAccess")
+      #=> {:ok, %{}}
   """
   @spec attach_user_policy(username :: String.t(), policy_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -1266,6 +1761,11 @@ defmodule AWS.IAM do
 
   @doc """
   Detaches a managed policy from a user.
+
+  ## Examples
+
+      AWS.IAM.detach_user_policy("alice", "arn:aws:iam::aws:policy/ReadOnlyAccess")
+      #=> {:ok, %{}}
   """
   @spec detach_user_policy(username :: String.t(), policy_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -1285,6 +1785,11 @@ defmodule AWS.IAM do
 
   @doc """
   Attaches a managed policy to a group.
+
+  ## Examples
+
+      AWS.IAM.attach_group_policy("developers", "arn:aws:iam::aws:policy/ReadOnlyAccess")
+      #=> {:ok, %{}}
   """
   @spec attach_group_policy(group_name :: String.t(), policy_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -1304,6 +1809,11 @@ defmodule AWS.IAM do
 
   @doc """
   Detaches a managed policy from a group.
+
+  ## Examples
+
+      AWS.IAM.detach_group_policy("developers", "arn:aws:iam::aws:policy/ReadOnlyAccess")
+      #=> {:ok, %{}}
   """
   @spec detach_group_policy(group_name :: String.t(), policy_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -1336,6 +1846,25 @@ defmodule AWS.IAM do
 
     * `username` - The IAM user name.
     * `opts` - Options including `:max_items`, `:marker`, plus shared options.
+
+  ## Examples
+
+      AWS.IAM.list_mfa_devices(user_name: "alice")
+      #=> {:ok,
+      #=>  %{
+      #=>    mfa_devices: [
+      #=>      %{
+      #=>        user_name: "alice",
+      #=>        serial_number: "arn:aws:iam::123456789012:mfa/alice",
+      #=>        enable_date: "2026-01-01T00:00:00Z"
+      #=>      }
+      #=>    ],
+      #=>    is_truncated: false,
+      #=>    marker: nil
+      #=>  }}
+
+  A virtual MFA device reports an ARN as its `:serial_number`; a hardware
+  device reports the physical serial.
   """
   @spec list_mfa_devices(opts :: keyword()) ::
           {:ok,
@@ -1396,6 +1925,19 @@ defmodule AWS.IAM do
     * `client_id_list` - List of client IDs (audiences).
     * `opts` - Options including `:thumbprint_list` (required by AWS — list of
       server certificate thumbprints), plus shared options.
+
+  ## Examples
+
+      AWS.IAM.create_open_id_connect_provider(
+        "https://token.actions.githubusercontent.com",
+        ["sts.amazonaws.com"],
+        thumbprints: ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    open_id_connect_provider_arn:
+      #=>      "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+      #=>  }}
   """
   @spec create_open_id_connect_provider(url :: String.t(), opts :: keyword()) ::
           {:ok, %{open_id_connect_provider_arn: String.t()}} | {:error, term()}
@@ -1430,6 +1972,22 @@ defmodule AWS.IAM do
 
     * `provider_arn` - The OIDC provider ARN.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.get_open_id_connect_provider(
+        "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    url: "token.actions.githubusercontent.com",
+      #=>    client_id_list: ["sts.amazonaws.com"],
+      #=>    thumbprint_list: ["6938fd4d98bab03faadb97b34396831e3780aea1"],
+      #=>    create_date: "2026-01-01T00:00:00Z",
+      #=>    tags: []
+      #=>  }}
+
+  AWS returns `:url` without the `https://` scheme it was created with.
   """
   @spec get_open_id_connect_provider(provider_arn :: String.t(), opts :: keyword()) ::
           {:ok,
@@ -1467,6 +2025,18 @@ defmodule AWS.IAM do
 
   @doc """
   Lists the OIDC providers in the account.
+
+  ## Examples
+
+      AWS.IAM.list_open_id_connect_providers()
+      #=> {:ok,
+      #=>  %{
+      #=>    open_id_connect_provider_list: [
+      #=>      %{arn: "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"}
+      #=>    ]
+      #=>  }}
+
+  ARNs only; call `get_open_id_connect_provider/2` for the details.
   """
   @spec list_open_id_connect_providers(opts :: keyword()) ::
           {:ok, %{open_id_connect_provider_list: list(%{arn: String.t()})}}
@@ -1497,6 +2067,13 @@ defmodule AWS.IAM do
 
     * `provider_arn` - The OIDC provider ARN.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.delete_open_id_connect_provider(
+        "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+      )
+      #=> {:ok, %{}}
   """
   @spec delete_open_id_connect_provider(provider_arn :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -1522,6 +2099,17 @@ defmodule AWS.IAM do
     * `provider_arn` - The OIDC provider ARN.
     * `thumbprint_list` - New list of thumbprints.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.update_open_id_connect_provider_thumbprint(
+        "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com",
+        ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+      )
+      #=> {:ok, %{}}
+
+  The list replaces the existing thumbprints outright rather than adding to
+  them.
   """
   @spec update_open_id_connect_provider_thumbprint(
           provider_arn :: String.t(),
@@ -1554,6 +2142,14 @@ defmodule AWS.IAM do
     * `provider_arn` - The OIDC provider ARN.
     * `client_id` - The client ID to add.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.add_client_id_to_open_id_connect_provider(
+        "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com",
+        "sts.amazonaws.com"
+      )
+      #=> {:ok, %{}}
   """
   @spec add_client_id_to_open_id_connect_provider(
           provider_arn :: String.t(),
@@ -1585,6 +2181,14 @@ defmodule AWS.IAM do
     * `provider_arn` - The OIDC provider ARN.
     * `client_id` - The client ID to remove.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IAM.remove_client_id_from_open_id_connect_provider(
+        "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com",
+        "sts.amazonaws.com"
+      )
+      #=> {:ok, %{}}
   """
   @spec remove_client_id_from_open_id_connect_provider(
           provider_arn :: String.t(),
@@ -1622,6 +2226,28 @@ defmodule AWS.IAM do
   Returns `{:ok, %{summary_map: [%{key: String.t(), value: integer()}]}}`.
   AWS sends `SummaryMap` as a list of `<entry><key/><value/></entry>`
   elements, and that list is what comes back.
+
+  ## Examples
+
+      AWS.IAM.get_account_summary()
+      #=> {:ok,
+      #=>  %{
+      #=>    summary_map: [
+      #=>      %{key: "Users", value: 12},
+      #=>      %{key: "UsersQuota", value: 5000},
+      #=>      %{key: "Groups", value: 3},
+      #=>      %{key: "Policies", value: 27},
+      #=>      %{key: "MFADevices", value: 8},
+      #=>      %{key: "AccountMFAEnabled", value: 1}
+      #=>    ]
+      #=>  }}
+
+  AWS sends `SummaryMap` as a list of `<entry><key/><value/></entry>`, so a
+  list is what comes back. Build a map yourself if you want lookup:
+
+      {:ok, %{summary_map: entries}} = AWS.IAM.get_account_summary()
+      Map.new(entries, &{&1.key, &1.value})
+      #=> %{"Users" => 12, "UsersQuota" => 5000, ...}
   """
   @spec get_account_summary(opts :: keyword()) ::
           {:ok, %{summary_map: list(map())}} | {:error, term()}
