@@ -72,10 +72,10 @@ defmodule AWS.Credentials.Providers.AssumeRole do
          {:ok, result} <- AWS.STS.assume_role(params, source, region, opts) do
       {:ok,
        %{
-         access_key_id: result.access_key_id,
-         secret_access_key: result.secret_access_key,
-         security_token: result.session_token,
-         expires_at: result.expiration,
+         access_key_id: result.credentials.access_key_id,
+         secret_access_key: result.credentials.secret_access_key,
+         security_token: result.credentials.session_token,
+         expires_at: result.credentials.expiration,
          source: :sts
        }}
     end

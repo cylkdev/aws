@@ -121,10 +121,15 @@ defmodule AWS.STS do
   @spec assume_role(map, map, String.t(), keyword) ::
           {:ok,
            %{
-             access_key_id: String.t(),
-             secret_access_key: String.t(),
-             session_token: String.t(),
-             expiration: DateTime.t() | nil
+             credentials: %{
+               access_key_id: String.t(),
+               secret_access_key: String.t(),
+               session_token: String.t(),
+               expiration: DateTime.t() | nil
+             },
+             assumed_role_user: %{arn: String.t(), assumed_role_id: String.t()} | nil,
+             packed_policy_size: integer() | nil,
+             source_identity: String.t()
            }}
           | {:error, term}
   def assume_role(params, source_creds, region, opts) do
@@ -172,31 +177,35 @@ defmodule AWS.STS do
       xpath(
         xml,
         ~x"//AssumeRoleResponse/AssumeRoleResult"e,
-        access_key_id: ~x"./Credentials/AccessKeyId/text()"s,
-        secret_access_key: ~x"./Credentials/SecretAccessKey/text()"s,
-        session_token: ~x"./Credentials/SessionToken/text()"s,
-        expiration: ~x"./Credentials/Expiration/text()"s,
-        assumed_role_arn: ~x"./AssumedRoleUser/Arn/text()"os,
-        assumed_role_id: ~x"./AssumedRoleUser/AssumedRoleId/text()"os,
+        credentials: [
+          ~x"./Credentials"o,
+          access_key_id: ~x"./AccessKeyId/text()"s,
+          secret_access_key: ~x"./SecretAccessKey/text()"s,
+          session_token: ~x"./SessionToken/text()"s,
+          expiration: ~x"./Expiration/text()"s
+        ],
+        assumed_role_user: [
+          ~x"./AssumedRoleUser"o,
+          arn: ~x"./Arn/text()"os,
+          assumed_role_id: ~x"./AssumedRoleId/text()"os
+        ],
         # Only meaningful when a policy or tags were passed, so not guaranteed.
         packed_policy_size: ~x"./PackedPolicySize/text()"oi,
         source_identity: ~x"./SourceIdentity/text()"os
       )
 
     case parsed do
-      %{access_key_id: ak, secret_access_key: sk, session_token: st, expiration: exp}
+      %{credentials: %{access_key_id: ak, secret_access_key: sk} = creds}
       when ak !== "" and sk !== "" ->
         {:ok,
          %{
-           access_key_id: ak,
-           secret_access_key: sk,
-           # The sample response wraps the token across lines.
-           session_token: String.trim(st),
-           expiration: parse_expiration(exp),
-           assumed_role_arn: parsed.assumed_role_arn,
-           assumed_role_id: parsed.assumed_role_id,
-           packed_policy_size: parsed.packed_policy_size,
-           source_identity: parsed.source_identity
+           parsed
+           | credentials: %{
+               creds
+               | # The sample response wraps the token across lines.
+                 session_token: String.trim(creds.session_token),
+                 expiration: parse_expiration(creds.expiration)
+             }
          }}
 
       _ ->

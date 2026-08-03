@@ -305,9 +305,15 @@ defmodule AWS.ConformanceTest do
 
     {:ok, creds} = AWS.STS.parse_assume_role_for_test(xml)
 
-    assert creds.assumed_role_arn == "arn:aws:sts::1:assumed-role/r/s"
-    assert creds.assumed_role_id == "AROA:s"
+    assert creds.assumed_role_user.arn == "arn:aws:sts::1:assumed-role/r/s"
+    assert creds.assumed_role_user.assumed_role_id == "AROA:s"
     assert creds.packed_policy_size == 6
+
+    # Credentials is a structure on the wire, so it stays one here.
+    assert creds.credentials.access_key_id == "AK"
+    assert creds.credentials.session_token == "ST"
+    assert %DateTime{} = creds.credentials.expiration
+    refute Map.has_key?(creds, :access_key_id)
   end
 
   test "an S3 notification configuration parses queue and lambda targets, not just EventBridge" do
