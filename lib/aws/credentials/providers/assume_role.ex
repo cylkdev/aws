@@ -4,8 +4,10 @@ defmodule AWS.Credentials.Providers.AssumeRole do
 
   The profile must identify a `source_profile` (or `credential_source`,
   not yet supported) to produce the caller identity used to sign the
-  `AssumeRole` request. The source profile is resolved by re-dispatching
-  through `AWS.Credentials.Profile.security_credentials/2`.
+  `AssumeRole` request. The source profile is resolved through
+  `AWS.AuthCache` under its own `{:awscli, name}` key, so it is cached
+  and single-flighted like any other profile instead of being re-minted
+  on every refresh of the assumed role.
 
   Session name defaults to `aws-elixir-<unix-ts>` and can be overridden
   via `role_session_name` on the profile.
@@ -16,6 +18,7 @@ defmodule AWS.Credentials.Providers.AssumeRole do
   `AWS.STS.get_caller_identity/1` and other public operations use.
   """
 
+  alias AWS.AuthCache
   alias AWS.Credentials.Profile
 
   @default_duration_seconds 3_600
@@ -38,9 +41,19 @@ defmodule AWS.Credentials.Providers.AssumeRole do
     source = profile["source_profile"]
 
     cond do
-      is_nil(role_arn) -> :skip
-      is_nil(source) -> {:error, :assume_role_missing_source_profile}
-      true -> assume(role_arn, source, profile, opts)
+      is_nil(role_arn) ->
+        :skip
+
+      is_nil(source) ->
+        {:error, :assume_role_missing_source_profile}
+
+      # A profile naming itself as its own source would re-enter the
+      # AuthCache fetch for a key already in flight and never resolve.
+      source === (opts[:profile] || Profile.default()) ->
+        {:error, :assume_role_self_reference}
+
+      true ->
+        assume(role_arn, source, profile, opts)
     end
   end
 
@@ -55,7 +68,7 @@ defmodule AWS.Credentials.Providers.AssumeRole do
 
     params = maybe_put(base_params, :external_id, profile["external_id"])
 
-    with {:ok, source} <- Profile.security_credentials(source_profile, opts),
+    with {:ok, source} <- AuthCache.get({:awscli, source_profile}, source_opts(opts)),
          {:ok, result} <- AWS.STS.assume_role(params, source, region, opts) do
       {:ok,
        %{
@@ -67,6 +80,11 @@ defmodule AWS.Credentials.Providers.AssumeRole do
        }}
     end
   end
+
+  # The source profile is a cache key of its own, so it must not inherit
+  # the outer profile's TTL or the test fetcher seam. `:profile` is reset
+  # by `Profile.security_credentials/2` from the cache key itself.
+  defp source_opts(opts), do: Keyword.drop(opts, [:ttl_seconds, :fetcher])
 
   defp session_name(profile) do
     profile["role_session_name"] || "aws-elixir-#{System.system_time(:second)}"

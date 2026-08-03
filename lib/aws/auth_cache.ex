@@ -2,33 +2,50 @@ defmodule AWS.AuthCache do
   @moduledoc """
   ETS-backed credential cache for the runtime-resolved sources consumed
   by `AWS.Config`: `:instance_role`, `:ecs_task_role`, and
-  `{:awscli, profile, ttl}`.
+  `{:awscli, profile}`.
 
-  Port of `ExAws.Config.AuthCache`. Keys:
+  Keys:
 
     * `:aws_instance_auth` — EC2 IMDSv2 credentials.
     * `:aws_ecs_auth` — ECS container credentials.
     * `{:awscli, profile_name}` — shared-profile dispatch (static /
       SSO / credential_process / assume_role).
 
-  Cached entries carry an `:expires_at` when the source provides one.
-  Subsequent `get/2` calls return the cached map until the entry
-  enters the refresh window (60s before expiry), after which the
-  fetcher runs again.
+  ## Single-flight
 
-  Negative results are also cached for `@error_ttl_seconds` (5s) to
-  prevent the credential chain from hammering the underlying fetcher:
-  a single `Config.new/1` call resolves four keys (access key id,
-  secret, token, region) and would otherwise trigger four identical
-  fetches per failure (four `aws configure export-credentials` shell
-  outs, four IMDS timeouts, etc.). The TTL is short enough that
-  transient failures recover quickly on the next request.
+  A cached entry is read straight from ETS in the calling process, so
+  the hot path costs one `:ets.lookup/2`.
 
-  `opts[:ttl_seconds]` caps the cache lifetime regardless of
-  `:expires_at` (used by `{:awscli, _, ttl}` sources). The remaining
-  keys in `opts` are forwarded verbatim to the fetcher (`:http`,
-  `:home_dir`, `:endpoint`, `:endpoints`) so caller-supplied overrides
-  reach the HTTP and profile layers without being silently discarded.
+  A *miss* is serialised through the GenServer, which runs at most one
+  fetch per key at a time and replies to every waiter with the same
+  result. This matters because the fetchers mint credentials rather
+  than read them: SSO `GetRoleCredentials` and STS `AssumeRole` return
+  a different key/secret/token triple on every call. Without
+  single-flight, N processes starting concurrently on a cold cache each
+  mint their own triple and overwrite each other in ETS, which can hand
+  a caller one mint's access key alongside another mint's session
+  token — a combination AWS rejects with `InvalidClientTokenId`.
+
+  The fetch itself runs in a task spawned by the GenServer, not in the
+  GenServer loop, so a slow IMDS timeout or SSO round trip never blocks
+  reads or fetches for other keys.
+
+  Failures are not cached: `AWS.Config` resolves a whole credential set
+  in one `get/2`, so a failing source costs one fetch, and the next
+  call gets a fresh attempt rather than a stale error.
+
+  ## Freshness
+
+  An entry is fresh while it is inside **both** windows:
+
+    * the TTL — `opts[:ttl_seconds]`, defaulting to 30 seconds —
+      measured from when it was cached, and
+    * its own `:expires_at`, if the source provided one, less a
+      60-second refresh skew.
+
+  The remaining keys in `opts` are forwarded verbatim to the fetcher
+  (`:http`, `:home_dir`, `:endpoint`, `:endpoints`, `:profile`) so
+  caller-supplied overrides reach the HTTP and profile layers.
   """
 
   use GenServer
@@ -40,7 +57,7 @@ defmodule AWS.AuthCache do
 
   @table :aws_auth_cache
   @refresh_skew_seconds 60
-  @error_ttl_seconds 5
+  @default_ttl_seconds 30
 
   @type key :: :aws_instance_auth | :aws_ecs_auth | {:awscli, String.t()}
   @type creds :: %{optional(atom) => term}
@@ -50,93 +67,86 @@ defmodule AWS.AuthCache do
   end
 
   @doc """
-  Returns the cached credentials for `key`, running the fetcher on
-  miss or when the cached entry is in the refresh window. Returns
-  `{:error, reason}` when the fetcher fails.
+  Returns the cached credentials for `key`, fetching on a miss or when
+  the cached entry has gone stale. Returns `{:error, reason}` when the
+  fetcher fails.
+
+  Concurrent misses on the same key share a single fetch and receive
+  the same credential map.
 
   `opts` is forwarded to the fetcher. `opts[:ttl_seconds]` caps the
-  cache lifetime regardless of `:expires_at`.
+  cache lifetime.
   """
   @spec get(key, keyword) :: {:ok, creds} | {:error, term}
   def get(key, opts) do
-    case lookup(key) do
-      :error ->
-        refresh(key, opts)
-
-      {:ok, entry} ->
-        if fresh?(entry, opts[:ttl_seconds]) do
-          replay(entry)
-        else
-          refresh(key, opts)
-        end
+    case lookup(key, opts) do
+      {:ok, creds} -> {:ok, creds}
+      :error -> GenServer.call(__MODULE__, {:acquire, key, opts}, :infinity)
     end
   end
 
-  defp replay(%{error: reason}), do: {:error, reason}
-  defp replay(%{creds: creds}), do: {:ok, creds}
-
-  @doc "Evicts the entry for `key`."
-  @spec invalidate(key) :: :ok
-  def invalidate(key) do
-    if Process.whereis(__MODULE__) do
-      GenServer.call(__MODULE__, {:delete, key})
-    else
-      :ok
-    end
+  @doc "Drops every cached entry. Intended for tests."
+  @spec clear :: :ok
+  def clear do
+    GenServer.call(__MODULE__, :clear)
   end
 
   # ---
 
-  defp lookup(key) do
-    case :ets.whereis(@table) do
-      :undefined ->
-        :error
-
-      _ ->
-        case :ets.lookup(@table, key) do
-          [{^key, entry}] -> {:ok, entry}
-          [] -> :error
-        end
+  # Returns `{:ok, creds}` only for an entry that is still fresh.
+  # Tolerates a missing table so a `get/2` before the supervisor has
+  # started degrades into a fetch rather than raising.
+  defp lookup(key, opts) do
+    with tid when tid !== :undefined <- :ets.whereis(@table),
+         [{^key, entry}] <- :ets.lookup(tid, key),
+         true <- fresh?(entry, opts[:ttl_seconds]) do
+      {:ok, entry.creds}
+    else
+      _ -> :error
     end
   end
 
-  defp fresh?(%{error: _, cached_at: cached_at}, _ttl_seconds) do
-    System.monotonic_time(:second) - cached_at < @error_ttl_seconds
+  defp fresh?(entry, ttl_seconds) do
+    within_ttl?(entry, ttl_seconds || @default_ttl_seconds) and not near_expiry?(entry)
   end
 
-  defp fresh?(%{expires_at: %DateTime{} = expires_at}, _ttl_seconds) do
-    DateTime.diff(expires_at, DateTime.utc_now(), :second) > @refresh_skew_seconds
-  end
-
-  defp fresh?(%{cached_at: cached_at}, ttl_seconds) when is_integer(ttl_seconds) do
+  defp within_ttl?(%{cached_at: cached_at}, ttl_seconds) do
     System.monotonic_time(:second) - cached_at < ttl_seconds
   end
 
-  defp fresh?(_entry, _ttl_seconds), do: true
+  defp near_expiry?(%{expires_at: %DateTime{} = expires_at}) do
+    DateTime.diff(expires_at, DateTime.utc_now(), :second) <= @refresh_skew_seconds
+  end
 
-  defp refresh(key, opts) do
-    case fetch(key, opts) do
-      {:ok, creds} ->
-        with :ok <- put_creds(key, creds) do
-          {:ok, creds}
-        end
+  defp near_expiry?(_entry), do: false
 
-      {:error, reason} ->
-        log_failure(key, reason)
-        :ok = put_error(key, reason)
-        {:error, reason}
-
-      :skip ->
-        :ok = put_error(key, :unavailable)
-        {:error, :unavailable}
+  # `opts[:fetcher]` is a test seam: it substitutes the provider call so
+  # the cache's concurrency behavior can be exercised without a network.
+  defp fetch(key, opts) do
+    case opts[:fetcher] do
+      fun when is_function(fun, 1) -> fun.(opts)
+      nil -> fetch_from_provider(key, opts)
     end
   end
 
-  # Logs once per cache miss + real failure. `:skip` is intentionally
-  # silent: it just means a provider doesn't apply (no profile, no
-  # IMDS, no ECS env vars). Benign per-source failure shapes are
-  # filtered out so a non-EC2 dev box doesn't spam the log every time
-  # IMDS times out.
+  defp fetch_from_provider(:aws_instance_auth, opts), do: IMDS.resolve(opts)
+  defp fetch_from_provider(:aws_ecs_auth, opts), do: ECS.resolve(opts)
+
+  defp fetch_from_provider({:awscli, profile}, opts),
+    do: Profile.security_credentials(profile, opts)
+
+  defp entry(creds) do
+    %{
+      creds: creds,
+      expires_at: Map.get(creds, :expires_at),
+      cached_at: System.monotonic_time(:second)
+    }
+  end
+
+  # Logs once per real failure. `:skip` is intentionally silent: it just
+  # means a provider doesn't apply (no profile, no IMDS, no ECS env
+  # vars). Benign per-source failure shapes are filtered out so a
+  # non-EC2 dev box doesn't spam the log every time IMDS times out.
   defp log_failure(key, reason) do
     if loggable?(key, reason) do
       Logger.warning(
@@ -151,50 +161,86 @@ defmodule AWS.AuthCache do
   defp loggable?(:aws_instance_auth, :imds_no_role), do: false
   defp loggable?(_key, _reason), do: true
 
-  defp put_creds(key, creds) do
-    entry = %{
-      creds: creds,
-      expires_at: Map.get(creds, :expires_at),
-      cached_at: System.monotonic_time(:second)
-    }
-
-    GenServer.call(__MODULE__, {:put, key, entry})
-  end
-
-  defp put_error(key, reason) do
-    entry = %{
-      error: reason,
-      cached_at: System.monotonic_time(:second)
-    }
-
-    GenServer.call(__MODULE__, {:put, key, entry})
-  end
-
-  defp fetch(:aws_instance_auth, opts), do: IMDS.resolve(opts)
-  defp fetch(:aws_ecs_auth, opts), do: ECS.resolve(opts)
-  defp fetch({:awscli, profile}, opts), do: Profile.security_credentials(profile, opts)
-
   # -- GenServer ---------------------------------------------------------------
 
   @impl GenServer
   def init(:ok) do
-    table =
-      case :ets.whereis(@table) do
-        :undefined -> :ets.new(@table, [:named_table, :protected, :set, read_concurrency: true])
-        tid -> tid
-      end
-
-    {:ok, %{table: table}}
+    table = :ets.new(@table, [:named_table, :protected, :set, read_concurrency: true])
+    {:ok, %{table: table, inflight: %{}}}
   end
 
   @impl GenServer
-  def handle_call({:put, key, entry}, _from, state) do
-    true = :ets.insert(state.table, {key, entry})
+  def handle_call({:acquire, key, opts}, from, state) do
+    # Re-check under the server: another process may have populated the
+    # entry while this call sat in the mailbox, in which case no fetch
+    # is needed at all.
+    case lookup(key, opts) do
+      {:ok, creds} -> {:reply, {:ok, creds}, state}
+      :error -> {:noreply, enqueue(state, key, opts, from)}
+    end
+  end
+
+  def handle_call(:clear, _from, state) do
+    true = :ets.delete_all_objects(state.table)
     {:reply, :ok, state}
   end
 
-  def handle_call({:delete, key}, _from, state) do
-    true = :ets.delete(state.table, key)
-    {:reply, :ok, state}
+  @impl GenServer
+  def handle_info({:fetched, key, result}, state) do
+    {waiters, inflight} = take_waiters(state, key)
+
+    reply =
+      case result do
+        {:ok, creds} ->
+          true = :ets.insert(state.table, {key, entry(creds)})
+          {:ok, creds}
+
+        {:error, reason} ->
+          log_failure(key, reason)
+          {:error, reason}
+
+        :skip ->
+          {:error, :unavailable}
+      end
+
+    for waiter <- waiters, do: GenServer.reply(waiter, reply)
+    {:noreply, %{state | inflight: inflight}}
+  end
+
+  # A fetcher that raised or exited never sent `:fetched`, so the waiters
+  # are still parked here. Normal exits arrive after `:fetched` has already
+  # cleared the entry, which `take_waiters/2` renders a no-op.
+  def handle_info({:DOWN, _ref, :process, pid, reason}, state) do
+    case Enum.find(state.inflight, fn {_key, {owner, _waiters}} -> owner === pid end) do
+      nil ->
+        {:noreply, state}
+
+      {key, {_owner, waiters}} ->
+        log_failure(key, reason)
+
+        for waiter <- waiters,
+            do: GenServer.reply(waiter, {:error, {:credential_fetch_failed, reason}})
+
+        {:noreply, %{state | inflight: Map.delete(state.inflight, key)}}
+    end
+  end
+
+  defp enqueue(state, key, opts, from) do
+    case state.inflight do
+      %{^key => {pid, waiters}} ->
+        %{state | inflight: Map.put(state.inflight, key, {pid, [from | waiters]})}
+
+      _no_fetch_running ->
+        server = self()
+        {pid, _ref} = spawn_monitor(fn -> send(server, {:fetched, key, fetch(key, opts)}) end)
+        %{state | inflight: Map.put(state.inflight, key, {pid, [from]})}
+    end
+  end
+
+  defp take_waiters(state, key) do
+    case Map.pop(state.inflight, key) do
+      {nil, inflight} -> {[], inflight}
+      {{_pid, waiters}, inflight} -> {waiters, inflight}
+    end
   end
 end
