@@ -300,4 +300,89 @@ defmodule AWS.ConformanceTest do
     assert [fun] = parsed.cloud_function_configurations
     assert fun.cloud_function == "arn:aws:lambda:us-east-1:1:function:f"
   end
+
+  test "DescribeInstances mirrors AWS's nesting instead of flattening it" do
+    xml = """
+    <DescribeInstancesResponse><reservationSet><item>
+    <reservationId>r-1</reservationId><ownerId>111</ownerId>
+    <instancesSet><item>
+    <instanceId>i-1</instanceId><imageId>ami-1</imageId><instanceType>t3.micro</instanceType>
+    <privateIpAddress>10.0.0.5</privateIpAddress><ipAddress>1.2.3.4</ipAddress>
+    <dnsName>ec2-1-2-3-4.compute.amazonaws.com</dnsName>
+    <subnetId>subnet-1</subnetId><vpcId>vpc-1</vpcId><launchTime>2026-01-01T00:00:00Z</launchTime>
+    <instanceState><code>16</code><name>running</name></instanceState>
+    <placement><availabilityZone>us-east-1a</availabilityZone><groupName>g</groupName>
+    <tenancy>default</tenancy></placement>
+    <cpuOptions><coreCount>2</coreCount><threadsPerCore>1</threadsPerCore></cpuOptions>
+    <metadataOptions><httpTokens>required</httpTokens><httpPutResponseHopLimit>2</httpPutResponseHopLimit>
+    </metadataOptions>
+    <iamInstanceProfile><arn>arn:aws:iam::111:instance-profile/p</arn><id>AIPA1</id></iamInstanceProfile>
+    <blockDeviceMapping><item><deviceName>/dev/xvda</deviceName>
+    <ebs><volumeId>vol-1</volumeId><status>attached</status></ebs></item></blockDeviceMapping>
+    <networkInterfaceSet><item><networkInterfaceId>eni-1</networkInterfaceId>
+    <association><publicIp>1.2.3.4</publicIp><ipOwnerId>amazon</ipOwnerId></association>
+    <attachment><attachmentId>eni-attach-1</attachmentId><deviceIndex>0</deviceIndex></attachment>
+    <groupSet><item><groupId>sg-9</groupId><groupName>eni-sg</groupName></item></groupSet>
+    </item></networkInterfaceSet>
+    <tagSet><item><key>Name</key><value>web</value></item></tagSet>
+    <groupSet><item><groupId>sg-1</groupId><groupName>web</groupName></item></groupSet>
+    </item></instancesSet>
+    </item></reservationSet></DescribeInstancesResponse>
+    """
+
+    parsed = AWS.EC2.parse_describe_instances_for_test(xml)
+
+    assert [reservation] = parsed.reservation_set
+    assert [instance] = reservation.instances_set
+
+    # Sub-structures stay sub-structures.
+    assert instance.instance_state == %{code: 16, name: "running"}
+    assert instance.placement.group_name == "g"
+    assert instance.placement.availability_zone == "us-east-1a"
+    assert instance.cpu_options.core_count == 2
+    assert instance.cpu_options.threads_per_core == 1
+    assert instance.metadata_options.http_put_response_hop_limit == 2
+    assert instance.iam_instance_profile.arn == "arn:aws:iam::111:instance-profile/p"
+
+    # Member names are AWS's, not the library's.
+    assert instance.ip_address == "1.2.3.4"
+    assert instance.dns_name == "ec2-1-2-3-4.compute.amazonaws.com"
+    refute Map.has_key?(instance, :public_ip_address)
+    refute Map.has_key?(instance, :state)
+    refute Map.has_key?(instance, :placement_group_name)
+
+    # Nested lists keep their own sub-structures.
+    assert [%{device_name: "/dev/xvda", ebs: ebs}] = instance.block_device_mapping
+    assert ebs.volume_id == "vol-1"
+    assert [eni] = instance.network_interface_set
+    assert eni.association.public_ip == "1.2.3.4"
+    assert eni.attachment.device_index == 0
+
+    # `groupSet` resolves per level rather than being renamed differently at each.
+    assert eni.group_set == [%{group_id: "sg-9", group_name: "eni-sg"}]
+    assert instance.group_set == [%{group_id: "sg-1", group_name: "web"}]
+    assert instance.tag_set == [%{key: "Name", value: "web"}]
+  end
+
+  test "an instance-store block device yields a nil :ebs rather than an empty-string snapshot" do
+    xml = """
+    <DescribeImagesResponse><imagesSet><item>
+    <imageId>ami-1</imageId><name>n</name><imageState>available</imageState>
+    <imageOwnerId>111</imageOwnerId><creationDate>2026-01-01T00:00:00Z</creationDate>
+    <stateReason><code>c</code><message>m</message></stateReason>
+    <blockDeviceMapping>
+    <item><deviceName>/dev/xvda</deviceName><ebs><snapshotId>snap-1</snapshotId></ebs></item>
+    <item><deviceName>/dev/sdb</deviceName><virtualName>ephemeral0</virtualName></item>
+    </blockDeviceMapping>
+    </item></imagesSet></DescribeImagesResponse>
+    """
+
+    assert %{images_set: [image]} = AWS.EC2.parse_describe_images_for_test(xml)
+    assert image.image_state == "available"
+    assert image.state_reason == %{code: "c", message: "m"}
+
+    assert [ebs_backed, instance_store] = image.block_device_mapping
+    assert ebs_backed.ebs.snapshot_id == "snap-1"
+    assert instance_store.ebs == nil
+  end
 end

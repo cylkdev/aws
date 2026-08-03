@@ -58,13 +58,16 @@ defmodule AWS.EC2 do
     * `description` - Group description (required by AWS).
     * `vpc_id` - VPC ID in which to create the group.
     * `opts` - Shared options.
+
+  Returns the `CreateSecurityGroup` result as AWS models it: `:group_id` plus
+  the `:tag_set` applied at creation.
   """
   @spec create_security_group(
           name :: String.t(),
           description :: String.t(),
           vpc_id :: String.t(),
           opts :: keyword()
-        ) :: {:ok, %{group_id: String.t()}} | {:error, term()}
+        ) :: {:ok, map()} | {:error, term()}
   def create_security_group(name, description, vpc_id, opts \\ []) do
     if sandbox?(opts) do
       sandbox_create_security_group_response(name, opts)
@@ -83,7 +86,13 @@ defmodule AWS.EC2 do
     "CreateSecurityGroup"
     |> perform(params, opts)
     |> deserialize_response(opts, fn body ->
-      {:ok, %{group_id: xpath(body, ~x"//groupId/text()"s)}}
+      {:ok,
+       xpath(
+         body,
+         ~x"//CreateSecurityGroupResponse"e,
+         group_id: ~x"./groupId/text()"s,
+         tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
+       )}
     end)
   end
 
@@ -97,7 +106,8 @@ defmodule AWS.EC2 do
     * `:filters` - List of `%{name: String.t(), values: [String.t()]}` filters.
   """
   @spec describe_security_groups(opts :: keyword()) ::
-          {:ok, %{security_groups: list(map())}} | {:error, term()}
+          {:ok, %{security_group_info: list(map()), next_token: String.t() | nil}}
+          | {:error, term()}
   def describe_security_groups(opts \\ []) do
     if sandbox?(opts) do
       sandbox_describe_security_groups_response(opts)
@@ -120,11 +130,11 @@ defmodule AWS.EC2 do
         xpath(body, ~x"//securityGroupInfo/item"l,
           group_id: ~x"./groupId/text()"s,
           group_name: ~x"./groupName/text()"s,
-          description: ~x"./groupDescription/text()"s,
+          group_description: ~x"./groupDescription/text()"s,
           vpc_id: ~x"./vpcId/text()"s,
           owner_id: ~x"./ownerId/text()"s,
           security_group_arn: ~x"./securityGroupArn/text()"os,
-          tags: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s],
+          tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s],
           ip_permissions: [
             ~x"./ipPermissions/item"l,
             ip_protocol: ~x"./ipProtocol/text()"s,
@@ -195,14 +205,18 @@ defmodule AWS.EC2 do
           ]
         )
 
-      {:ok, %{security_groups: groups}}
+      {:ok,
+       %{
+         security_group_info: groups,
+         next_token: xpath(body, ~x"//DescribeSecurityGroupsResponse/nextToken/text()"os)
+       }}
     end)
   end
 
   @doc """
   Deletes a security group.
   """
-  @spec delete_security_group(opts :: keyword()) :: {:ok, %{}} | {:error, term()}
+  @spec delete_security_group(opts :: keyword()) :: {:ok, map()} | {:error, term()}
   def delete_security_group(opts \\ []) do
     if sandbox?(opts) do
       sandbox_delete_security_group_response(opts)
@@ -221,7 +235,7 @@ defmodule AWS.EC2 do
 
     "DeleteSecurityGroup"
     |> perform(params, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    |> deserialize_response(opts, fn body -> {:ok, parse_return(body)} end)
   end
 
   @doc """
@@ -235,7 +249,7 @@ defmodule AWS.EC2 do
           group_id :: String.t(),
           ip_permissions :: list(map()),
           opts :: keyword()
-        ) :: {:ok, %{}} | {:error, term()}
+        ) :: {:ok, map()} | {:error, term()}
   def authorize_security_group_ingress(group_id, ip_permissions, opts \\ []) do
     if sandbox?(opts) do
       sandbox_authorize_security_group_ingress_response(group_id, opts)
@@ -251,7 +265,7 @@ defmodule AWS.EC2 do
           group_id :: String.t(),
           ip_permissions :: list(map()),
           opts :: keyword()
-        ) :: {:ok, %{}} | {:error, term()}
+        ) :: {:ok, map()} | {:error, term()}
   def revoke_security_group_ingress(group_id, ip_permissions, opts \\ []) do
     if sandbox?(opts) do
       sandbox_revoke_security_group_ingress_response(group_id, opts)
@@ -267,7 +281,7 @@ defmodule AWS.EC2 do
           group_id :: String.t(),
           ip_permissions :: list(map()),
           opts :: keyword()
-        ) :: {:ok, %{}} | {:error, term()}
+        ) :: {:ok, map()} | {:error, term()}
   def authorize_security_group_egress(group_id, ip_permissions, opts \\ []) do
     if sandbox?(opts) do
       sandbox_authorize_security_group_egress_response(group_id, opts)
@@ -283,7 +297,7 @@ defmodule AWS.EC2 do
           group_id :: String.t(),
           ip_permissions :: list(map()),
           opts :: keyword()
-        ) :: {:ok, %{}} | {:error, term()}
+        ) :: {:ok, map()} | {:error, term()}
   def revoke_security_group_egress(group_id, ip_permissions, opts \\ []) do
     if sandbox?(opts) do
       sandbox_revoke_security_group_egress_response(group_id, opts)
@@ -299,7 +313,87 @@ defmodule AWS.EC2 do
 
     action
     |> perform(params, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    |> deserialize_response(opts, fn body -> {:ok, parse_sg_rule_result(action, body)} end)
+  end
+
+  # Authorize and Revoke return different members, so they are parsed
+  # separately rather than as a union -- a shared parser would have to invent
+  # keys for whichever action did not send them.
+  defp parse_sg_rule_result("Authorize" <> _, body) do
+    body
+    |> parse_return()
+    |> Map.put(:security_group_rule_set, parse_security_group_rule_set(body))
+  end
+
+  defp parse_sg_rule_result("Revoke" <> _, body) do
+    Map.merge(parse_return(body), %{
+      unknown_ip_permission_set: parse_ip_permission_set(body),
+      revoked_security_group_rule_set: parse_security_group_rule_set(body)
+    })
+  end
+
+  defp parse_security_group_rule_set(body) do
+    xpath(body, ~x"//securityGroupRuleSet/item"l,
+      security_group_rule_id: ~x"./securityGroupRuleId/text()"os,
+      group_id: ~x"./groupId/text()"os,
+      group_owner_id: ~x"./groupOwnerId/text()"os,
+      is_egress: ~x"./isEgress/text()"os,
+      ip_protocol: ~x"./ipProtocol/text()"os,
+      from_port: ~x"./fromPort/text()"oi,
+      to_port: ~x"./toPort/text()"oi,
+      cidr_ipv4: ~x"./cidrIpv4/text()"os,
+      cidr_ipv6: ~x"./cidrIpv6/text()"os,
+      prefix_list_id: ~x"./prefixListId/text()"os,
+      referenced_group_info: [
+        ~x"./referencedGroupInfo"o,
+        group_id: ~x"./groupId/text()"os,
+        peering_status: ~x"./peeringStatus/text()"os,
+        user_id: ~x"./userId/text()"os,
+        vpc_id: ~x"./vpcId/text()"os,
+        vpc_peering_connection_id: ~x"./vpcPeeringConnectionId/text()"os
+      ],
+      description: ~x"./description/text()"os,
+      tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s],
+      security_group_rule_arn: ~x"./securityGroupRuleArn/text()"os
+    )
+  end
+
+  defp parse_ip_permission_set(body) do
+    xpath(body, ~x"//unknownIpPermissionSet/item"l,
+      ip_protocol: ~x"./ipProtocol/text()"os,
+      from_port: ~x"./fromPort/text()"oi,
+      to_port: ~x"./toPort/text()"oi,
+      ip_ranges: [
+        ~x"./ipRanges/item"l,
+        cidr_ip: ~x"./cidrIp/text()"s,
+        description: ~x"./description/text()"os
+      ],
+      ipv6_ranges: [
+        ~x"./ipv6Ranges/item"l,
+        cidr_ipv6: ~x"./cidrIpv6/text()"s,
+        description: ~x"./description/text()"os
+      ],
+      prefix_list_ids: [
+        ~x"./prefixListIds/item"l,
+        prefix_list_id: ~x"./prefixListId/text()"s,
+        description: ~x"./description/text()"os
+      ],
+      groups: [
+        ~x"./groups/item"l,
+        group_id: ~x"./groupId/text()"os,
+        group_name: ~x"./groupName/text()"os,
+        user_id: ~x"./userId/text()"os,
+        vpc_id: ~x"./vpcId/text()"os,
+        vpc_peering_connection_id: ~x"./vpcPeeringConnectionId/text()"os,
+        peering_status: ~x"./peeringStatus/text()"os,
+        description: ~x"./description/text()"os
+      ]
+    )
+  end
+
+  # `<return>` is a plain boolean on every mutating EC2 operation.
+  defp parse_return(body) do
+    %{return: xpath(body, ~x"//return/text()"os) == "true"}
   end
 
   # ---------------------------------------------------------------------------
@@ -315,7 +409,7 @@ defmodule AWS.EC2 do
     * `:filters` - List of `%{name:, values:}` filters.
   """
   @spec describe_vpcs(opts :: keyword()) ::
-          {:ok, %{vpcs: list(map())}} | {:error, term()}
+          {:ok, %{vpc_set: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def describe_vpcs(opts \\ []) do
     if sandbox?(opts) do
       sandbox_describe_vpcs_response(opts)
@@ -346,24 +440,38 @@ defmodule AWS.EC2 do
             ~x"./cidrBlockAssociationSet/item"l,
             cidr_block: ~x"./cidrBlock/text()"s,
             association_id: ~x"./associationId/text()"s,
-            state: ~x"./cidrBlockState/state/text()"s,
-            status_message: ~x"./cidrBlockState/statusMessage/text()"os
+            cidr_block_state: [
+              ~x"./cidrBlockState"o,
+              state: ~x"./state/text()"s,
+              status_message: ~x"./statusMessage/text()"os
+            ]
           ],
           ipv6_cidr_block_association_set: [
             ~x"./ipv6CidrBlockAssociationSet/item"l,
             ipv6_cidr_block: ~x"./ipv6CidrBlock/text()"s,
             association_id: ~x"./associationId/text()"s,
-            state: ~x"./ipv6CidrBlockState/state/text()"s,
-            status_message: ~x"./ipv6CidrBlockState/statusMessage/text()"os,
+            ipv6_cidr_block_state: [
+              ~x"./ipv6CidrBlockState"o,
+              state: ~x"./state/text()"s,
+              status_message: ~x"./statusMessage/text()"os
+            ],
             ipv6_pool: ~x"./ipv6Pool/text()"os,
             ipv6_address_attribute: ~x"./ipv6AddressAttribute/text()"os,
             ip_source: ~x"./ipSource/text()"os,
             network_border_group: ~x"./networkBorderGroup/text()"os
           ],
-          tags: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
+          tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s],
+          block_public_access_states: [
+            ~x"./blockPublicAccessStates"o,
+            internet_gateway_block_mode: ~x"./internetGatewayBlockMode/text()"os
+          ]
         )
 
-      {:ok, %{vpcs: Enum.map(vpcs, &coerce_is_default/1)}}
+      {:ok,
+       %{
+         vpc_set: Enum.map(vpcs, &coerce_is_default/1),
+         next_token: xpath(body, ~x"//DescribeVpcsResponse/nextToken/text()"os)
+       }}
     end)
   end
 
@@ -380,7 +488,7 @@ defmodule AWS.EC2 do
     * `:filters` - List of `%{name:, values:}` filters.
   """
   @spec describe_subnets(opts :: keyword()) ::
-          {:ok, %{subnets: list(map())}} | {:error, term()}
+          {:ok, %{subnet_set: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def describe_subnets(opts \\ []) do
     if sandbox?(opts) do
       sandbox_describe_subnets_response(opts)
@@ -427,15 +535,22 @@ defmodule AWS.EC2 do
             association_id: ~x"./associationId/text()"s,
             # The wire element is ipv6CidrBlockState even though the shape is
             # named SubnetCidrBlockState.
-            state: ~x"./ipv6CidrBlockState/state/text()"s,
-            status_message: ~x"./ipv6CidrBlockState/statusMessage/text()"os,
+            ipv6_cidr_block_state: [
+              ~x"./ipv6CidrBlockState"o,
+              state: ~x"./state/text()"s,
+              status_message: ~x"./statusMessage/text()"os
+            ],
             ipv6_address_attribute: ~x"./ipv6AddressAttribute/text()"os,
             ip_source: ~x"./ipSource/text()"os
           ],
-          tags: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
+          tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
         )
 
-      {:ok, %{subnets: subnets}}
+      {:ok,
+       %{
+         subnet_set: subnets,
+         next_token: xpath(body, ~x"//DescribeSubnetsResponse/nextToken/text()"os)
+       }}
     end)
   end
 
@@ -446,9 +561,10 @@ defmodule AWS.EC2 do
   @doc """
   Describes one or more instances, grouped by reservation.
 
-  Returns `%{reservations: [...]}` where each reservation contains a list of
-  `:instances`. Each instance includes its `:tags` and `:security_groups`
-  (parsed from the instance-level `groupSet`).
+  Returns `%{reservation_set: [...], next_token: ...}`, mirroring AWS's
+  `DescribeInstances` response: each reservation carries an `:instances_set`,
+  and each instance keeps AWS's own nesting (`:instance_state`, `:placement`,
+  `:cpu_options`, `:metadata_options`, `:tag_set`, `:group_set`, ...).
 
   ## Options
 
@@ -456,7 +572,8 @@ defmodule AWS.EC2 do
     * `:filters` - List of `%{name:, values:}` filters.
   """
   @spec describe_instances(opts :: keyword()) ::
-          {:ok, %{reservations: list(map())}} | {:error, term()}
+          {:ok, %{reservation_set: list(map()), next_token: String.t() | nil}}
+          | {:error, term()}
   def describe_instances(opts \\ []) do
     if sandbox?(opts) do
       sandbox_describe_instances_response(opts)
@@ -473,173 +590,221 @@ defmodule AWS.EC2 do
 
     "DescribeInstances"
     |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
-      reservations =
-        xpath(body, ~x"//reservationSet/item"l,
-          reservation_id: ~x"./reservationId/text()"s,
-          owner_id: ~x"./ownerId/text()"s,
-          requester_id: ~x"./requesterId/text()"os,
-          instances: [
-            ~x"./instancesSet/item"l,
-            instance_id: ~x"./instanceId/text()"s,
-            image_id: ~x"./imageId/text()"s,
-            instance_type: ~x"./instanceType/text()"s,
-            state: ~x"./instanceState/name/text()"s,
-            private_ip_address: ~x"./privateIpAddress/text()"s,
-            public_ip_address: ~x"./ipAddress/text()"s,
-            subnet_id: ~x"./subnetId/text()"s,
-            vpc_id: ~x"./vpcId/text()"s,
-            availability_zone: ~x"./placement/availabilityZone/text()"s,
-            launch_time: ~x"./launchTime/text()"s,
-            state_code: ~x"./instanceState/code/text()"oi,
+    |> deserialize_response(opts, fn body -> {:ok, parse_describe_instances(body)} end)
+  end
+
+  @doc false
+  def parse_describe_instances_for_test(xml), do: parse_describe_instances(xml)
+
+  defp parse_describe_instances(body) do
+    reservations =
+      xpath(body, ~x"//reservationSet/item"l,
+        reservation_id: ~x"./reservationId/text()"s,
+        owner_id: ~x"./ownerId/text()"s,
+        requester_id: ~x"./requesterId/text()"os,
+        instances_set: [
+          ~x"./instancesSet/item"l,
+          instance_id: ~x"./instanceId/text()"s,
+          image_id: ~x"./imageId/text()"s,
+          instance_type: ~x"./instanceType/text()"s,
+          instance_state: [
+            ~x"./instanceState"o,
             # Required: No on every EC2 member, so no integer is ever cast
             # unconditionally in this module.
-            ami_launch_index: ~x"./amiLaunchIndex/text()"oi,
-            private_dns_name: ~x"./privateDnsName/text()"os,
-            public_dns_name: ~x"./dnsName/text()"os,
-            reason: ~x"./reason/text()"os,
-            key_name: ~x"./keyName/text()"os,
-            source_dest_check: ~x"./sourceDestCheck/text()"os,
-            architecture: ~x"./architecture/text()"os,
-            root_device_type: ~x"./rootDeviceType/text()"os,
-            root_device_name: ~x"./rootDeviceName/text()"os,
-            virtualization_type: ~x"./virtualizationType/text()"os,
-            client_token: ~x"./clientToken/text()"os,
-            hypervisor: ~x"./hypervisor/text()"os,
-            ebs_optimized: ~x"./ebsOptimized/text()"os,
-            kernel_id: ~x"./kernelId/text()"os,
-            ramdisk_id: ~x"./ramdiskId/text()"os,
-            platform: ~x"./platform/text()"os,
-            platform_details: ~x"./platformDetails/text()"os,
-            usage_operation: ~x"./usageOperation/text()"os,
-            usage_operation_update_time: ~x"./usageOperationUpdateTime/text()"os,
-            sriov_net_support: ~x"./sriovNetSupport/text()"os,
-            spot_instance_request_id: ~x"./spotInstanceRequestId/text()"os,
-            instance_lifecycle: ~x"./instanceLifecycle/text()"os,
-            capacity_reservation_id: ~x"./capacityReservationId/text()"os,
-            capacity_block_id: ~x"./capacityBlockId/text()"os,
-            boot_mode: ~x"./bootMode/text()"os,
-            current_instance_boot_mode: ~x"./currentInstanceBootMode/text()"os,
-            ipv6_address: ~x"./ipv6Address/text()"os,
-            tpm_support: ~x"./tpmSupport/text()"os,
-            outpost_arn: ~x"./outpostArn/text()"os,
-            monitoring_state: ~x"./monitoring/state/text()"os,
-            state_reason_code: ~x"./stateReason/code/text()"os,
-            state_reason_message: ~x"./stateReason/message/text()"os,
-            iam_instance_profile_arn: ~x"./iamInstanceProfile/arn/text()"os,
-            iam_instance_profile_id: ~x"./iamInstanceProfile/id/text()"os,
-            placement_group_name: ~x"./placement/groupName/text()"os,
-            placement_group_id: ~x"./placement/groupId/text()"os,
-            placement_tenancy: ~x"./placement/tenancy/text()"os,
-            placement_affinity: ~x"./placement/affinity/text()"os,
-            placement_host_id: ~x"./placement/hostId/text()"os,
-            placement_host_resource_group_arn: ~x"./placement/hostResourceGroupArn/text()"os,
-            placement_availability_zone_id: ~x"./placement/availabilityZoneId/text()"os,
-            placement_spread_domain: ~x"./placement/spreadDomain/text()"os,
-            placement_partition_number: ~x"./placement/partitionNumber/text()"oi,
-            cpu_core_count: ~x"./cpuOptions/coreCount/text()"oi,
-            cpu_threads_per_core: ~x"./cpuOptions/threadsPerCore/text()"oi,
-            cpu_amd_sev_snp: ~x"./cpuOptions/amdSevSnp/text()"os,
-            # The docs' Example 9 renders this block in PascalCase; a live
-            # DescribeInstances response uses lowerCamel like every other
-            # structure, so the example is a doc typo.
-            metadata_http_tokens: ~x"./metadataOptions/httpTokens/text()"os,
-            metadata_http_endpoint: ~x"./metadataOptions/httpEndpoint/text()"os,
-            metadata_http_protocol_ipv6: ~x"./metadataOptions/httpProtocolIpv6/text()"os,
-            metadata_instance_metadata_tags: ~x"./metadataOptions/instanceMetadataTags/text()"os,
-            metadata_state: ~x"./metadataOptions/state/text()"os,
-            metadata_http_put_response_hop_limit:
-              ~x"./metadataOptions/httpPutResponseHopLimit/text()"oi,
-            enclave_enabled: ~x"./enclaveOptions/enabled/text()"os,
-            hibernation_configured: ~x"./hibernationOptions/configured/text()"os,
-            maintenance_auto_recovery: ~x"./maintenanceOptions/autoRecovery/text()"os,
-            maintenance_reboot_migration: ~x"./maintenanceOptions/rebootMigration/text()"os,
-            private_dns_hostname_type: ~x"./privateDnsNameOptions/hostnameType/text()"os,
-            private_dns_enable_a_record:
-              ~x"./privateDnsNameOptions/enableResourceNameDnsARecord/text()"os,
-            private_dns_enable_aaaa_record:
-              ~x"./privateDnsNameOptions/enableResourceNameDnsAAAARecord/text()"os,
-            capacity_reservation_preference:
-              ~x"./capacityReservationSpecification/capacityReservationPreference/text()"os,
-            product_codes: [
-              ~x"./productCodes/item"l,
-              product_code: ~x"./productCode/text()"s,
-              type: ~x"./type/text()"os
-            ],
-            block_device_mappings: [
-              ~x"./blockDeviceMapping/item"l,
-              device_name: ~x"./deviceName/text()"s,
-              volume_id: ~x"./ebs/volumeId/text()"os,
-              status: ~x"./ebs/status/text()"os,
-              attach_time: ~x"./ebs/attachTime/text()"os,
-              delete_on_termination: ~x"./ebs/deleteOnTermination/text()"os,
-              volume_owner_id: ~x"./ebs/volumeOwnerId/text()"os,
-              associated_resource: ~x"./ebs/associatedResource/text()"os,
-              ebs_card_index: ~x"./ebs/ebsCardIndex/text()"oi
-            ],
-            network_interfaces: [
-              ~x"./networkInterfaceSet/item"l,
-              network_interface_id: ~x"./networkInterfaceId/text()"os,
-              subnet_id: ~x"./subnetId/text()"os,
-              vpc_id: ~x"./vpcId/text()"os,
-              description: ~x"./description/text()"os,
-              owner_id: ~x"./ownerId/text()"os,
+            code: ~x"./code/text()"oi,
+            name: ~x"./name/text()"os
+          ],
+          private_ip_address: ~x"./privateIpAddress/text()"s,
+          ip_address: ~x"./ipAddress/text()"s,
+          subnet_id: ~x"./subnetId/text()"s,
+          vpc_id: ~x"./vpcId/text()"s,
+          launch_time: ~x"./launchTime/text()"s,
+          ami_launch_index: ~x"./amiLaunchIndex/text()"oi,
+          private_dns_name: ~x"./privateDnsName/text()"os,
+          dns_name: ~x"./dnsName/text()"os,
+          reason: ~x"./reason/text()"os,
+          key_name: ~x"./keyName/text()"os,
+          source_dest_check: ~x"./sourceDestCheck/text()"os,
+          architecture: ~x"./architecture/text()"os,
+          root_device_type: ~x"./rootDeviceType/text()"os,
+          root_device_name: ~x"./rootDeviceName/text()"os,
+          virtualization_type: ~x"./virtualizationType/text()"os,
+          client_token: ~x"./clientToken/text()"os,
+          hypervisor: ~x"./hypervisor/text()"os,
+          ebs_optimized: ~x"./ebsOptimized/text()"os,
+          kernel_id: ~x"./kernelId/text()"os,
+          ramdisk_id: ~x"./ramdiskId/text()"os,
+          platform: ~x"./platform/text()"os,
+          platform_details: ~x"./platformDetails/text()"os,
+          usage_operation: ~x"./usageOperation/text()"os,
+          usage_operation_update_time: ~x"./usageOperationUpdateTime/text()"os,
+          sriov_net_support: ~x"./sriovNetSupport/text()"os,
+          spot_instance_request_id: ~x"./spotInstanceRequestId/text()"os,
+          instance_lifecycle: ~x"./instanceLifecycle/text()"os,
+          capacity_reservation_id: ~x"./capacityReservationId/text()"os,
+          capacity_block_id: ~x"./capacityBlockId/text()"os,
+          boot_mode: ~x"./bootMode/text()"os,
+          current_instance_boot_mode: ~x"./currentInstanceBootMode/text()"os,
+          ipv6_address: ~x"./ipv6Address/text()"os,
+          tpm_support: ~x"./tpmSupport/text()"os,
+          outpost_arn: ~x"./outpostArn/text()"os,
+          monitoring: [~x"./monitoring"o, state: ~x"./state/text()"os],
+          state_reason: [
+            ~x"./stateReason"o,
+            code: ~x"./code/text()"os,
+            message: ~x"./message/text()"os
+          ],
+          iam_instance_profile: [
+            ~x"./iamInstanceProfile"o,
+            arn: ~x"./arn/text()"os,
+            id: ~x"./id/text()"os
+          ],
+          placement: [
+            ~x"./placement"o,
+            availability_zone: ~x"./availabilityZone/text()"os,
+            group_name: ~x"./groupName/text()"os,
+            group_id: ~x"./groupId/text()"os,
+            tenancy: ~x"./tenancy/text()"os,
+            affinity: ~x"./affinity/text()"os,
+            host_id: ~x"./hostId/text()"os,
+            host_resource_group_arn: ~x"./hostResourceGroupArn/text()"os,
+            availability_zone_id: ~x"./availabilityZoneId/text()"os,
+            spread_domain: ~x"./spreadDomain/text()"os,
+            partition_number: ~x"./partitionNumber/text()"oi
+          ],
+          cpu_options: [
+            ~x"./cpuOptions"o,
+            core_count: ~x"./coreCount/text()"oi,
+            threads_per_core: ~x"./threadsPerCore/text()"oi,
+            amd_sev_snp: ~x"./amdSevSnp/text()"os
+          ],
+          # The docs' Example 9 renders this block in PascalCase; a live
+          # DescribeInstances response uses lowerCamel like every other
+          # structure, so the example is a doc typo.
+          metadata_options: [
+            ~x"./metadataOptions"o,
+            http_tokens: ~x"./httpTokens/text()"os,
+            http_endpoint: ~x"./httpEndpoint/text()"os,
+            http_protocol_ipv6: ~x"./httpProtocolIpv6/text()"os,
+            instance_metadata_tags: ~x"./instanceMetadataTags/text()"os,
+            state: ~x"./state/text()"os,
+            http_put_response_hop_limit: ~x"./httpPutResponseHopLimit/text()"oi
+          ],
+          enclave_options: [~x"./enclaveOptions"o, enabled: ~x"./enabled/text()"os],
+          hibernation_options: [
+            ~x"./hibernationOptions"o,
+            configured: ~x"./configured/text()"os
+          ],
+          maintenance_options: [
+            ~x"./maintenanceOptions"o,
+            auto_recovery: ~x"./autoRecovery/text()"os,
+            reboot_migration: ~x"./rebootMigration/text()"os
+          ],
+          private_dns_name_options: [
+            ~x"./privateDnsNameOptions"o,
+            hostname_type: ~x"./hostnameType/text()"os,
+            enable_resource_name_dns_a_record: ~x"./enableResourceNameDnsARecord/text()"os,
+            enable_resource_name_dns_aaaa_record: ~x"./enableResourceNameDnsAAAARecord/text()"os
+          ],
+          capacity_reservation_specification: [
+            ~x"./capacityReservationSpecification"o,
+            capacity_reservation_preference: ~x"./capacityReservationPreference/text()"os,
+            capacity_reservation_target: [
+              ~x"./capacityReservationTarget"o,
+              capacity_reservation_id: ~x"./capacityReservationId/text()"os,
+              capacity_reservation_resource_group_arn:
+                ~x"./capacityReservationResourceGroupArn/text()"os
+            ]
+          ],
+          product_codes: [
+            ~x"./productCodes/item"l,
+            product_code: ~x"./productCode/text()"s,
+            type: ~x"./type/text()"os
+          ],
+          block_device_mapping: [
+            ~x"./blockDeviceMapping/item"l,
+            device_name: ~x"./deviceName/text()"s,
+            ebs: [
+              ~x"./ebs"o,
+              volume_id: ~x"./volumeId/text()"os,
               status: ~x"./status/text()"os,
-              mac_address: ~x"./macAddress/text()"os,
-              private_ip_address: ~x"./privateIpAddress/text()"os,
-              private_dns_name: ~x"./privateDnsName/text()"os,
-              source_dest_check: ~x"./sourceDestCheck/text()"os,
-              interface_type: ~x"./interfaceType/text()"os,
-              association_public_ip: ~x"./association/publicIp/text()"os,
-              association_public_dns_name: ~x"./association/publicDnsName/text()"os,
-              association_ip_owner_id: ~x"./association/ipOwnerId/text()"os,
-              association_carrier_ip: ~x"./association/carrierIp/text()"os,
-              association_customer_owned_ip: ~x"./association/customerOwnedIp/text()"os,
-              attachment_id: ~x"./attachment/attachmentId/text()"os,
-              attachment_status: ~x"./attachment/status/text()"os,
-              attachment_attach_time: ~x"./attachment/attachTime/text()"os,
-              attachment_delete_on_termination: ~x"./attachment/deleteOnTermination/text()"os,
-              attachment_device_index: ~x"./attachment/deviceIndex/text()"oi,
-              attachment_network_card_index: ~x"./attachment/networkCardIndex/text()"oi,
-              attachment_ena_queue_count: ~x"./attachment/enaQueueCount/text()"oi,
-              security_groups: [
-                ~x"./groupSet/item"l,
-                group_id: ~x"./groupId/text()"s,
-                group_name: ~x"./groupName/text()"s
-              ],
-              private_ip_addresses: [
-                ~x"./privateIpAddressesSet/item"l,
-                private_ip_address: ~x"./privateIpAddress/text()"os,
-                private_dns_name: ~x"./privateDnsName/text()"os,
-                primary: ~x"./primary/text()"os,
-                association_public_ip: ~x"./association/publicIp/text()"os,
-                association_ip_owner_id: ~x"./association/ipOwnerId/text()"os
-              ],
-              ipv6_addresses: [
-                ~x"./ipv6AddressesSet/item"l,
-                ipv6_address: ~x"./ipv6Address/text()"os,
-                is_primary_ipv6: ~x"./isPrimaryIpv6/text()"os
-              ]
+              attach_time: ~x"./attachTime/text()"os,
+              delete_on_termination: ~x"./deleteOnTermination/text()"os,
+              volume_owner_id: ~x"./volumeOwnerId/text()"os,
+              associated_resource: ~x"./associatedResource/text()"os,
+              ebs_card_index: ~x"./ebsCardIndex/text()"oi
+            ]
+          ],
+          network_interface_set: [
+            ~x"./networkInterfaceSet/item"l,
+            network_interface_id: ~x"./networkInterfaceId/text()"os,
+            subnet_id: ~x"./subnetId/text()"os,
+            vpc_id: ~x"./vpcId/text()"os,
+            description: ~x"./description/text()"os,
+            owner_id: ~x"./ownerId/text()"os,
+            status: ~x"./status/text()"os,
+            mac_address: ~x"./macAddress/text()"os,
+            private_ip_address: ~x"./privateIpAddress/text()"os,
+            private_dns_name: ~x"./privateDnsName/text()"os,
+            source_dest_check: ~x"./sourceDestCheck/text()"os,
+            interface_type: ~x"./interfaceType/text()"os,
+            association: [
+              ~x"./association"o,
+              public_ip: ~x"./publicIp/text()"os,
+              public_dns_name: ~x"./publicDnsName/text()"os,
+              ip_owner_id: ~x"./ipOwnerId/text()"os,
+              carrier_ip: ~x"./carrierIp/text()"os,
+              customer_owned_ip: ~x"./customerOwnedIp/text()"os
             ],
-            tags: [
-              ~x"./tagSet/item"l,
-              key: ~x"./key/text()"s,
-              value: ~x"./value/text()"s
+            attachment: [
+              ~x"./attachment"o,
+              attachment_id: ~x"./attachmentId/text()"os,
+              status: ~x"./status/text()"os,
+              attach_time: ~x"./attachTime/text()"os,
+              delete_on_termination: ~x"./deleteOnTermination/text()"os,
+              device_index: ~x"./deviceIndex/text()"oi,
+              network_card_index: ~x"./networkCardIndex/text()"oi,
+              ena_queue_count: ~x"./enaQueueCount/text()"oi
             ],
-            security_groups: [
+            group_set: [
               ~x"./groupSet/item"l,
               group_id: ~x"./groupId/text()"s,
               group_name: ~x"./groupName/text()"s
+            ],
+            private_ip_addresses_set: [
+              ~x"./privateIpAddressesSet/item"l,
+              private_ip_address: ~x"./privateIpAddress/text()"os,
+              private_dns_name: ~x"./privateDnsName/text()"os,
+              primary: ~x"./primary/text()"os,
+              association: [
+                ~x"./association"o,
+                public_ip: ~x"./publicIp/text()"os,
+                ip_owner_id: ~x"./ipOwnerId/text()"os
+              ]
+            ],
+            ipv6_addresses_set: [
+              ~x"./ipv6AddressesSet/item"l,
+              ipv6_address: ~x"./ipv6Address/text()"os,
+              is_primary_ipv6: ~x"./isPrimaryIpv6/text()"os
             ]
+          ],
+          tag_set: [
+            ~x"./tagSet/item"l,
+            key: ~x"./key/text()"s,
+            value: ~x"./value/text()"s
+          ],
+          group_set: [
+            ~x"./groupSet/item"l,
+            group_id: ~x"./groupId/text()"s,
+            group_name: ~x"./groupName/text()"s
           ]
-        )
+        ]
+      )
 
-      {:ok,
-       %{
-         reservations: reservations,
-         next_token: xpath(body, ~x"//DescribeInstancesResponse/nextToken/text()"os)
-       }}
-    end)
+    %{
+      reservation_set: reservations,
+      next_token: xpath(body, ~x"//DescribeInstancesResponse/nextToken/text()"os)
+    }
   end
 
   # ---------------------------------------------------------------------------
@@ -649,9 +814,10 @@ defmodule AWS.EC2 do
   @doc """
   Describes AMIs.
 
-  Returns `%{images: [...]}`. Each image includes its `:tags` and
-  `:block_device_mappings`; a mapping's `:snapshot_id` is `nil` for
-  instance-store devices that have no backing EBS snapshot.
+  Returns `%{images_set: [...], next_token: ...}`. Each image keeps AWS's
+  nesting: `:tag_set`, `:state_reason`, and `:block_device_mapping` whose
+  entries carry a nested `:ebs` (nil for instance-store devices, which send
+  no `<ebs>` element at all).
 
   ## Options
 
@@ -668,7 +834,7 @@ defmodule AWS.EC2 do
       )
   """
   @spec describe_images(opts :: keyword()) ::
-          {:ok, %{images: list(map())}} | {:error, term()}
+          {:ok, %{images_set: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def describe_images(opts \\ []) do
     if sandbox?(opts) do
       sandbox_describe_images_response(opts)
@@ -686,92 +852,95 @@ defmodule AWS.EC2 do
 
     "DescribeImages"
     |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
-      images =
-        xpath(body, ~x"//imagesSet/item"l,
-          image_id: ~x"./imageId/text()"s,
-          name: ~x"./name/text()"s,
-          state: ~x"./imageState/text()"s,
-          owner_id: ~x"./imageOwnerId/text()"s,
-          creation_date: ~x"./creationDate/text()"s,
-          tags: [
-            ~x"./tagSet/item"l,
-            key: ~x"./key/text()"s,
-            value: ~x"./value/text()"s
-          ],
-          image_location: ~x"./imageLocation/text()"os,
-          image_type: ~x"./imageType/text()"os,
-          # Examples 2 and 3 and the current Contents use isPublic; Example 1
-          # uses the stale `public`. Read the documented name.
-          is_public: ~x"./isPublic/text()"os,
-          image_owner_alias: ~x"./imageOwnerAlias/text()"os,
-          description: ~x"./description/text()"os,
-          architecture: ~x"./architecture/text()"os,
-          # `platform` is a Windows-only flag; platformDetails is the general
-          # field.
-          platform: ~x"./platform/text()"os,
-          platform_details: ~x"./platformDetails/text()"os,
-          usage_operation: ~x"./usageOperation/text()"os,
-          ena_support: ~x"./enaSupport/text()"os,
-          sriov_net_support: ~x"./sriovNetSupport/text()"os,
-          kernel_id: ~x"./kernelId/text()"os,
-          ramdisk_id: ~x"./ramdiskId/text()"os,
-          root_device_type: ~x"./rootDeviceType/text()"os,
-          root_device_name: ~x"./rootDeviceName/text()"os,
-          virtualization_type: ~x"./virtualizationType/text()"os,
-          hypervisor: ~x"./hypervisor/text()"os,
-          boot_mode: ~x"./bootMode/text()"os,
-          tpm_support: ~x"./tpmSupport/text()"os,
-          imds_support: ~x"./imdsSupport/text()"os,
-          deprecation_time: ~x"./deprecationTime/text()"os,
-          deregistration_protection: ~x"./deregistrationProtection/text()"os,
-          last_launched_time: ~x"./lastLaunchedTime/text()"os,
-          source_image_id: ~x"./sourceImageId/text()"os,
-          source_image_region: ~x"./sourceImageRegion/text()"os,
-          source_instance_id: ~x"./sourceInstanceId/text()"os,
-          public_ssm_parameter_name: ~x"./publicSsmParameterName/text()"os,
-          free_tier_eligible: ~x"./freeTierEligible/text()"os,
-          image_allowed: ~x"./imageAllowed/text()"os,
-          state_reason_code: ~x"./stateReason/code/text()"os,
-          state_reason_message: ~x"./stateReason/message/text()"os,
-          product_codes: [
-            ~x"./productCodes/item"l,
-            product_code: ~x"./productCode/text()"s,
-            type: ~x"./type/text()"os
-          ],
-          block_device_mappings: [
-            ~x"./blockDeviceMapping/item"l,
-            device_name: ~x"./deviceName/text()"s,
-            virtual_name: ~x"./virtualName/text()"os,
-            no_device: ~x"./noDevice/text()"os,
-            snapshot_id: ~x"./ebs/snapshotId/text()"s,
-            # Every EBS integer is Required: No -- never a plain cast.
-            volume_size: ~x"./ebs/volumeSize/text()"oi,
-            iops: ~x"./ebs/iops/text()"oi,
-            throughput: ~x"./ebs/throughput/text()"oi,
-            ebs_card_index: ~x"./ebs/ebsCardIndex/text()"oi,
-            volume_type: ~x"./ebs/volumeType/text()"os,
-            delete_on_termination: ~x"./ebs/deleteOnTermination/text()"os,
-            encrypted: ~x"./ebs/encrypted/text()"os,
-            outpost_arn: ~x"./ebs/outpostArn/text()"os
-          ]
-        )
-
-      {:ok, %{images: Enum.map(images, &coerce_image/1)}}
-    end)
+    |> deserialize_response(opts, fn body -> {:ok, parse_describe_images(body)} end)
   end
 
-  # Instance-store devices carry no <ebs> child, so SweetXml yields ""
-  # where there is no snapshot to delete.
-  defp coerce_image(image) do
-    Map.update!(image, :block_device_mappings, fn mappings ->
-      Enum.map(mappings, fn mapping ->
-        Map.update!(mapping, :snapshot_id, fn
-          "" -> nil
-          id -> id
-        end)
-      end)
-    end)
+  @doc false
+  def parse_describe_images_for_test(xml), do: parse_describe_images(xml)
+
+  defp parse_describe_images(body) do
+    images =
+      xpath(body, ~x"//imagesSet/item"l,
+        image_id: ~x"./imageId/text()"s,
+        name: ~x"./name/text()"s,
+        image_state: ~x"./imageState/text()"s,
+        image_owner_id: ~x"./imageOwnerId/text()"s,
+        creation_date: ~x"./creationDate/text()"s,
+        tag_set: [
+          ~x"./tagSet/item"l,
+          key: ~x"./key/text()"s,
+          value: ~x"./value/text()"s
+        ],
+        image_location: ~x"./imageLocation/text()"os,
+        image_type: ~x"./imageType/text()"os,
+        # Examples 2 and 3 and the current Contents use isPublic; Example 1
+        # uses the stale `public`. Read the documented name.
+        is_public: ~x"./isPublic/text()"os,
+        image_owner_alias: ~x"./imageOwnerAlias/text()"os,
+        description: ~x"./description/text()"os,
+        architecture: ~x"./architecture/text()"os,
+        # `platform` is a Windows-only flag; platformDetails is the general
+        # field.
+        platform: ~x"./platform/text()"os,
+        platform_details: ~x"./platformDetails/text()"os,
+        usage_operation: ~x"./usageOperation/text()"os,
+        ena_support: ~x"./enaSupport/text()"os,
+        sriov_net_support: ~x"./sriovNetSupport/text()"os,
+        kernel_id: ~x"./kernelId/text()"os,
+        ramdisk_id: ~x"./ramdiskId/text()"os,
+        root_device_type: ~x"./rootDeviceType/text()"os,
+        root_device_name: ~x"./rootDeviceName/text()"os,
+        virtualization_type: ~x"./virtualizationType/text()"os,
+        hypervisor: ~x"./hypervisor/text()"os,
+        boot_mode: ~x"./bootMode/text()"os,
+        tpm_support: ~x"./tpmSupport/text()"os,
+        imds_support: ~x"./imdsSupport/text()"os,
+        deprecation_time: ~x"./deprecationTime/text()"os,
+        deregistration_protection: ~x"./deregistrationProtection/text()"os,
+        last_launched_time: ~x"./lastLaunchedTime/text()"os,
+        source_image_id: ~x"./sourceImageId/text()"os,
+        source_image_region: ~x"./sourceImageRegion/text()"os,
+        source_instance_id: ~x"./sourceInstanceId/text()"os,
+        public_ssm_parameter_name: ~x"./publicSsmParameterName/text()"os,
+        free_tier_eligible: ~x"./freeTierEligible/text()"os,
+        image_allowed: ~x"./imageAllowed/text()"os,
+        state_reason: [
+          ~x"./stateReason"o,
+          code: ~x"./code/text()"os,
+          message: ~x"./message/text()"os
+        ],
+        product_codes: [
+          ~x"./productCodes/item"l,
+          product_code: ~x"./productCode/text()"s,
+          type: ~x"./type/text()"os
+        ],
+        block_device_mapping: [
+          ~x"./blockDeviceMapping/item"l,
+          device_name: ~x"./deviceName/text()"s,
+          virtual_name: ~x"./virtualName/text()"os,
+          no_device: ~x"./noDevice/text()"os,
+          # Instance-store devices carry no <ebs> child at all, so the
+          # anchor is optional and the whole sub-map comes back nil.
+          ebs: [
+            ~x"./ebs"o,
+            snapshot_id: ~x"./snapshotId/text()"os,
+            # Every EBS integer is Required: No -- never a plain cast.
+            volume_size: ~x"./volumeSize/text()"oi,
+            iops: ~x"./iops/text()"oi,
+            throughput: ~x"./throughput/text()"oi,
+            ebs_card_index: ~x"./ebsCardIndex/text()"oi,
+            volume_type: ~x"./volumeType/text()"os,
+            delete_on_termination: ~x"./deleteOnTermination/text()"os,
+            encrypted: ~x"./encrypted/text()"os,
+            outpost_arn: ~x"./outpostArn/text()"os
+          ]
+        ]
+      )
+
+    %{
+      images_set: images,
+      next_token: xpath(body, ~x"//DescribeImagesResponse/nextToken/text()"os)
+    }
   end
 
   defp reject_valueless_filters(filters) do
@@ -787,7 +956,7 @@ defmodule AWS.EC2 do
   `delete_snapshot/2`.
   """
   @spec deregister_image(image_id :: String.t(), opts :: keyword()) ::
-          {:ok, %{}} | {:error, term()}
+          {:ok, map()} | {:error, term()}
   def deregister_image(image_id, opts \\ []) do
     if sandbox?(opts) do
       sandbox_deregister_image_response(image_id, opts)
@@ -799,14 +968,24 @@ defmodule AWS.EC2 do
   defp do_deregister_image(image_id, opts) do
     "DeregisterImage"
     |> perform(%{"ImageId" => image_id}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    |> deserialize_response(opts, fn body ->
+      {:ok,
+       Map.put(
+         parse_return(body),
+         :delete_associated_snapshot_result_set,
+         xpath(body, ~x"//deleteSnapshotResultSet/item"l,
+           snapshot_id: ~x"./snapshotId/text()"os,
+           return_code: ~x"./returnCode/text()"os
+         )
+       )}
+    end)
   end
 
   @doc """
   Deletes an EBS snapshot.
   """
   @spec delete_snapshot(snapshot_id :: String.t(), opts :: keyword()) ::
-          {:ok, %{}} | {:error, term()}
+          {:ok, map()} | {:error, term()}
   def delete_snapshot(snapshot_id, opts \\ []) do
     if sandbox?(opts) do
       sandbox_delete_snapshot_response(snapshot_id, opts)
@@ -818,7 +997,7 @@ defmodule AWS.EC2 do
   defp do_delete_snapshot(snapshot_id, opts) do
     "DeleteSnapshot"
     |> perform(%{"SnapshotId" => snapshot_id}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    |> deserialize_response(opts, fn body -> {:ok, parse_return(body)} end)
   end
 
   # ---------------------------------------------------------------------------
@@ -834,7 +1013,7 @@ defmodule AWS.EC2 do
           resource_ids :: list(String.t()),
           tags :: list(map() | {String.t(), String.t()}),
           opts :: keyword()
-        ) :: {:ok, %{}} | {:error, term()}
+        ) :: {:ok, map()} | {:error, term()}
   def create_tags(resource_ids, tags, opts \\ []) do
     if sandbox?(opts) do
       sandbox_create_tags_response(resource_ids, opts)
@@ -851,13 +1030,13 @@ defmodule AWS.EC2 do
 
     "CreateTags"
     |> perform(params, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    |> deserialize_response(opts, fn body -> {:ok, parse_return(body)} end)
   end
 
   @doc """
   Describes the specified tags for the given resources.
 
-  Returns `%{tags: [...]}`, where each tag is
+  Returns `%{tag_set: [...], next_token: ...}`, where each tag is
   `%{resource_id:, resource_type:, key:, value:}`.
 
   ## Options
@@ -866,7 +1045,7 @@ defmodule AWS.EC2 do
       `"key"`, `"value"`, `"resource-id"`, `"resource-type"`.
   """
   @spec describe_tags(opts :: keyword()) ::
-          {:ok, %{tags: list(map())}} | {:error, term()}
+          {:ok, %{tag_set: list(map()), next_token: String.t() | nil}} | {:error, term()}
   def describe_tags(opts \\ []) do
     if sandbox?(opts) do
       sandbox_describe_tags_response(opts)
@@ -889,7 +1068,8 @@ defmodule AWS.EC2 do
           value: ~x"./value/text()"s
         )
 
-      {:ok, %{tags: tags, next_token: xpath(body, ~x"//DescribeTagsResponse/nextToken/text()"os)}}
+      {:ok,
+       %{tag_set: tags, next_token: xpath(body, ~x"//DescribeTagsResponse/nextToken/text()"os)}}
     end)
   end
 

@@ -25,10 +25,10 @@ defmodule AWS.EC2.SandboxTest do
   describe "describe_security_groups/1" do
     test "returns the registered groups" do
       Sandbox.set_describe_security_groups_responses([
-        fn -> {:ok, %{security_groups: [%{group_id: "sg-1", group_name: "web"}]}} end
+        fn -> {:ok, %{security_group_info: [%{group_id: "sg-1", group_name: "web"}]}} end
       ])
 
-      assert {:ok, %{security_groups: [%{group_id: "sg-1", group_name: "web"}]}} =
+      assert {:ok, %{security_group_info: [%{group_id: "sg-1", group_name: "web"}]}} =
                EC2.describe_security_groups(sandbox: [enabled: true])
     end
   end
@@ -97,11 +97,11 @@ defmodule AWS.EC2.SandboxTest do
     test "returns the registered vpcs" do
       Sandbox.set_describe_vpcs_responses([
         fn ->
-          {:ok, %{vpcs: [%{vpc_id: "vpc-1", cidr_block: "10.0.0.0/16", is_default: true}]}}
+          {:ok, %{vpc_set: [%{vpc_id: "vpc-1", cidr_block: "10.0.0.0/16", is_default: true}]}}
         end
       ])
 
-      assert {:ok, %{vpcs: [%{vpc_id: "vpc-1", cidr_block: "10.0.0.0/16", is_default: true}]}} =
+      assert {:ok, %{vpc_set: [%{vpc_id: "vpc-1", cidr_block: "10.0.0.0/16", is_default: true}]}} =
                EC2.describe_vpcs(sandbox: [enabled: true])
     end
   end
@@ -109,10 +109,10 @@ defmodule AWS.EC2.SandboxTest do
   describe "describe_subnets/1" do
     test "returns the registered subnets" do
       Sandbox.set_describe_subnets_responses([
-        fn -> {:ok, %{subnets: [%{subnet_id: "subnet-1", vpc_id: "vpc-1"}]}} end
+        fn -> {:ok, %{subnet_set: [%{subnet_id: "subnet-1", vpc_id: "vpc-1"}]}} end
       ])
 
-      assert {:ok, %{subnets: [%{subnet_id: "subnet-1", vpc_id: "vpc-1"}]}} =
+      assert {:ok, %{subnet_set: [%{subnet_id: "subnet-1", vpc_id: "vpc-1"}]}} =
                EC2.describe_subnets(sandbox: [enabled: true])
     end
   end
@@ -120,10 +120,10 @@ defmodule AWS.EC2.SandboxTest do
   describe "describe_instances/1" do
     test "returns the registered reservations" do
       Sandbox.set_describe_instances_responses([
-        fn -> {:ok, %{reservations: [%{instances: [%{instance_id: "i-1"}]}]}} end
+        fn -> {:ok, %{reservation_set: [%{instances_set: [%{instance_id: "i-1"}]}]}} end
       ])
 
-      assert {:ok, %{reservations: [%{instances: [%{instance_id: "i-1"}]}]}} =
+      assert {:ok, %{reservation_set: [%{instances_set: [%{instance_id: "i-1"}]}]}} =
                EC2.describe_instances(sandbox: [enabled: true])
     end
   end
@@ -142,10 +142,10 @@ defmodule AWS.EC2.SandboxTest do
   describe "describe_tags/1" do
     test "returns the registered tags" do
       Sandbox.set_describe_tags_responses([
-        fn -> {:ok, %{tags: [%{key: "Name", value: "web-1", resource_id: "i-1"}]}} end
+        fn -> {:ok, %{tag_set: [%{key: "Name", value: "web-1", resource_id: "i-1"}]}} end
       ])
 
-      assert {:ok, %{tags: [%{key: "Name", value: "web-1", resource_id: "i-1"}]}} =
+      assert {:ok, %{tag_set: [%{key: "Name", value: "web-1", resource_id: "i-1"}]}} =
                EC2.describe_tags(sandbox: [enabled: true])
     end
   end
@@ -156,10 +156,12 @@ defmodule AWS.EC2.SandboxTest do
         fn ->
           {:ok,
            %{
-             images: [
+             images_set: [
                %{
                  image_id: "ami-111",
-                 block_device_mappings: [%{device_name: "/dev/xvda", snapshot_id: "snap-aaa"}]
+                 block_device_mapping: [
+                   %{device_name: "/dev/xvda", ebs: %{snapshot_id: "snap-aaa"}}
+                 ]
                }
              ]
            }}
@@ -168,10 +170,12 @@ defmodule AWS.EC2.SandboxTest do
 
       assert {:ok,
               %{
-                images: [
+                images_set: [
                   %{
                     image_id: "ami-111",
-                    block_device_mappings: [%{device_name: "/dev/xvda", snapshot_id: "snap-aaa"}]
+                    block_device_mapping: [
+                      %{device_name: "/dev/xvda", ebs: %{snapshot_id: "snap-aaa"}}
+                    ]
                   }
                 ]
               }} = EC2.describe_images(sandbox: [enabled: true])
