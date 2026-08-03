@@ -5,9 +5,9 @@ with consistent error handling, response deserialization, and sandbox support fo
 
 ## Services
 
-- `AWS.S3` — object storage
-- `AWS.EventBridge` — event routing
-- `AWS.CloudWatch` — metrics and alarms
-- `AWS.IAM` — identity and access management
-- `AWS.IdentityCenter` — IAM Identity Center (SSO)
-- `AWS.Organizations` — AWS Organizations
+- `AwsSdk.S3` — object storage
+- `AwsSdk.EventBridge` — event routing
+- `AwsSdk.CloudWatch` — metrics and alarms
+- `AwsSdk.IAM` — identity and access management
+- `AwsSdk.IdentityCenter` — IAM Identity Center (SSO)
+- `AwsSdk.Organizations` — AWS Organizations

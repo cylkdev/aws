@@ -1,4 +1,4 @@
-defmodule AWS.MixProject do
+defmodule AwsSdk.MixProject do
   use Mix.Project
 
   @mix_env Mix.env()
@@ -6,7 +6,7 @@ defmodule AWS.MixProject do
 
   def project do
     [
-      app: :aws,
+      app: :aws_sdk,
       version: @version,
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
@@ -47,7 +47,7 @@ defmodule AWS.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      mod: {AWS.Application, []}
+      mod: {AwsSdk.Application, []}
     ]
   end
 
@@ -67,30 +67,30 @@ defmodule AWS.MixProject do
 
   defp docs do
     [
-      main: "AWS",
+      main: "AwsSdk",
       extras: ["README.md"],
       groups_for_modules: [
         Core: [
-          AWS,
-          AWS.Error
+          AwsSdk,
+          AwsSdk.Error
         ],
         S3: [
-          AWS.S3
+          AwsSdk.S3
         ],
         EventBridge: [
-          AWS.EventBridge
+          AwsSdk.EventBridge
         ],
         Logs: [
-          AWS.Logs
+          AwsSdk.Logs
         ],
         SSM: [
-          AWS.SSM
+          AwsSdk.SSM
         ],
         IAM: [
-          AWS.IAM
+          AwsSdk.IAM
         ],
         "Identity Center": [
-          AWS.IdentityCenter
+          AwsSdk.IdentityCenter
         ]
       ]
     ]
@@ -110,7 +110,7 @@ defmodule AWS.MixProject do
       {:sweet_xml, "~> 0.7.5"},
       # Req 0.7 changed how the verb is inferred (a set body promotes GET to
       # POST) and how the Finch pool is named, so the range is pinned to what
-      # `AWS.HTTP` is written and tested against. `~> 0.5` resolved anything
+      # `AwsSdk.HTTP` is written and tested against. `~> 0.5` resolved anything
       # below 1.0 and silently reintroduced both breaks.
       {:finch, "~> 0.21"},
       {:req, "~> 0.7"},
