@@ -78,6 +78,13 @@ defmodule AWS.Logs do
 
     * `:kms_key_id` - KMS key ARN for log group encryption.
     * `:tags` - Map of tags to attach.
+
+  ## Examples
+
+      AWS.Logs.create_log_group("/aws/app/prod")
+      #=> {:ok, %{}}
+
+  AWS returns an empty body, and rejects a name that already exists.
   """
   @spec create_log_group(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -103,6 +110,13 @@ defmodule AWS.Logs do
 
   @doc """
   Deletes a log group.
+
+  ## Examples
+
+      AWS.Logs.delete_log_group("/aws/app/prod")
+      #=> {:ok, %{}}
+
+  Deletes every stream and event in the group.
   """
   @spec delete_log_group(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -129,6 +143,26 @@ defmodule AWS.Logs do
     * `:log_group_name_prefix` - Filter by prefix.
     * `:limit` - Max results per page.
     * `:next_token` - Pagination token.
+
+  ## Examples
+
+      AWS.Logs.describe_log_groups(log_group_name_prefix: "/aws/app/")
+      #=> {:ok,
+      #=>  %{
+      #=>    log_groups: [
+      #=>      %{
+      #=>        log_group_name: "/aws/app/prod",
+      #=>        arn: "arn:aws:logs:us-east-1:123456789012:log-group:/aws/app/prod:*",
+      #=>        creation_time: 1_767_225_600_000,
+      #=>        retention_in_days: 30,
+      #=>        metric_filter_count: 0,
+      #=>        stored_bytes: 1_048_576
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  `:retention_in_days` is absent when the group never expires.
   """
   @spec describe_log_groups(opts :: keyword()) ::
           {:ok, %{log_groups: list(map()), next_token: String.t() | nil}} | {:error, term()}
@@ -155,6 +189,13 @@ defmodule AWS.Logs do
 
   @doc """
   Sets retention for a log group, in days (e.g. 1, 7, 30, 90, 365).
+
+  ## Examples
+
+      AWS.Logs.put_retention_policy("/aws/app/prod", 30)
+      #=> {:ok, %{}}
+
+  AWS accepts only specific values (1, 3, 5, 7, 14, 30, 60, 90, ...).
   """
   @spec put_retention_policy(name :: String.t(), days :: pos_integer(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -177,6 +218,13 @@ defmodule AWS.Logs do
 
   @doc """
   Removes the retention policy from a log group (reverts to never expire).
+
+  ## Examples
+
+      AWS.Logs.delete_retention_policy("/aws/app/prod")
+      #=> {:ok, %{}}
+
+  Events in the group then never expire.
   """
   @spec delete_retention_policy(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -199,6 +247,11 @@ defmodule AWS.Logs do
 
   @doc """
   Creates a log stream inside a log group.
+
+  ## Examples
+
+      AWS.Logs.create_log_stream("/aws/app/prod", "instance/i-1234567890abcdef0")
+      #=> {:ok, %{}}
   """
   @spec create_log_stream(group :: String.t(), stream :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -221,6 +274,11 @@ defmodule AWS.Logs do
 
   @doc """
   Deletes a log stream.
+
+  ## Examples
+
+      AWS.Logs.delete_log_stream("/aws/app/prod", "instance/i-1234567890abcdef0")
+      #=> {:ok, %{}}
   """
   @spec delete_log_stream(group :: String.t(), stream :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -251,6 +309,30 @@ defmodule AWS.Logs do
     * `:descending` - Boolean.
     * `:limit` - Max results per page.
     * `:next_token` - Pagination token.
+
+  ## Examples
+
+      AWS.Logs.describe_log_streams("/aws/app/prod",
+        order_by: "LastEventTime",
+        descending: true
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    log_streams: [
+      #=>      %{
+      #=>        log_stream_name: "instance/i-1234567890abcdef0",
+      #=>        arn: "arn:aws:logs:us-east-1:123456789012:log-group:/aws/app/prod:log-stream:instance/i-1234567890abcdef0",
+      #=>        creation_time: 1_767_225_600_000,
+      #=>        first_event_timestamp: 1_767_225_601_000,
+      #=>        last_event_timestamp: 1_767_229_200_000,
+      #=>        last_ingestion_time: 1_767_229_201_000,
+      #=>        upload_sequence_token: "49590..."
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  Timestamps are milliseconds since the epoch, as AWS sends them.
   """
   @spec describe_log_streams(group :: String.t(), opts :: keyword()) ::
           {:ok, %{log_streams: list(map()), next_token: String.t() | nil}} | {:error, term()}
@@ -288,6 +370,21 @@ defmodule AWS.Logs do
     * `stream` - Log stream name.
     * `events` - List of maps with `:timestamp` (ms since epoch) and `:message`.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.Logs.put_log_events("/aws/app/prod", "instance/i-1234567890abcdef0", [
+        %{timestamp: 1_767_229_200_000, message: "boot complete"},
+        %{timestamp: 1_767_229_201_000, message: "listening on :4000"}
+      ])
+      #=> {:ok,
+      #=>  %{
+      #=>    next_sequence_token: "49590...",
+      #=>    rejected_log_events_info: nil
+      #=>  }}
+
+  Events must be in ascending timestamp order. Events AWS refuses are
+  reported in `:rejected_log_events_info` rather than as an error.
   """
   @spec put_log_events(
           group :: String.t(),
@@ -327,6 +424,28 @@ defmodule AWS.Logs do
     * `:start_from_head` - Boolean; read oldest first.
     * `:limit` - Max events per page.
     * `:next_token` - Pagination token.
+
+  ## Examples
+
+      AWS.Logs.get_log_events("/aws/app/prod", "instance/i-1234567890abcdef0",
+        limit: 100,
+        start_from_head: true
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    events: [
+      #=>      %{
+      #=>        timestamp: 1_767_229_200_000,
+      #=>        message: "boot complete",
+      #=>        ingestion_time: 1_767_229_200_500
+      #=>      }
+      #=>    ],
+      #=>    next_forward_token: "f/37...",
+      #=>    next_backward_token: "b/37..."
+      #=>  }}
+
+  Both tokens are always returned; paging past the end yields the same token
+  and an empty `:events`, which is how you detect the end.
   """
   @spec get_log_events(group :: String.t(), stream :: String.t(), opts :: keyword()) ::
           {:ok, %{events: list(map()), next_forward_token: String.t() | nil}} | {:error, term()}
@@ -363,6 +482,31 @@ defmodule AWS.Logs do
     * `:start_time` / `:end_time` - Epoch milliseconds.
     * `:limit` - Max events per page.
     * `:next_token` - Pagination token.
+
+  ## Examples
+
+      AWS.Logs.filter_log_events("/aws/app/prod",
+        filter_pattern: "ERROR",
+        start_time: 1_767_225_600_000,
+        end_time: 1_767_229_200_000
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    events: [
+      #=>      %{
+      #=>        log_stream_name: "instance/i-1234567890abcdef0",
+      #=>        timestamp: 1_767_229_100_000,
+      #=>        message: "ERROR database unreachable",
+      #=>        ingestion_time: 1_767_229_100_500,
+      #=>        event_id: "37201234567890123456789012345678901234567890123456789012"
+      #=>      }
+      #=>    ],
+      #=>    searched_log_streams: [],
+      #=>    next_token: nil
+      #=>  }}
+
+  Unlike `get_log_events/3`, this searches every stream in the group, so each
+  event carries its `:log_stream_name`.
   """
   @spec filter_log_events(group :: String.t(), opts :: keyword()) ::
           {:ok, %{events: list(map()), next_token: String.t() | nil}} | {:error, term()}
@@ -406,6 +550,19 @@ defmodule AWS.Logs do
     * `start_time` / `end_time` - Epoch seconds.
     * `query` - Logs Insights query string.
     * `opts` - May include `:limit`.
+
+  ## Examples
+
+      AWS.Logs.start_query(
+        "/aws/app/prod",
+        1_767_225_600,
+        1_767_229_200,
+        "fields @timestamp, @message | filter @message like /ERROR/ | limit 20"
+      )
+      #=> {:ok, %{query_id: "12ab3456-12ab-123a-789e-1234567890ab"}}
+
+  Returns immediately with a query ID; poll `get_query_results/2` until the
+  status is terminal.
   """
   @spec start_query(
           group :: String.t(),
@@ -429,6 +586,21 @@ defmodule AWS.Logs do
   Starts an Insights query across several log groups by name.
 
   Maps to AWS `StartQuery` with `logGroupNames`.
+
+  ## Examples
+
+      AWS.Logs.start_query_for_log_groups(
+        ["/aws/app/prod", "/aws/app/worker"],
+        1_767_225_600,
+        1_767_229_200,
+        "fields @timestamp, @message | filter @message like /ERROR/"
+      )
+      #=> {:ok, %{query_id: "12ab3456-12ab-123a-789e-1234567890ab"}}
+
+  Returns immediately with a query ID; poll `get_query_results/2` until the
+  status is terminal.
+
+  Sends `logGroupNames`; use `start_query_by_identifiers/4` to query by ARN.
   """
   @spec start_query_for_log_groups(
           groups :: [String.t()],
@@ -451,6 +623,22 @@ defmodule AWS.Logs do
   cross-account queries are expressed.
 
   Maps to AWS `StartQuery` with `logGroupIdentifiers`.
+
+  ## Examples
+
+      AWS.Logs.start_query_by_identifiers(
+        ["arn:aws:logs:us-east-1:123456789012:log-group:/aws/app/prod"],
+        1_767_225_600,
+        1_767_229_200,
+        "fields @timestamp, @message"
+      )
+      #=> {:ok, %{query_id: "12ab3456-12ab-123a-789e-1234567890ab"}}
+
+  Returns immediately with a query ID; poll `get_query_results/2` until the
+  status is terminal.
+
+  Sends `logGroupIdentifiers`, which is the only form that can reach a log
+  group in another account.
   """
   @spec start_query_by_identifiers(
           identifiers :: [String.t()],
@@ -486,6 +674,25 @@ defmodule AWS.Logs do
 
   @doc """
   Fetches results for an Insights query started by `start_query/5`.
+
+  ## Examples
+
+      AWS.Logs.get_query_results("12ab3456-12ab-123a-789e-1234567890ab")
+      #=> {:ok,
+      #=>  %{
+      #=>    status: "Complete",
+      #=>    results: [
+      #=>      [
+      #=>        %{field: "@timestamp", value: "2026-01-01 00:00:00.000"},
+      #=>        %{field: "@message", value: "ERROR database unreachable"}
+      #=>      ]
+      #=>    ],
+      #=>    statistics: %{records_matched: 1.0, records_scanned: 5000.0, bytes_scanned: 1.2e6}
+      #=>  }}
+
+  Each row is a list of field/value pairs, not a map -- Insights columns are
+  query-defined and can repeat. `:status` is `"Scheduled"`, `"Running"`,
+  `"Complete"`, `"Failed"`, `"Cancelled"` or `"Timeout"`.
   """
   @spec get_query_results(query_id :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -506,6 +713,13 @@ defmodule AWS.Logs do
 
   @doc """
   Stops an in-flight Insights query.
+
+  ## Examples
+
+      AWS.Logs.stop_query("12ab3456-12ab-123a-789e-1234567890ab")
+      #=> {:ok, %{success: true}}
+
+  `:success` is false when the query had already finished.
   """
   @spec stop_query(query_id :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}

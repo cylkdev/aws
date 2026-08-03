@@ -88,6 +88,26 @@ defmodule AWS.SSM do
     * `name` - The fully qualified parameter name (e.g. `"/app/db/host"`),
       or `"name:version"` / `"name:label"` to pin a specific version or label.
     * `opts` - Options including `:with_decryption`, plus shared options.
+
+  ## Examples
+
+      AWS.SSM.get_parameter("/app/prod/db-url")
+      #=> {:ok,
+      #=>  %{
+      #=>    parameter: %{
+      #=>      name: "/app/prod/db-url",
+      #=>      type: "String",
+      #=>      value: "postgres://db.internal:5432/app",
+      #=>      version: 3,
+      #=>      last_modified_date: 1.7e9,
+      #=>      arn: "arn:aws:ssm:us-east-1:123456789012:parameter/app/prod/db-url",
+      #=>      data_type: "text"
+      #=>    }
+      #=>  }}
+
+      # SecureString values come back encrypted unless you ask otherwise.
+      AWS.SSM.get_parameter("/app/prod/db-password", with_decryption: true)
+      #=> {:ok, %{parameter: %{type: "SecureString", value: "s3cr3t"}}}
   """
   @spec get_parameter(name :: String.t(), opts :: keyword()) ::
           {:ok, %{parameter: map()}} | {:error, term()}
@@ -117,6 +137,20 @@ defmodule AWS.SSM do
 
     * `names` - A list of 1-10 parameter names.
     * `opts` - Options including `:with_decryption`, plus shared options.
+
+  ## Examples
+
+      AWS.SSM.get_parameters(["/app/prod/db-url", "/app/prod/missing"])
+      #=> {:ok,
+      #=>  %{
+      #=>    parameters: [
+      #=>      %{name: "/app/prod/db-url", type: "String", value: "postgres://...", version: 3}
+      #=>    ],
+      #=>    invalid_parameters: ["/app/prod/missing"]
+      #=>  }}
+
+  Names AWS could not resolve come back in `:invalid_parameters` rather than
+  as an error, so check it before using the result.
   """
   @spec get_parameters(names :: [String.t()], opts :: keyword()) ::
           {:ok, %{parameters: [map()], invalid_parameters: [String.t()]}} | {:error, term()}
@@ -152,6 +186,21 @@ defmodule AWS.SSM do
         (e.g. `[%{"Key" => "Type", "Values" => ["String"]}]`).
       * `:max_results` - Integer page size.
       * `:next_token` - Pagination token from a prior response.
+
+  ## Examples
+
+      AWS.SSM.get_parameters_by_path("/app/prod/", recursive: true, with_decryption: true)
+      #=> {:ok,
+      #=>  %{
+      #=>    parameters: [
+      #=>      %{name: "/app/prod/db-url", type: "String", value: "postgres://...", version: 3},
+      #=>      %{name: "/app/prod/db-password", type: "SecureString", value: "s3cr3t", version: 1}
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  Without `recursive: true` only parameters directly under the path are
+  returned, not those in sub-paths.
   """
   @spec get_parameters_by_path(path :: String.t(), opts :: keyword()) ::
           {:ok, %{parameters: [map()], next_token: String.t() | nil}} | {:error, term()}
@@ -197,6 +246,22 @@ defmodule AWS.SSM do
       * `:tier` - `"Standard"`, `"Advanced"`, or `"Intelligent-Tiering"`.
       * `:policies` - JSON-encoded policy string.
       * `:data_type` - `"text"` or `"aws:ec2:image"` for AMI parameters.
+
+  ## Examples
+
+      AWS.SSM.put_parameter("/app/prod/db-url", "postgres://db.internal:5432/app",
+        type: "String",
+        overwrite: true
+      )
+      #=> {:ok, %{version: 4, tier: "Standard"}}
+
+      AWS.SSM.put_parameter("/app/prod/db-password", "s3cr3t",
+        type: "SecureString",
+        key_id: "alias/aws/ssm"
+      )
+      #=> {:ok, %{version: 1, tier: "Standard"}}
+
+  Without `overwrite: true` AWS rejects a write to an existing name.
   """
   @spec put_parameter(name :: String.t(), value :: String.t(), opts :: keyword()) ::
           {:ok, %{version: integer(), tier: String.t()}} | {:error, term()}
@@ -229,6 +294,11 @@ defmodule AWS.SSM do
 
   @doc """
   Deletes a single parameter.
+
+  ## Examples
+
+      AWS.SSM.delete_parameter("/app/prod/db-url")
+      #=> {:ok, %{}}
   """
   @spec delete_parameter(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -249,6 +319,15 @@ defmodule AWS.SSM do
 
   @doc """
   Deletes a batch of parameters (1-10 names per call).
+
+  ## Examples
+
+      AWS.SSM.delete_parameters(["/app/prod/db-url", "/app/prod/missing"])
+      #=> {:ok,
+      #=>  %{
+      #=>    deleted_parameters: ["/app/prod/db-url"],
+      #=>    invalid_parameters: ["/app/prod/missing"]
+      #=>  }}
   """
   @spec delete_parameters(names :: [String.t()], opts :: keyword()) ::
           {:ok, %{deleted_parameters: [String.t()], invalid_parameters: [String.t()]}}
@@ -278,6 +357,27 @@ defmodule AWS.SSM do
     * `:max_results` - Integer page size.
     * `:next_token` - Pagination token.
     * `:shared` - Boolean; include parameters shared from other accounts.
+
+  ## Examples
+
+      AWS.SSM.describe_parameters(max_results: 50)
+      #=> {:ok,
+      #=>  %{
+      #=>    parameters: [
+      #=>      %{
+      #=>        name: "/app/prod/db-url",
+      #=>        type: "String",
+      #=>        version: 3,
+      #=>        last_modified_date: 1.7e9,
+      #=>        last_modified_user: "arn:aws:iam::123456789012:user/deploy",
+      #=>        tier: "Standard",
+      #=>        data_type: "text"
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  Metadata only -- no `:value`. Use `get_parameter/2` to read a value.
   """
   @spec describe_parameters(opts :: keyword()) ::
           {:ok, %{parameters: [map()], next_token: String.t() | nil}} | {:error, term()}
@@ -321,6 +421,31 @@ defmodule AWS.SSM do
       `%{"Key" => k, "Values" => vs}`.
     * `:max_results` - Integer page size (5-50).
     * `:next_token` - Pagination token from a prior response.
+
+  ## Examples
+
+      AWS.SSM.describe_instance_information(max_results: 50)
+      #=> {:ok,
+      #=>  %{
+      #=>    instance_information_list: [
+      #=>      %{
+      #=>        instance_id: "i-1234567890abcdef0",
+      #=>        ping_status: "Online",
+      #=>        last_ping_date_time: 1.7e9,
+      #=>        agent_version: "3.3.1611.0",
+      #=>        platform_type: "Linux",
+      #=>        platform_name: "Amazon Linux",
+      #=>        platform_version: "2023",
+      #=>        ip_address: "10.0.1.5",
+      #=>        computer_name: "ip-10-0-1-5.ec2.internal",
+      #=>        resource_type: "EC2Instance"
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  Only instances running the SSM agent and registered with Systems Manager
+  appear here.
   """
   @spec describe_instance_information(opts :: keyword()) ::
           {:ok, %{instance_information_list: [map()], next_token: String.t() | nil}}
