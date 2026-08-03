@@ -63,7 +63,7 @@ defmodule AWS.ElasticLoadBalancingV2 do
   Then register per-test response functions, e.g.:
 
       AWS.ElasticLoadBalancingV2.Sandbox.set_describe_target_groups_responses([
-        fn -> {:ok, %{target_groups: [], next_token: nil}} end
+        fn -> {:ok, %{target_groups: [], next_marker: nil}} end
       ])
   """
 
@@ -99,7 +99,7 @@ defmodule AWS.ElasticLoadBalancingV2 do
 
   ## Pagination
 
-  Returns one page plus `:next_token`; the caller decides whether to
+  Returns one page plus `:next_marker` (AWS's own member name); the caller decides whether to
   follow it.
   """
   @spec describe_target_groups(opts :: keyword()) :: {:ok, map()} | {:error, term()}
@@ -225,7 +225,7 @@ defmodule AWS.ElasticLoadBalancingV2 do
 
   ## Pagination
 
-  Returns one page plus `:next_token`; the caller decides whether to
+  Returns one page plus `:next_marker` (AWS's own member name); the caller decides whether to
   follow it.
   """
   @spec describe_load_balancers(opts :: keyword()) :: {:ok, map()} | {:error, term()}
@@ -537,12 +537,12 @@ defmodule AWS.ElasticLoadBalancingV2 do
             grpc_code: ~x"./GrpcCode/text()"os
           ]
         ],
-        next_token: ~x"./NextMarker/text()"s
+        next_marker: ~x"./NextMarker/text()"s
       )
 
     %{
       target_groups: result.target_groups,
-      next_token: nilify(result.next_token)
+      next_marker: nilify(result.next_marker)
     }
   end
 
@@ -552,10 +552,13 @@ defmodule AWS.ElasticLoadBalancingV2 do
       xpath(body, ~x"//DescribeTargetHealthResult"e,
         target_health_descriptions: [
           ~x"./TargetHealthDescriptions/member"l,
-          target_id: ~x"./Target/Id/text()"s,
-          port: ~x"./Target/Port/text()"oi,
-          availability_zone: ~x"./Target/AvailabilityZone/text()"os,
-          quic_server_id: ~x"./Target/QuicServerId/text()"os,
+          target: [
+            ~x"./Target"o,
+            id: ~x"./Id/text()"s,
+            port: ~x"./Port/text()"oi,
+            availability_zone: ~x"./AvailabilityZone/text()"os,
+            quic_server_id: ~x"./QuicServerId/text()"os
+          ],
           health_check_port: ~x"./HealthCheckPort/text()"os,
           anomaly_detection: [
             ~x"./AnomalyDetection"o,
@@ -568,13 +571,16 @@ defmodule AWS.ElasticLoadBalancingV2 do
             reason: ~x"./Reason/text()"os,
             description: ~x"./Description/text()"os
           ],
-          state: ~x"./TargetHealth/State/text()"s,
-          # `Reason` carries the code that distinguishes an ELB-side failure
-          # (Elb.InternalError) from the target's own (Target.Timeout,
-          # Target.ResponseCodeMismatch, ...). Both it and `Description` are
-          # documented Required: No, and are absent when the state is healthy.
-          reason: ~x"./TargetHealth/Reason/text()"os,
-          description: ~x"./TargetHealth/Description/text()"os
+          target_health: [
+            ~x"./TargetHealth"o,
+            state: ~x"./State/text()"s,
+            # `Reason` carries the code that distinguishes an ELB-side failure
+            # (Elb.InternalError) from the target's own (Target.Timeout,
+            # Target.ResponseCodeMismatch, ...). Both it and `Description` are
+            # documented Required: No, and are absent when the state is healthy.
+            reason: ~x"./Reason/text()"os,
+            description: ~x"./Description/text()"os
+          ]
         ]
       )
 
@@ -602,8 +608,11 @@ defmodule AWS.ElasticLoadBalancingV2 do
           enforce_security_group_inbound_rules_on_private_link_traffic:
             ~x"./EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic/text()"os,
           security_groups: ~x"./SecurityGroups/member/text()"sl,
-          state: ~x"./State/Code/text()"s,
-          state_reason: ~x"./State/Reason/text()"os,
+          state: [
+            ~x"./State"o,
+            code: ~x"./Code/text()"s,
+            reason: ~x"./Reason/text()"os
+          ],
           ipam_pools: [
             ~x"./IpamPools"o,
             ipv4_ipam_pool_id: ~x"./Ipv4IpamPoolId/text()"os
@@ -625,12 +634,12 @@ defmodule AWS.ElasticLoadBalancingV2 do
             ]
           ]
         ],
-        next_token: ~x"./NextMarker/text()"s
+        next_marker: ~x"./NextMarker/text()"s
       )
 
     %{
       load_balancers: result.load_balancers,
-      next_token: nilify(result.next_token)
+      next_marker: nilify(result.next_marker)
     }
   end
 
@@ -662,12 +671,12 @@ defmodule AWS.ElasticLoadBalancingV2 do
           ],
           default_actions: [~x"./DefaultActions/member"l | action_fields()]
         ],
-        next_token: ~x"./NextMarker/text()"s
+        next_marker: ~x"./NextMarker/text()"s
       )
 
     %{
       listeners: result.listeners,
-      next_token: nilify(result.next_token)
+      next_marker: nilify(result.next_marker)
     }
   end
 
@@ -695,22 +704,40 @@ defmodule AWS.ElasticLoadBalancingV2 do
       field: ~x"./Field/text()"s,
       values: ~x"./Values/member/text()"sl,
       regex_values: ~x"./RegexValues/member/text()"sl,
-      host_header_values: ~x"./HostHeaderConfig/Values/member/text()"sl,
-      host_header_regex_values: ~x"./HostHeaderConfig/RegexValues/member/text()"sl,
-      path_pattern_values: ~x"./PathPatternConfig/Values/member/text()"sl,
-      path_pattern_regex_values: ~x"./PathPatternConfig/RegexValues/member/text()"sl,
-      http_header_name: ~x"./HttpHeaderConfig/HttpHeaderName/text()"os,
-      http_header_values: ~x"./HttpHeaderConfig/Values/member/text()"sl,
-      http_header_regex_values: ~x"./HttpHeaderConfig/RegexValues/member/text()"sl,
-      http_request_method_values: ~x"./HttpRequestMethodConfig/Values/member/text()"sl,
-      source_ip_values: ~x"./SourceIpConfig/Values/member/text()"sl,
-      source_ip_address_type: ~x"./SourceIpConfig/IpAddressType/text()"os,
-      # Unlike every other `Values`, QueryStringConfig's is a list of
-      # Key/Value structures rather than plain strings.
-      query_string_values: [
-        ~x"./QueryStringConfig/Values/member"l,
-        key: ~x"./Key/text()"os,
-        value: ~x"./Value/text()"os
+      host_header_config: [
+        ~x"./HostHeaderConfig"o,
+        values: ~x"./Values/member/text()"sl,
+        regex_values: ~x"./RegexValues/member/text()"sl
+      ],
+      path_pattern_config: [
+        ~x"./PathPatternConfig"o,
+        values: ~x"./Values/member/text()"sl,
+        regex_values: ~x"./RegexValues/member/text()"sl
+      ],
+      http_header_config: [
+        ~x"./HttpHeaderConfig"o,
+        http_header_name: ~x"./HttpHeaderName/text()"os,
+        values: ~x"./Values/member/text()"sl,
+        regex_values: ~x"./RegexValues/member/text()"sl
+      ],
+      http_request_method_config: [
+        ~x"./HttpRequestMethodConfig"o,
+        values: ~x"./Values/member/text()"sl
+      ],
+      source_ip_config: [
+        ~x"./SourceIpConfig"o,
+        values: ~x"./Values/member/text()"sl,
+        ip_address_type: ~x"./IpAddressType/text()"os
+      ],
+      query_string_config: [
+        ~x"./QueryStringConfig"o,
+        # Unlike every other `Values`, QueryStringConfig's is a list of
+        # Key/Value structures rather than plain strings.
+        values: [
+          ~x"./Values/member"l,
+          key: ~x"./Key/text()"os,
+          value: ~x"./Value/text()"os
+        ]
       ]
     ]
   end
@@ -722,17 +749,20 @@ defmodule AWS.ElasticLoadBalancingV2 do
       type: ~x"./Type/text()"s,
       order: ~x"./Order/text()"oi,
       target_group_arn: ~x"./TargetGroupArn/text()"s,
-      target_groups: [
-        ~x"./ForwardConfig/TargetGroups/member"l,
-        target_group_arn: ~x"./TargetGroupArn/text()"s,
-        weight: ~x"./Weight/text()"oi
+      forward_config: [
+        ~x"./ForwardConfig"o,
+        target_groups: [
+          ~x"./TargetGroups/member"l,
+          target_group_arn: ~x"./TargetGroupArn/text()"s,
+          weight: ~x"./Weight/text()"oi
+        ],
+        target_group_stickiness_config: [
+          ~x"./TargetGroupStickinessConfig"o,
+          enabled: ~x"./Enabled/text()"os,
+          duration_seconds: ~x"./DurationSeconds/text()"oi
+        ]
       ],
-      target_group_stickiness: [
-        ~x"./ForwardConfig/TargetGroupStickinessConfig"o,
-        enabled: ~x"./Enabled/text()"os,
-        duration_seconds: ~x"./DurationSeconds/text()"oi
-      ],
-      redirect: [
+      redirect_config: [
         ~x"./RedirectConfig"o,
         status_code: ~x"./StatusCode/text()"os,
         protocol: ~x"./Protocol/text()"os,
@@ -742,13 +772,13 @@ defmodule AWS.ElasticLoadBalancingV2 do
         path: ~x"./Path/text()"os,
         query: ~x"./Query/text()"os
       ],
-      fixed_response: [
+      fixed_response_config: [
         ~x"./FixedResponseConfig"o,
         status_code: ~x"./StatusCode/text()"os,
         content_type: ~x"./ContentType/text()"os,
         message_body: ~x"./MessageBody/text()"os
       ],
-      authenticate_oidc: [
+      authenticate_oidc_config: [
         ~x"./AuthenticateOidcConfig"o,
         issuer: ~x"./Issuer/text()"os,
         authorization_endpoint: ~x"./AuthorizationEndpoint/text()"os,
@@ -760,7 +790,7 @@ defmodule AWS.ElasticLoadBalancingV2 do
         session_timeout: ~x"./SessionTimeout/text()"oi,
         on_unauthenticated_request: ~x"./OnUnauthenticatedRequest/text()"os
       ],
-      authenticate_cognito: [
+      authenticate_cognito_config: [
         ~x"./AuthenticateCognitoConfig"o,
         user_pool_arn: ~x"./UserPoolArn/text()"os,
         user_pool_client_id: ~x"./UserPoolClientId/text()"os,
@@ -770,7 +800,7 @@ defmodule AWS.ElasticLoadBalancingV2 do
         session_timeout: ~x"./SessionTimeout/text()"oi,
         on_unauthenticated_request: ~x"./OnUnauthenticatedRequest/text()"os
       ],
-      jwt_validation: [
+      jwt_validation_config: [
         ~x"./JwtValidationConfig"o,
         issuer: ~x"./Issuer/text()"os,
         jwks_endpoint: ~x"./JwksEndpoint/text()"os,
@@ -787,15 +817,21 @@ defmodule AWS.ElasticLoadBalancingV2 do
   defp transform_fields do
     [
       type: ~x"./Type/text()"s,
-      host_header_rewrites: [
-        ~x"./HostHeaderRewriteConfig/Rewrites/member"l,
-        regex: ~x"./Regex/text()"os,
-        replace: ~x"./Replace/text()"os
+      host_header_rewrite_config: [
+        ~x"./HostHeaderRewriteConfig"o,
+        rewrites: [
+          ~x"./Rewrites/member"l,
+          regex: ~x"./Regex/text()"os,
+          replace: ~x"./Replace/text()"os
+        ]
       ],
-      url_rewrites: [
-        ~x"./UrlRewriteConfig/Rewrites/member"l,
-        regex: ~x"./Regex/text()"os,
-        replace: ~x"./Replace/text()"os
+      url_rewrite_config: [
+        ~x"./UrlRewriteConfig"o,
+        rewrites: [
+          ~x"./Rewrites/member"l,
+          regex: ~x"./Regex/text()"os,
+          replace: ~x"./Replace/text()"os
+        ]
       ]
     ]
   end
@@ -805,12 +841,12 @@ defmodule AWS.ElasticLoadBalancingV2 do
     result =
       xpath(body, ~x"//DescribeRulesResult"e, [
         {:rules, [~x"./Rules/member"l | rule_fields()]},
-        {:next_token, ~x"./NextMarker/text()"s}
+        {:next_marker, ~x"./NextMarker/text()"s}
       ])
 
     %{
       rules: normalize_rules(result.rules),
-      next_token: nilify(result.next_token)
+      next_marker: nilify(result.next_marker)
     }
   end
 

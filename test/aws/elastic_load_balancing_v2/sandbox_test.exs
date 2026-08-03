@@ -11,7 +11,7 @@ defmodule AWS.ElasticLoadBalancingV2.SandboxTest do
           {:ok,
            %{
              target_groups: [%{target_group_arn: "arn:tg/a", target_group_name: "a"}],
-             next_token: nil
+             next_marker: nil
            }}
         end
       ])
@@ -19,7 +19,7 @@ defmodule AWS.ElasticLoadBalancingV2.SandboxTest do
       assert {:ok,
               %{
                 target_groups: [%{target_group_arn: "arn:tg/a", target_group_name: "a"}],
-                next_token: nil
+                next_marker: nil
               }} = ElasticLoadBalancingV2.describe_target_groups(sandbox: [enabled: true])
     end
   end
@@ -27,10 +27,10 @@ defmodule AWS.ElasticLoadBalancingV2.SandboxTest do
   describe "describe_target_groups_by_names/2" do
     test "returns the response registered for the joined names" do
       Sandbox.set_describe_target_groups_by_names_responses([
-        {"a,b", fn -> {:ok, %{target_groups: [], next_token: nil}} end}
+        {"a,b", fn -> {:ok, %{target_groups: [], next_marker: nil}} end}
       ])
 
-      assert {:ok, %{target_groups: [], next_token: nil}} =
+      assert {:ok, %{target_groups: [], next_marker: nil}} =
                ElasticLoadBalancingV2.describe_target_groups_by_names(["a", "b"],
                  sandbox: [enabled: true]
                )
@@ -40,10 +40,10 @@ defmodule AWS.ElasticLoadBalancingV2.SandboxTest do
   describe "describe_target_groups_by_arns/2" do
     test "returns the response registered for the joined arns" do
       Sandbox.set_describe_target_groups_by_arns_responses([
-        {"arn:tg/a", fn -> {:ok, %{target_groups: [], next_token: nil}} end}
+        {"arn:tg/a", fn -> {:ok, %{target_groups: [], next_marker: nil}} end}
       ])
 
-      assert {:ok, %{target_groups: [], next_token: nil}} =
+      assert {:ok, %{target_groups: [], next_marker: nil}} =
                ElasticLoadBalancingV2.describe_target_groups_by_arns(["arn:tg/a"],
                  sandbox: [enabled: true]
                )
@@ -53,10 +53,10 @@ defmodule AWS.ElasticLoadBalancingV2.SandboxTest do
   describe "describe_target_groups_by_load_balancer/2" do
     test "returns the response registered for the load balancer arn" do
       Sandbox.set_describe_target_groups_by_load_balancer_responses([
-        {"arn:lb/x", fn -> {:ok, %{target_groups: [], next_token: nil}} end}
+        {"arn:lb/x", fn -> {:ok, %{target_groups: [], next_marker: nil}} end}
       ])
 
-      assert {:ok, %{target_groups: [], next_token: nil}} =
+      assert {:ok, %{target_groups: [], next_marker: nil}} =
                ElasticLoadBalancingV2.describe_target_groups_by_load_balancer("arn:lb/x",
                  sandbox: [enabled: true]
                )
@@ -103,7 +103,7 @@ defmodule AWS.ElasticLoadBalancingV2.SandboxTest do
              load_balancers: [
                %{load_balancer_arn: "arn:lb/deployd-dev", load_balancer_name: "deployd-dev"}
              ],
-             next_token: nil
+             next_marker: nil
            }}
         end
       ])
@@ -113,7 +113,7 @@ defmodule AWS.ElasticLoadBalancingV2.SandboxTest do
                 load_balancers: [
                   %{load_balancer_arn: "arn:lb/deployd-dev", load_balancer_name: "deployd-dev"}
                 ],
-                next_token: nil
+                next_marker: nil
               }} = ElasticLoadBalancingV2.describe_load_balancers(sandbox: [enabled: true])
     end
   end
@@ -123,11 +123,11 @@ defmodule AWS.ElasticLoadBalancingV2.SandboxTest do
       Sandbox.set_describe_listeners_responses([
         {"arn:lb/x",
          fn ->
-           {:ok, %{listeners: [%{listener_arn: "arn:listener/80", port: 80}], next_token: nil}}
+           {:ok, %{listeners: [%{listener_arn: "arn:listener/80", port: 80}], next_marker: nil}}
          end}
       ])
 
-      assert {:ok, %{listeners: [%{listener_arn: "arn:listener/80", port: 80}], next_token: nil}} =
+      assert {:ok, %{listeners: [%{listener_arn: "arn:listener/80", port: 80}], next_marker: nil}} =
                ElasticLoadBalancingV2.describe_listeners("arn:lb/x", sandbox: [enabled: true])
     end
 
@@ -141,10 +141,10 @@ defmodule AWS.ElasticLoadBalancingV2.SandboxTest do
   describe "describe_listeners_by_arns/2" do
     test "returns the response registered for the joined listener arns" do
       Sandbox.set_describe_listeners_by_arns_responses([
-        {"arn:listener/80,arn:listener/443", fn -> {:ok, %{listeners: [], next_token: nil}} end}
+        {"arn:listener/80,arn:listener/443", fn -> {:ok, %{listeners: [], next_marker: nil}} end}
       ])
 
-      assert {:ok, %{listeners: [], next_token: nil}} =
+      assert {:ok, %{listeners: [], next_marker: nil}} =
                ElasticLoadBalancingV2.describe_listeners_by_arns(
                  ["arn:listener/80", "arn:listener/443"],
                  sandbox: [enabled: true]
@@ -166,7 +166,7 @@ defmodule AWS.ElasticLoadBalancingV2.SandboxTest do
                   actions: [%{type: "forward"}]
                 }
               ],
-              next_token: nil
+              next_marker: nil
             }}
          end}
       ])
@@ -180,7 +180,7 @@ defmodule AWS.ElasticLoadBalancingV2.SandboxTest do
                     actions: [%{type: "forward"}]
                   }
                 ],
-                next_token: nil
+                next_marker: nil
               }} =
                ElasticLoadBalancingV2.describe_rules("arn:listener/80", sandbox: [enabled: true])
     end
@@ -195,10 +195,10 @@ defmodule AWS.ElasticLoadBalancingV2.SandboxTest do
   describe "describe_rules_by_arns/2" do
     test "returns the response registered for the joined rule arns" do
       Sandbox.set_describe_rules_by_arns_responses([
-        {"arn:rule/1,arn:rule/2", fn -> {:ok, %{rules: [], next_token: nil}} end}
+        {"arn:rule/1,arn:rule/2", fn -> {:ok, %{rules: [], next_marker: nil}} end}
       ])
 
-      assert {:ok, %{rules: [], next_token: nil}} =
+      assert {:ok, %{rules: [], next_marker: nil}} =
                ElasticLoadBalancingV2.describe_rules_by_arns(["arn:rule/1", "arn:rule/2"],
                  sandbox: [enabled: true]
                )

@@ -194,11 +194,16 @@ defmodule AWS.ConformanceTest do
     %{target_health_descriptions: [target]} =
       AWS.ElasticLoadBalancingV2.parse_describe_target_health(xml)
 
-    assert target.state == "unhealthy"
-    assert target.reason == "Elb.InternalError"
-    assert target.description == "Health checks failed due to an internal error"
-    assert target.availability_zone == "us-east-1a"
+    assert target.target_health.state == "unhealthy"
+    assert target.target_health.reason == "Elb.InternalError"
+    assert target.target_health.description == "Health checks failed due to an internal error"
+    assert target.target.availability_zone == "us-east-1a"
+    assert target.target.id == "i-abc"
     assert target.health_check_port == "80"
+
+    # TargetHealth and AdministrativeOverride both carry State/Reason/Description;
+    # flattening either onto the parent would collide them.
+    refute Map.has_key?(target, :state)
   end
 
   test "a target group health check port keeps its non-numeric value" do
@@ -249,10 +254,42 @@ defmodule AWS.ConformanceTest do
     [condition] = rule.conditions
     [action] = rule.actions
 
-    assert condition.query_string_values == [%{key: "ver", value: "2"}]
+    assert condition.query_string_config.values == [%{key: "ver", value: "2"}]
     # RedirectConfig.Port is documented as a String, not an Integer.
-    assert action.redirect.port == "443"
-    assert action.redirect.status_code == "HTTP_301"
+    assert action.redirect_config.port == "443"
+    assert action.redirect_config.status_code == "HTTP_301"
+  end
+
+  test "a forward action keeps its ForwardConfig whole rather than half-flattened" do
+    xml = """
+    <DescribeRulesResponse><DescribeRulesResult><Rules><member>
+    <RuleArn>arn:rule/1</RuleArn><Priority>10</Priority><IsDefault>false</IsDefault>
+    <Conditions><member><Field>host-header</Field>
+    <HostHeaderConfig><Values><member>a.example.com</member></Values></HostHeaderConfig>
+    </member></Conditions>
+    <Actions><member><Type>forward</Type><ForwardConfig>
+    <TargetGroups><member><TargetGroupArn>arn:tg/1</TargetGroupArn><Weight>90</Weight></member>
+    <member><TargetGroupArn>arn:tg/2</TargetGroupArn><Weight>10</Weight></member></TargetGroups>
+    <TargetGroupStickinessConfig><Enabled>true</Enabled><DurationSeconds>3600</DurationSeconds>
+    </TargetGroupStickinessConfig></ForwardConfig></member></Actions>
+    </member></Rules></DescribeRulesResult></DescribeRulesResponse>
+    """
+
+    %{rules: [rule]} = AWS.ElasticLoadBalancingV2.parse_describe_rules(xml)
+    [condition] = rule.conditions
+    [action] = rule.actions
+
+    assert condition.host_header_config.values == ["a.example.com"]
+    # Which typed config AWS populated is readable from the response itself.
+    assert condition.path_pattern_config == nil
+
+    assert action.forward_config.target_groups == [
+             %{target_group_arn: "arn:tg/1", weight: 90},
+             %{target_group_arn: "arn:tg/2", weight: 10}
+           ]
+
+    assert action.forward_config.target_group_stickiness_config.duration_seconds == 3600
+    refute Map.has_key?(action, :target_groups)
   end
 
   test "STS AssumeRole surfaces the assumed role identity, not just credentials" do
