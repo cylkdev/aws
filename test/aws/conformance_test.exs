@@ -180,4 +180,124 @@ defmodule AWS.ConformanceTest do
     # verbatim and still match the wire.
     assert URI.parse(url).path == "/my%20file%2Ba%3Ab%23c.txt"
   end
+
+  test "target health surfaces the reason code that distinguishes ELB faults from target faults" do
+    xml = """
+    <DescribeTargetHealthResponse><DescribeTargetHealthResult><TargetHealthDescriptions>
+    <member><Target><Id>i-abc</Id><Port>80</Port><AvailabilityZone>us-east-1a</AvailabilityZone></Target>
+    <HealthCheckPort>80</HealthCheckPort>
+    <TargetHealth><State>unhealthy</State><Reason>Elb.InternalError</Reason>
+    <Description>Health checks failed due to an internal error</Description></TargetHealth></member>
+    </TargetHealthDescriptions></DescribeTargetHealthResult></DescribeTargetHealthResponse>
+    """
+
+    %{target_health_descriptions: [target]} =
+      AWS.ElasticLoadBalancingV2.parse_describe_target_health(xml)
+
+    assert target.state == "unhealthy"
+    assert target.reason == "Elb.InternalError"
+    assert target.description == "Health checks failed due to an internal error"
+    assert target.availability_zone == "us-east-1a"
+    assert target.health_check_port == "80"
+  end
+
+  test "a target group health check port keeps its non-numeric value" do
+    xml = """
+    <DescribeTargetGroupsResponse><DescribeTargetGroupsResult><TargetGroups><member>
+    <TargetGroupArn>arn:tg/1</TargetGroupArn><TargetGroupName>web</TargetGroupName>
+    <HealthCheckPort>traffic-port</HealthCheckPort><HealthCheckPath>/health</HealthCheckPath>
+    <Matcher><HttpCode>200</HttpCode></Matcher>
+    <LoadBalancerArns><member>arn:lb/1</member></LoadBalancerArns>
+    </member></TargetGroups></DescribeTargetGroupsResult></DescribeTargetGroupsResponse>
+    """
+
+    %{target_groups: [group]} = AWS.ElasticLoadBalancingV2.parse_describe_target_groups(xml)
+
+    # HealthCheckPort is documented as a String; "traffic-port" is a legal value.
+    assert group.health_check_port == "traffic-port"
+    assert group.health_check_path == "/health"
+    assert group.matcher.http_code == "200"
+    assert group.load_balancer_arns == ["arn:lb/1"]
+  end
+
+  test "the default rule's priority stays the literal string \"default\"" do
+    xml = """
+    <DescribeRulesResponse><DescribeRulesResult><Rules>
+    <member><RuleArn>arn:rule/def</RuleArn><Priority>default</Priority><IsDefault>true</IsDefault>
+    <Conditions /><Actions><member><Type>forward</Type></member></Actions></member>
+    </Rules></DescribeRulesResult></DescribeRulesResponse>
+    """
+
+    %{rules: [rule]} = AWS.ElasticLoadBalancingV2.parse_describe_rules(xml)
+
+    assert rule.priority == "default"
+  end
+
+  test "a query-string condition parses key/value pairs, not bare strings" do
+    xml = """
+    <DescribeRulesResponse><DescribeRulesResult><Rules><member>
+    <RuleArn>arn:rule/1</RuleArn><Priority>10</Priority><IsDefault>false</IsDefault>
+    <Conditions><member><Field>query-string</Field><QueryStringConfig><Values>
+    <member><Key>ver</Key><Value>2</Value></member>
+    </Values></QueryStringConfig></member></Conditions>
+    <Actions><member><Type>redirect</Type><RedirectConfig>
+    <StatusCode>HTTP_301</StatusCode><Port>443</Port></RedirectConfig></member></Actions>
+    </member></Rules></DescribeRulesResult></DescribeRulesResponse>
+    """
+
+    %{rules: [rule]} = AWS.ElasticLoadBalancingV2.parse_describe_rules(xml)
+    [condition] = rule.conditions
+    [action] = rule.actions
+
+    assert condition.query_string_values == [%{key: "ver", value: "2"}]
+    # RedirectConfig.Port is documented as a String, not an Integer.
+    assert action.redirect.port == "443"
+    assert action.redirect.status_code == "HTTP_301"
+  end
+
+  test "STS AssumeRole surfaces the assumed role identity, not just credentials" do
+    xml = """
+    <AssumeRoleResponse><AssumeRoleResult>
+    <Credentials><AccessKeyId>AK</AccessKeyId><SecretAccessKey>SK</SecretAccessKey>
+    <SessionToken>ST</SessionToken><Expiration>2030-01-01T00:00:00Z</Expiration></Credentials>
+    <AssumedRoleUser><Arn>arn:aws:sts::1:assumed-role/r/s</Arn>
+    <AssumedRoleId>AROA:s</AssumedRoleId></AssumedRoleUser>
+    <PackedPolicySize>6</PackedPolicySize>
+    </AssumeRoleResult></AssumeRoleResponse>
+    """
+
+    {:ok, creds} = AWS.STS.parse_assume_role_for_test(xml)
+
+    assert creds.assumed_role_arn == "arn:aws:sts::1:assumed-role/r/s"
+    assert creds.assumed_role_id == "AROA:s"
+    assert creds.packed_policy_size == 6
+  end
+
+  test "an S3 notification configuration parses queue and lambda targets, not just EventBridge" do
+    xml = """
+    <NotificationConfiguration>
+    <QueueConfiguration><Id>q1</Id><Queue>arn:aws:sqs:us-east-1:1:q</Queue>
+    <Event>s3:ObjectCreated:*</Event>
+    <Filter><S3Key><FilterRule><Name>prefix</Name><Value>logs/</Value></FilterRule></S3Key></Filter>
+    </QueueConfiguration>
+    <CloudFunctionConfiguration><Id>f1</Id>
+    <CloudFunction>arn:aws:lambda:us-east-1:1:function:f</CloudFunction>
+    <Event>s3:ObjectRemoved:*</Event></CloudFunctionConfiguration>
+    <EventBridgeConfiguration></EventBridgeConfiguration>
+    </NotificationConfiguration>
+    """
+
+    parsed = AWS.S3.XMLParser.parse_notification_configuration(xml)
+
+    assert parsed.event_bridge_enabled
+    assert [queue] = parsed.queue_configurations
+    assert queue.queue == "arn:aws:sqs:us-east-1:1:q"
+    assert queue.events == ["s3:ObjectCreated:*"]
+    assert queue.filter_rules == [%{name: "prefix", value: "logs/"}]
+
+    # The wire element is CloudFunctionConfiguration/CloudFunction, not the
+    # model's LambdaFunctionConfiguration/LambdaFunctionArn.
+    assert [fun] = parsed.cloud_function_configurations
+    assert fun.cloud_function == "arn:aws:lambda:us-east-1:1:function:f"
+  end
 end

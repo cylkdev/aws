@@ -164,15 +164,23 @@ defmodule AWS.STS do
     |> URI.encode_query()
   end
 
+  @doc false
+  def parse_assume_role_for_test(xml), do: parse_assume_role(xml)
+
   defp parse_assume_role(xml) do
     parsed =
       xpath(
         xml,
-        ~x"//AssumeRoleResponse/AssumeRoleResult/Credentials"e,
-        access_key_id: ~x"./AccessKeyId/text()"s,
-        secret_access_key: ~x"./SecretAccessKey/text()"s,
-        session_token: ~x"./SessionToken/text()"s,
-        expiration: ~x"./Expiration/text()"s
+        ~x"//AssumeRoleResponse/AssumeRoleResult"e,
+        access_key_id: ~x"./Credentials/AccessKeyId/text()"s,
+        secret_access_key: ~x"./Credentials/SecretAccessKey/text()"s,
+        session_token: ~x"./Credentials/SessionToken/text()"s,
+        expiration: ~x"./Credentials/Expiration/text()"s,
+        assumed_role_arn: ~x"./AssumedRoleUser/Arn/text()"os,
+        assumed_role_id: ~x"./AssumedRoleUser/AssumedRoleId/text()"os,
+        # Only meaningful when a policy or tags were passed, so not guaranteed.
+        packed_policy_size: ~x"./PackedPolicySize/text()"oi,
+        source_identity: ~x"./SourceIdentity/text()"os
       )
 
     case parsed do
@@ -182,8 +190,13 @@ defmodule AWS.STS do
          %{
            access_key_id: ak,
            secret_access_key: sk,
-           session_token: st,
-           expiration: parse_expiration(exp)
+           # The sample response wraps the token across lines.
+           session_token: String.trim(st),
+           expiration: parse_expiration(exp),
+           assumed_role_arn: parsed.assumed_role_arn,
+           assumed_role_id: parsed.assumed_role_id,
+           packed_policy_size: parsed.packed_policy_size,
+           source_identity: parsed.source_identity
          }}
 
       _ ->

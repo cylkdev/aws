@@ -286,7 +286,12 @@ defmodule AWS.IAM do
           create_date: ~x"./CreateDate/text()"s
         )
 
-      {:ok, %{access_keys: access_keys}}
+      {:ok,
+       %{
+         access_keys: access_keys,
+         is_truncated: xpath(body, ~x"//IsTruncated/text()"s) == "true",
+         marker: xpath(body, ~x"//Marker/text()"so)
+       }}
     end)
   end
 
@@ -1473,6 +1478,7 @@ defmodule AWS.IAM do
           url: ~x"./Url/text()"s,
           client_id_list: ~x"./ClientIDList/member/text()"ls,
           thumbprint_list: ~x"./ThumbprintList/member/text()"ls,
+          tags: [~x"./Tags/member"l, key: ~x"./Key/text()"s, value: ~x"./Value/text()"s],
           create_date: ~x"./CreateDate/text()"s
         )
 
@@ -1723,7 +1729,12 @@ defmodule AWS.IAM do
       user_id: ~x"./UserId/text()"s,
       arn: ~x"./Arn/text()"s,
       path: ~x"./Path/text()"s,
-      create_date: ~x"./CreateDate/text()"s
+      create_date: ~x"./CreateDate/text()"s,
+      # Returned only by GetUser and ListUsers, and null if never signed in.
+      password_last_used: ~x"./PasswordLastUsed/text()"os,
+      permissions_boundary_arn: ~x"./PermissionsBoundary/PermissionsBoundaryArn/text()"os,
+      permissions_boundary_type: ~x"./PermissionsBoundary/PermissionsBoundaryType/text()"os,
+      tags: [~x"./Tags/member"l, key: ~x"./Key/text()"s, value: ~x"./Value/text()"s]
     )
   end
 
@@ -1733,7 +1744,8 @@ defmodule AWS.IAM do
       secret_access_key: ~x"./SecretAccessKey/text()"s,
       user_name: ~x"./UserName/text()"s,
       status: ~x"./Status/text()"s,
-      create_date: ~x"./CreateDate/text()"s
+      # Omitted from the CreateAccessKey sample despite the shape page.
+      create_date: ~x"./CreateDate/text()"os
     )
   end
 
@@ -1753,7 +1765,18 @@ defmodule AWS.IAM do
       role_id: ~x"./RoleId/text()"s,
       arn: ~x"./Arn/text()"s,
       path: ~x"./Path/text()"s,
-      create_date: ~x"./CreateDate/text()"s
+      create_date: ~x"./CreateDate/text()"s,
+      # URL-encoded per RFC 3986 -- the GetRole operation note says so, even
+      # though the doc samples show it decoded.
+      assume_role_policy_document: ~x"./AssumeRolePolicyDocument/text()"os,
+      description: ~x"./Description/text()"os,
+      # Required: No, and absent from the GetRole/CreateRole/ListRoles samples.
+      max_session_duration: ~x"./MaxSessionDuration/text()"oi,
+      permissions_boundary_arn: ~x"./PermissionsBoundary/PermissionsBoundaryArn/text()"os,
+      permissions_boundary_type: ~x"./PermissionsBoundary/PermissionsBoundaryType/text()"os,
+      role_last_used_date: ~x"./RoleLastUsed/LastUsedDate/text()"os,
+      role_last_used_region: ~x"./RoleLastUsed/Region/text()"os,
+      tags: [~x"./Tags/member"l, key: ~x"./Key/text()"s, value: ~x"./Value/text()"s]
     )
   end
 
@@ -1765,7 +1788,15 @@ defmodule AWS.IAM do
       path: ~x"./Path/text()"s,
       create_date: ~x"./CreateDate/text()"s,
       update_date: ~x"./UpdateDate/text()"s,
-      default_version_id: ~x"./DefaultVersionId/text()"s
+      default_version_id: ~x"./DefaultVersionId/text()"s,
+      # Every Policy member is Required: No. PermissionsBoundaryUsageCount in
+      # particular is absent from the GetPolicy and CreatePolicy samples.
+      attachment_count: ~x"./AttachmentCount/text()"oi,
+      permissions_boundary_usage_count: ~x"./PermissionsBoundaryUsageCount/text()"oi,
+      is_attachable: ~x"./IsAttachable/text()"os,
+      # Included in GetPolicy but not in ListPolicies.
+      description: ~x"./Description/text()"os,
+      tags: [~x"./Tags/member"l, key: ~x"./Key/text()"s, value: ~x"./Value/text()"s]
     )
   end
 

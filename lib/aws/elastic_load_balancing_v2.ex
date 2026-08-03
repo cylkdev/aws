@@ -512,7 +512,30 @@ defmodule AWS.ElasticLoadBalancingV2 do
         target_groups: [
           ~x"./TargetGroups/member"l,
           target_group_arn: ~x"./TargetGroupArn/text()"s,
-          target_group_name: ~x"./TargetGroupName/text()"s
+          target_group_name: ~x"./TargetGroupName/text()"s,
+          protocol: ~x"./Protocol/text()"os,
+          protocol_version: ~x"./ProtocolVersion/text()"os,
+          port: ~x"./Port/text()"oi,
+          vpc_id: ~x"./VpcId/text()"os,
+          target_type: ~x"./TargetType/text()"os,
+          ip_address_type: ~x"./IpAddressType/text()"os,
+          target_control_port: ~x"./TargetControlPort/text()"oi,
+          health_check_enabled: ~x"./HealthCheckEnabled/text()"os,
+          health_check_protocol: ~x"./HealthCheckProtocol/text()"os,
+          # HealthCheckPort is documented as a String, not an Integer -- it
+          # carries "traffic-port" as well as a number.
+          health_check_port: ~x"./HealthCheckPort/text()"os,
+          health_check_path: ~x"./HealthCheckPath/text()"os,
+          health_check_interval_seconds: ~x"./HealthCheckIntervalSeconds/text()"oi,
+          health_check_timeout_seconds: ~x"./HealthCheckTimeoutSeconds/text()"oi,
+          healthy_threshold_count: ~x"./HealthyThresholdCount/text()"oi,
+          unhealthy_threshold_count: ~x"./UnhealthyThresholdCount/text()"oi,
+          load_balancer_arns: ~x"./LoadBalancerArns/member/text()"sl,
+          matcher: [
+            ~x"./Matcher"o,
+            http_code: ~x"./HttpCode/text()"os,
+            grpc_code: ~x"./GrpcCode/text()"os
+          ]
         ],
         next_token: ~x"./NextMarker/text()"s
       )
@@ -531,7 +554,27 @@ defmodule AWS.ElasticLoadBalancingV2 do
           ~x"./TargetHealthDescriptions/member"l,
           target_id: ~x"./Target/Id/text()"s,
           port: ~x"./Target/Port/text()"oi,
-          state: ~x"./TargetHealth/State/text()"s
+          availability_zone: ~x"./Target/AvailabilityZone/text()"os,
+          quic_server_id: ~x"./Target/QuicServerId/text()"os,
+          health_check_port: ~x"./HealthCheckPort/text()"os,
+          anomaly_detection: [
+            ~x"./AnomalyDetection"o,
+            result: ~x"./Result/text()"os,
+            mitigation_in_effect: ~x"./MitigationInEffect/text()"os
+          ],
+          administrative_override: [
+            ~x"./AdministrativeOverride"o,
+            state: ~x"./State/text()"os,
+            reason: ~x"./Reason/text()"os,
+            description: ~x"./Description/text()"os
+          ],
+          state: ~x"./TargetHealth/State/text()"s,
+          # `Reason` carries the code that distinguishes an ELB-side failure
+          # (Elb.InternalError) from the target's own (Target.Timeout,
+          # Target.ResponseCodeMismatch, ...). Both it and `Description` are
+          # documented Required: No, and are absent when the state is healthy.
+          reason: ~x"./TargetHealth/Reason/text()"os,
+          description: ~x"./TargetHealth/Description/text()"os
         ]
       )
 
@@ -547,10 +590,40 @@ defmodule AWS.ElasticLoadBalancingV2 do
           load_balancer_arn: ~x"./LoadBalancerArn/text()"s,
           load_balancer_name: ~x"./LoadBalancerName/text()"s,
           dns_name: ~x"./DNSName/text()"s,
+          canonical_hosted_zone_id: ~x"./CanonicalHostedZoneId/text()"os,
+          created_time: ~x"./CreatedTime/text()"os,
           scheme: ~x"./Scheme/text()"s,
           type: ~x"./Type/text()"s,
           vpc_id: ~x"./VpcId/text()"s,
-          state: ~x"./State/Code/text()"s
+          ip_address_type: ~x"./IpAddressType/text()"os,
+          customer_owned_ipv4_pool: ~x"./CustomerOwnedIpv4Pool/text()"os,
+          # AWS documents these two as Strings carrying "on"/"off", not Booleans.
+          enable_prefix_for_ipv6_source_nat: ~x"./EnablePrefixForIpv6SourceNat/text()"os,
+          enforce_security_group_inbound_rules_on_private_link_traffic:
+            ~x"./EnforceSecurityGroupInboundRulesOnPrivateLinkTraffic/text()"os,
+          security_groups: ~x"./SecurityGroups/member/text()"sl,
+          state: ~x"./State/Code/text()"s,
+          state_reason: ~x"./State/Reason/text()"os,
+          ipam_pools: [
+            ~x"./IpamPools"o,
+            ipv4_ipam_pool_id: ~x"./Ipv4IpamPoolId/text()"os
+          ],
+          availability_zones: [
+            ~x"./AvailabilityZones/member"l,
+            zone_name: ~x"./ZoneName/text()"os,
+            subnet_id: ~x"./SubnetId/text()"os,
+            outpost_id: ~x"./OutpostId/text()"os,
+            source_nat_ipv6_prefixes: ~x"./SourceNatIpv6Prefixes/member/text()"sl,
+            load_balancer_addresses: [
+              ~x"./LoadBalancerAddresses/member"l,
+              ip_address: ~x"./IpAddress/text()"os,
+              allocation_id: ~x"./AllocationId/text()"os,
+              # Casing is irregular here: IpAddress but PrivateIPv4Address /
+              # IPv6Address.
+              private_ipv4_address: ~x"./PrivateIPv4Address/text()"os,
+              ipv6_address: ~x"./IPv6Address/text()"os
+            ]
+          ]
         ],
         next_token: ~x"./NextMarker/text()"s
       )
@@ -570,7 +643,24 @@ defmodule AWS.ElasticLoadBalancingV2 do
           listener_arn: ~x"./ListenerArn/text()"s,
           load_balancer_arn: ~x"./LoadBalancerArn/text()"s,
           port: ~x"./Port/text()"oi,
-          protocol: ~x"./Protocol/text()"s
+          protocol: ~x"./Protocol/text()"s,
+          ssl_policy: ~x"./SslPolicy/text()"os,
+          alpn_policy: ~x"./AlpnPolicy/member/text()"sl,
+          certificates: [
+            ~x"./Certificates/member"l,
+            # `IsDefault` is documented as omitted from DescribeListeners
+            # output, so it is not parsed here.
+            certificate_arn: ~x"./CertificateArn/text()"os
+          ],
+          mutual_authentication: [
+            ~x"./MutualAuthentication"o,
+            mode: ~x"./Mode/text()"os,
+            trust_store_arn: ~x"./TrustStoreArn/text()"os,
+            ignore_client_certificate_expiry: ~x"./IgnoreClientCertificateExpiry/text()"os,
+            trust_store_association_status: ~x"./TrustStoreAssociationStatus/text()"os,
+            advertise_trust_store_ca_names: ~x"./AdvertiseTrustStoreCaNames/text()"os
+          ],
+          default_actions: [~x"./DefaultActions/member"l | action_fields()]
         ],
         next_token: ~x"./NextMarker/text()"s
       )
@@ -588,24 +678,124 @@ defmodule AWS.ElasticLoadBalancingV2 do
   defp rule_fields do
     [
       rule_arn: ~x"./RuleArn/text()"s,
+      # `Priority` is a String, not an Integer -- the default rule returns
+      # the literal "default".
       priority: ~x"./Priority/text()"s,
       is_default: ~x"./IsDefault/text()"s,
-      conditions: [
-        ~x"./Conditions/member"l,
-        field: ~x"./Field/text()"s,
-        values: ~x"./Values/member/text()"sl,
-        host_header_values: ~x"./HostHeaderConfig/Values/member/text()"sl
-      ],
-      actions: [
-        ~x"./Actions/member"l,
-        type: ~x"./Type/text()"s,
-        order: ~x"./Order/text()"oi,
+      conditions: [~x"./Conditions/member"l | condition_fields()],
+      actions: [~x"./Actions/member"l | action_fields()],
+      transforms: [~x"./Transforms/member"l | transform_fields()]
+    ]
+  end
+
+  # A RuleCondition carries `Field` plus exactly one typed config; every
+  # config is parsed so the caller can read the rule without a second lookup.
+  defp condition_fields do
+    [
+      field: ~x"./Field/text()"s,
+      values: ~x"./Values/member/text()"sl,
+      regex_values: ~x"./RegexValues/member/text()"sl,
+      host_header_values: ~x"./HostHeaderConfig/Values/member/text()"sl,
+      host_header_regex_values: ~x"./HostHeaderConfig/RegexValues/member/text()"sl,
+      path_pattern_values: ~x"./PathPatternConfig/Values/member/text()"sl,
+      path_pattern_regex_values: ~x"./PathPatternConfig/RegexValues/member/text()"sl,
+      http_header_name: ~x"./HttpHeaderConfig/HttpHeaderName/text()"os,
+      http_header_values: ~x"./HttpHeaderConfig/Values/member/text()"sl,
+      http_header_regex_values: ~x"./HttpHeaderConfig/RegexValues/member/text()"sl,
+      http_request_method_values: ~x"./HttpRequestMethodConfig/Values/member/text()"sl,
+      source_ip_values: ~x"./SourceIpConfig/Values/member/text()"sl,
+      source_ip_address_type: ~x"./SourceIpConfig/IpAddressType/text()"os,
+      # Unlike every other `Values`, QueryStringConfig's is a list of
+      # Key/Value structures rather than plain strings.
+      query_string_values: [
+        ~x"./QueryStringConfig/Values/member"l,
+        key: ~x"./Key/text()"os,
+        value: ~x"./Value/text()"os
+      ]
+    ]
+  end
+
+  # Shared by a rule's `Actions` and a listener's `DefaultActions` -- AWS uses
+  # the same Action shape for both.
+  defp action_fields do
+    [
+      type: ~x"./Type/text()"s,
+      order: ~x"./Order/text()"oi,
+      target_group_arn: ~x"./TargetGroupArn/text()"s,
+      target_groups: [
+        ~x"./ForwardConfig/TargetGroups/member"l,
         target_group_arn: ~x"./TargetGroupArn/text()"s,
-        target_groups: [
-          ~x"./ForwardConfig/TargetGroups/member"l,
-          target_group_arn: ~x"./TargetGroupArn/text()"s,
-          weight: ~x"./Weight/text()"oi
+        weight: ~x"./Weight/text()"oi
+      ],
+      target_group_stickiness: [
+        ~x"./ForwardConfig/TargetGroupStickinessConfig"o,
+        enabled: ~x"./Enabled/text()"os,
+        duration_seconds: ~x"./DurationSeconds/text()"oi
+      ],
+      redirect: [
+        ~x"./RedirectConfig"o,
+        status_code: ~x"./StatusCode/text()"os,
+        protocol: ~x"./Protocol/text()"os,
+        host: ~x"./Host/text()"os,
+        # Port here is a String, not an Integer.
+        port: ~x"./Port/text()"os,
+        path: ~x"./Path/text()"os,
+        query: ~x"./Query/text()"os
+      ],
+      fixed_response: [
+        ~x"./FixedResponseConfig"o,
+        status_code: ~x"./StatusCode/text()"os,
+        content_type: ~x"./ContentType/text()"os,
+        message_body: ~x"./MessageBody/text()"os
+      ],
+      authenticate_oidc: [
+        ~x"./AuthenticateOidcConfig"o,
+        issuer: ~x"./Issuer/text()"os,
+        authorization_endpoint: ~x"./AuthorizationEndpoint/text()"os,
+        token_endpoint: ~x"./TokenEndpoint/text()"os,
+        user_info_endpoint: ~x"./UserInfoEndpoint/text()"os,
+        client_id: ~x"./ClientId/text()"os,
+        session_cookie_name: ~x"./SessionCookieName/text()"os,
+        scope: ~x"./Scope/text()"os,
+        session_timeout: ~x"./SessionTimeout/text()"oi,
+        on_unauthenticated_request: ~x"./OnUnauthenticatedRequest/text()"os
+      ],
+      authenticate_cognito: [
+        ~x"./AuthenticateCognitoConfig"o,
+        user_pool_arn: ~x"./UserPoolArn/text()"os,
+        user_pool_client_id: ~x"./UserPoolClientId/text()"os,
+        user_pool_domain: ~x"./UserPoolDomain/text()"os,
+        session_cookie_name: ~x"./SessionCookieName/text()"os,
+        scope: ~x"./Scope/text()"os,
+        session_timeout: ~x"./SessionTimeout/text()"oi,
+        on_unauthenticated_request: ~x"./OnUnauthenticatedRequest/text()"os
+      ],
+      jwt_validation: [
+        ~x"./JwtValidationConfig"o,
+        issuer: ~x"./Issuer/text()"os,
+        jwks_endpoint: ~x"./JwksEndpoint/text()"os,
+        additional_claims: [
+          ~x"./AdditionalClaims/member"l,
+          name: ~x"./Name/text()"os,
+          format: ~x"./Format/text()"os,
+          values: ~x"./Values/member/text()"sl
         ]
+      ]
+    ]
+  end
+
+  defp transform_fields do
+    [
+      type: ~x"./Type/text()"s,
+      host_header_rewrites: [
+        ~x"./HostHeaderRewriteConfig/Rewrites/member"l,
+        regex: ~x"./Regex/text()"os,
+        replace: ~x"./Replace/text()"os
+      ],
+      url_rewrites: [
+        ~x"./UrlRewriteConfig/Rewrites/member"l,
+        regex: ~x"./Regex/text()"os,
+        replace: ~x"./Replace/text()"os
       ]
     ]
   end

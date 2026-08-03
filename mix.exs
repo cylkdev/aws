@@ -108,8 +108,12 @@ defmodule AWS.MixProject do
       {:sandbox_registry, ">= 0.0.0", optional: true},
       # ---
       {:sweet_xml, "~> 0.7.5"},
-      {:finch, "~> 0.19"},
-      {:req, "~> 0.5"},
+      # Req 0.7 changed how the verb is inferred (a set body promotes GET to
+      # POST) and how the Finch pool is named, so the range is pinned to what
+      # `AWS.HTTP` is written and tested against. `~> 0.5` resolved anything
+      # below 1.0 and silently reintroduced both breaks.
+      {:finch, "~> 0.21"},
+      {:req, "~> 0.7"},
       {:cowboy, "~> 2.10", only: :test},
       {:error_message, "~> 0.3.3"},
       {:recase, "~> 0.9.1"},

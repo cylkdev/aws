@@ -70,11 +70,21 @@ defmodule AWS.HTTP do
   def request(method, url, body, headers, opts \\ []) when is_atom(method) do
     :ok = validate_url!(url)
 
-    [method: method, url: url, headers: headers, body: body]
+    [method: method, url: url, headers: headers]
+    |> put_body(body)
     |> Keyword.merge(base_opts(opts))
     |> Req.request()
     |> handle_response()
   end
+
+  # Req >= 0.7 infers the verb from the presence of a body, and an empty
+  # binary counts as present -- so `body: ""` on a GET was silently rewritten
+  # into a POST. Against the Identity Center portal that surfaced as
+  # com.amazonaws.switchboard.portal#MethodNotAllowedException (405). Omit the
+  # key when there is nothing to send, leaving `:method` as the only thing
+  # that decides the verb.
+  defp put_body(req_opts, body) when body in [nil, "", []], do: req_opts
+  defp put_body(req_opts, body), do: Keyword.put(req_opts, :body, body)
 
   @doc "Convenience wrapper for `request(:post, url, body, headers, opts)`."
   @spec post(String.t(), iodata, [header], keyword) :: {:ok, response} | {:error, %{reason: term}}
@@ -82,10 +92,10 @@ defmodule AWS.HTTP do
     request(:post, url, body, headers, opts)
   end
 
-  @doc "Convenience wrapper for `request(:get, url, \"\", headers, opts)`."
+  @doc "Convenience wrapper for `request(:get, url, nil, headers, opts)`."
   @spec get(String.t(), [header], keyword) :: {:ok, response} | {:error, %{reason: term}}
   def get(url, headers \\ [], opts \\ []) do
-    request(:get, url, "", headers, opts)
+    request(:get, url, nil, headers, opts)
   end
 
   @doc """
@@ -102,7 +112,8 @@ defmodule AWS.HTTP do
   def stream_upload(method, url, body_stream, headers, opts \\ []) when is_atom(method) do
     :ok = validate_url!(url)
 
-    [method: method, url: url, headers: headers, body: body_stream]
+    [method: method, url: url, headers: headers]
+    |> put_body(body_stream)
     |> Keyword.merge(base_opts(opts))
     |> Req.request()
     |> handle_response()
@@ -140,7 +151,9 @@ defmodule AWS.HTTP do
 
   defp base_opts(opts) do
     [
-      finch: FinchPool.name(),
+      # Req 0.7 wants the pool under `finch: [name: ...]`; a bare atom is
+      # deprecated and warns on every request.
+      finch: [name: FinchPool.name()],
       receive_timeout: request_timeout(opts),
       retry: false,
       redirect: false,

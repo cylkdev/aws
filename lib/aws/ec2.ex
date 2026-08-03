@@ -122,7 +122,77 @@ defmodule AWS.EC2 do
           group_name: ~x"./groupName/text()"s,
           description: ~x"./groupDescription/text()"s,
           vpc_id: ~x"./vpcId/text()"s,
-          owner_id: ~x"./ownerId/text()"s
+          owner_id: ~x"./ownerId/text()"s,
+          security_group_arn: ~x"./securityGroupArn/text()"os,
+          tags: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s],
+          ip_permissions: [
+            ~x"./ipPermissions/item"l,
+            ip_protocol: ~x"./ipProtocol/text()"s,
+            # Structurally ABSENT (no element) whenever ipProtocol is "-1".
+            # A present element containing -1 means "all ICMP types" and is a
+            # different case entirely.
+            from_port: ~x"./fromPort/text()"oi,
+            to_port: ~x"./toPort/text()"oi,
+            ip_ranges: [
+              ~x"./ipRanges/item"l,
+              cidr_ip: ~x"./cidrIp/text()"s,
+              description: ~x"./description/text()"os
+            ],
+            ipv6_ranges: [
+              ~x"./ipv6Ranges/item"l,
+              cidr_ipv6: ~x"./cidrIpv6/text()"s,
+              description: ~x"./description/text()"os
+            ],
+            prefix_list_ids: [
+              ~x"./prefixListIds/item"l,
+              prefix_list_id: ~x"./prefixListId/text()"s,
+              description: ~x"./description/text()"os
+            ],
+            groups: [
+              ~x"./groups/item"l,
+              group_id: ~x"./groupId/text()"os,
+              group_name: ~x"./groupName/text()"os,
+              user_id: ~x"./userId/text()"os,
+              vpc_id: ~x"./vpcId/text()"os,
+              vpc_peering_connection_id: ~x"./vpcPeeringConnectionId/text()"os,
+              peering_status: ~x"./peeringStatus/text()"os,
+              description: ~x"./description/text()"os
+            ]
+          ],
+          ip_permissions_egress: [
+            ~x"./ipPermissionsEgress/item"l,
+            ip_protocol: ~x"./ipProtocol/text()"s,
+            # Structurally ABSENT (no element) whenever ipProtocol is "-1".
+            # A present element containing -1 means "all ICMP types" and is a
+            # different case entirely.
+            from_port: ~x"./fromPort/text()"oi,
+            to_port: ~x"./toPort/text()"oi,
+            ip_ranges: [
+              ~x"./ipRanges/item"l,
+              cidr_ip: ~x"./cidrIp/text()"s,
+              description: ~x"./description/text()"os
+            ],
+            ipv6_ranges: [
+              ~x"./ipv6Ranges/item"l,
+              cidr_ipv6: ~x"./cidrIpv6/text()"s,
+              description: ~x"./description/text()"os
+            ],
+            prefix_list_ids: [
+              ~x"./prefixListIds/item"l,
+              prefix_list_id: ~x"./prefixListId/text()"s,
+              description: ~x"./description/text()"os
+            ],
+            groups: [
+              ~x"./groups/item"l,
+              group_id: ~x"./groupId/text()"os,
+              group_name: ~x"./groupName/text()"os,
+              user_id: ~x"./userId/text()"os,
+              vpc_id: ~x"./vpcId/text()"os,
+              vpc_peering_connection_id: ~x"./vpcPeeringConnectionId/text()"os,
+              peering_status: ~x"./peeringStatus/text()"os,
+              description: ~x"./description/text()"os
+            ]
+          ]
         )
 
       {:ok, %{security_groups: groups}}
@@ -268,7 +338,29 @@ defmodule AWS.EC2 do
           vpc_id: ~x"./vpcId/text()"s,
           cidr_block: ~x"./cidrBlock/text()"s,
           state: ~x"./state/text()"s,
-          is_default: ~x"./isDefault/text()"s
+          is_default: ~x"./isDefault/text()"s,
+          owner_id: ~x"./ownerId/text()"os,
+          dhcp_options_id: ~x"./dhcpOptionsId/text()"os,
+          instance_tenancy: ~x"./instanceTenancy/text()"os,
+          cidr_block_association_set: [
+            ~x"./cidrBlockAssociationSet/item"l,
+            cidr_block: ~x"./cidrBlock/text()"s,
+            association_id: ~x"./associationId/text()"s,
+            state: ~x"./cidrBlockState/state/text()"s,
+            status_message: ~x"./cidrBlockState/statusMessage/text()"os
+          ],
+          ipv6_cidr_block_association_set: [
+            ~x"./ipv6CidrBlockAssociationSet/item"l,
+            ipv6_cidr_block: ~x"./ipv6CidrBlock/text()"s,
+            association_id: ~x"./associationId/text()"s,
+            state: ~x"./ipv6CidrBlockState/state/text()"s,
+            status_message: ~x"./ipv6CidrBlockState/statusMessage/text()"os,
+            ipv6_pool: ~x"./ipv6Pool/text()"os,
+            ipv6_address_attribute: ~x"./ipv6AddressAttribute/text()"os,
+            ip_source: ~x"./ipSource/text()"os,
+            network_border_group: ~x"./networkBorderGroup/text()"os
+          ],
+          tags: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
         )
 
       {:ok, %{vpcs: Enum.map(vpcs, &coerce_is_default/1)}}
@@ -312,7 +404,35 @@ defmodule AWS.EC2 do
           vpc_id: ~x"./vpcId/text()"s,
           cidr_block: ~x"./cidrBlock/text()"s,
           availability_zone: ~x"./availabilityZone/text()"s,
-          state: ~x"./state/text()"s
+          state: ~x"./state/text()"s,
+          subnet_arn: ~x"./subnetArn/text()"os,
+          owner_id: ~x"./ownerId/text()"os,
+          availability_zone_id: ~x"./availabilityZoneId/text()"os,
+          # Required: No -- meaningless on IPv6-only subnets, so never a
+          # plain integer cast.
+          available_ip_address_count: ~x"./availableIpAddressCount/text()"oi,
+          enable_lni_at_device_index: ~x"./enableLniAtDeviceIndex/text()"oi,
+          default_for_az: ~x"./defaultForAz/text()"os,
+          map_public_ip_on_launch: ~x"./mapPublicIpOnLaunch/text()"os,
+          assign_ipv6_address_on_creation: ~x"./assignIpv6AddressOnCreation/text()"os,
+          map_customer_owned_ip_on_launch: ~x"./mapCustomerOwnedIpOnLaunch/text()"os,
+          customer_owned_ipv4_pool: ~x"./customerOwnedIpv4Pool/text()"os,
+          outpost_arn: ~x"./outpostArn/text()"os,
+          enable_dns64: ~x"./enableDns64/text()"os,
+          ipv6_native: ~x"./ipv6Native/text()"os,
+          type: ~x"./type/text()"os,
+          ipv6_cidr_block_association_set: [
+            ~x"./ipv6CidrBlockAssociationSet/item"l,
+            ipv6_cidr_block: ~x"./ipv6CidrBlock/text()"s,
+            association_id: ~x"./associationId/text()"s,
+            # The wire element is ipv6CidrBlockState even though the shape is
+            # named SubnetCidrBlockState.
+            state: ~x"./ipv6CidrBlockState/state/text()"s,
+            status_message: ~x"./ipv6CidrBlockState/statusMessage/text()"os,
+            ipv6_address_attribute: ~x"./ipv6AddressAttribute/text()"os,
+            ip_source: ~x"./ipSource/text()"os
+          ],
+          tags: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
         )
 
       {:ok, %{subnets: subnets}}
@@ -358,6 +478,7 @@ defmodule AWS.EC2 do
         xpath(body, ~x"//reservationSet/item"l,
           reservation_id: ~x"./reservationId/text()"s,
           owner_id: ~x"./ownerId/text()"s,
+          requester_id: ~x"./requesterId/text()"os,
           instances: [
             ~x"./instancesSet/item"l,
             instance_id: ~x"./instanceId/text()"s,
@@ -370,6 +491,136 @@ defmodule AWS.EC2 do
             vpc_id: ~x"./vpcId/text()"s,
             availability_zone: ~x"./placement/availabilityZone/text()"s,
             launch_time: ~x"./launchTime/text()"s,
+            state_code: ~x"./instanceState/code/text()"oi,
+            # Required: No on every EC2 member, so no integer is ever cast
+            # unconditionally in this module.
+            ami_launch_index: ~x"./amiLaunchIndex/text()"oi,
+            private_dns_name: ~x"./privateDnsName/text()"os,
+            public_dns_name: ~x"./dnsName/text()"os,
+            reason: ~x"./reason/text()"os,
+            key_name: ~x"./keyName/text()"os,
+            source_dest_check: ~x"./sourceDestCheck/text()"os,
+            architecture: ~x"./architecture/text()"os,
+            root_device_type: ~x"./rootDeviceType/text()"os,
+            root_device_name: ~x"./rootDeviceName/text()"os,
+            virtualization_type: ~x"./virtualizationType/text()"os,
+            client_token: ~x"./clientToken/text()"os,
+            hypervisor: ~x"./hypervisor/text()"os,
+            ebs_optimized: ~x"./ebsOptimized/text()"os,
+            kernel_id: ~x"./kernelId/text()"os,
+            ramdisk_id: ~x"./ramdiskId/text()"os,
+            platform: ~x"./platform/text()"os,
+            platform_details: ~x"./platformDetails/text()"os,
+            usage_operation: ~x"./usageOperation/text()"os,
+            usage_operation_update_time: ~x"./usageOperationUpdateTime/text()"os,
+            sriov_net_support: ~x"./sriovNetSupport/text()"os,
+            spot_instance_request_id: ~x"./spotInstanceRequestId/text()"os,
+            instance_lifecycle: ~x"./instanceLifecycle/text()"os,
+            capacity_reservation_id: ~x"./capacityReservationId/text()"os,
+            capacity_block_id: ~x"./capacityBlockId/text()"os,
+            boot_mode: ~x"./bootMode/text()"os,
+            current_instance_boot_mode: ~x"./currentInstanceBootMode/text()"os,
+            ipv6_address: ~x"./ipv6Address/text()"os,
+            tpm_support: ~x"./tpmSupport/text()"os,
+            outpost_arn: ~x"./outpostArn/text()"os,
+            monitoring_state: ~x"./monitoring/state/text()"os,
+            state_reason_code: ~x"./stateReason/code/text()"os,
+            state_reason_message: ~x"./stateReason/message/text()"os,
+            iam_instance_profile_arn: ~x"./iamInstanceProfile/arn/text()"os,
+            iam_instance_profile_id: ~x"./iamInstanceProfile/id/text()"os,
+            placement_group_name: ~x"./placement/groupName/text()"os,
+            placement_group_id: ~x"./placement/groupId/text()"os,
+            placement_tenancy: ~x"./placement/tenancy/text()"os,
+            placement_affinity: ~x"./placement/affinity/text()"os,
+            placement_host_id: ~x"./placement/hostId/text()"os,
+            placement_host_resource_group_arn: ~x"./placement/hostResourceGroupArn/text()"os,
+            placement_availability_zone_id: ~x"./placement/availabilityZoneId/text()"os,
+            placement_spread_domain: ~x"./placement/spreadDomain/text()"os,
+            placement_partition_number: ~x"./placement/partitionNumber/text()"oi,
+            cpu_core_count: ~x"./cpuOptions/coreCount/text()"oi,
+            cpu_threads_per_core: ~x"./cpuOptions/threadsPerCore/text()"oi,
+            cpu_amd_sev_snp: ~x"./cpuOptions/amdSevSnp/text()"os,
+            # The docs' Example 9 renders this block in PascalCase; a live
+            # DescribeInstances response uses lowerCamel like every other
+            # structure, so the example is a doc typo.
+            metadata_http_tokens: ~x"./metadataOptions/httpTokens/text()"os,
+            metadata_http_endpoint: ~x"./metadataOptions/httpEndpoint/text()"os,
+            metadata_http_protocol_ipv6: ~x"./metadataOptions/httpProtocolIpv6/text()"os,
+            metadata_instance_metadata_tags: ~x"./metadataOptions/instanceMetadataTags/text()"os,
+            metadata_state: ~x"./metadataOptions/state/text()"os,
+            metadata_http_put_response_hop_limit:
+              ~x"./metadataOptions/httpPutResponseHopLimit/text()"oi,
+            enclave_enabled: ~x"./enclaveOptions/enabled/text()"os,
+            hibernation_configured: ~x"./hibernationOptions/configured/text()"os,
+            maintenance_auto_recovery: ~x"./maintenanceOptions/autoRecovery/text()"os,
+            maintenance_reboot_migration: ~x"./maintenanceOptions/rebootMigration/text()"os,
+            private_dns_hostname_type: ~x"./privateDnsNameOptions/hostnameType/text()"os,
+            private_dns_enable_a_record:
+              ~x"./privateDnsNameOptions/enableResourceNameDnsARecord/text()"os,
+            private_dns_enable_aaaa_record:
+              ~x"./privateDnsNameOptions/enableResourceNameDnsAAAARecord/text()"os,
+            capacity_reservation_preference:
+              ~x"./capacityReservationSpecification/capacityReservationPreference/text()"os,
+            product_codes: [
+              ~x"./productCodes/item"l,
+              product_code: ~x"./productCode/text()"s,
+              type: ~x"./type/text()"os
+            ],
+            block_device_mappings: [
+              ~x"./blockDeviceMapping/item"l,
+              device_name: ~x"./deviceName/text()"s,
+              volume_id: ~x"./ebs/volumeId/text()"os,
+              status: ~x"./ebs/status/text()"os,
+              attach_time: ~x"./ebs/attachTime/text()"os,
+              delete_on_termination: ~x"./ebs/deleteOnTermination/text()"os,
+              volume_owner_id: ~x"./ebs/volumeOwnerId/text()"os,
+              associated_resource: ~x"./ebs/associatedResource/text()"os,
+              ebs_card_index: ~x"./ebs/ebsCardIndex/text()"oi
+            ],
+            network_interfaces: [
+              ~x"./networkInterfaceSet/item"l,
+              network_interface_id: ~x"./networkInterfaceId/text()"os,
+              subnet_id: ~x"./subnetId/text()"os,
+              vpc_id: ~x"./vpcId/text()"os,
+              description: ~x"./description/text()"os,
+              owner_id: ~x"./ownerId/text()"os,
+              status: ~x"./status/text()"os,
+              mac_address: ~x"./macAddress/text()"os,
+              private_ip_address: ~x"./privateIpAddress/text()"os,
+              private_dns_name: ~x"./privateDnsName/text()"os,
+              source_dest_check: ~x"./sourceDestCheck/text()"os,
+              interface_type: ~x"./interfaceType/text()"os,
+              association_public_ip: ~x"./association/publicIp/text()"os,
+              association_public_dns_name: ~x"./association/publicDnsName/text()"os,
+              association_ip_owner_id: ~x"./association/ipOwnerId/text()"os,
+              association_carrier_ip: ~x"./association/carrierIp/text()"os,
+              association_customer_owned_ip: ~x"./association/customerOwnedIp/text()"os,
+              attachment_id: ~x"./attachment/attachmentId/text()"os,
+              attachment_status: ~x"./attachment/status/text()"os,
+              attachment_attach_time: ~x"./attachment/attachTime/text()"os,
+              attachment_delete_on_termination: ~x"./attachment/deleteOnTermination/text()"os,
+              attachment_device_index: ~x"./attachment/deviceIndex/text()"oi,
+              attachment_network_card_index: ~x"./attachment/networkCardIndex/text()"oi,
+              attachment_ena_queue_count: ~x"./attachment/enaQueueCount/text()"oi,
+              security_groups: [
+                ~x"./groupSet/item"l,
+                group_id: ~x"./groupId/text()"s,
+                group_name: ~x"./groupName/text()"s
+              ],
+              private_ip_addresses: [
+                ~x"./privateIpAddressesSet/item"l,
+                private_ip_address: ~x"./privateIpAddress/text()"os,
+                private_dns_name: ~x"./privateDnsName/text()"os,
+                primary: ~x"./primary/text()"os,
+                association_public_ip: ~x"./association/publicIp/text()"os,
+                association_ip_owner_id: ~x"./association/ipOwnerId/text()"os
+              ],
+              ipv6_addresses: [
+                ~x"./ipv6AddressesSet/item"l,
+                ipv6_address: ~x"./ipv6Address/text()"os,
+                is_primary_ipv6: ~x"./isPrimaryIpv6/text()"os
+              ]
+            ],
             tags: [
               ~x"./tagSet/item"l,
               key: ~x"./key/text()"s,
@@ -383,7 +634,11 @@ defmodule AWS.EC2 do
           ]
         )
 
-      {:ok, %{reservations: reservations}}
+      {:ok,
+       %{
+         reservations: reservations,
+         next_token: xpath(body, ~x"//DescribeInstancesResponse/nextToken/text()"os)
+       }}
     end)
   end
 
@@ -444,10 +699,61 @@ defmodule AWS.EC2 do
             key: ~x"./key/text()"s,
             value: ~x"./value/text()"s
           ],
+          image_location: ~x"./imageLocation/text()"os,
+          image_type: ~x"./imageType/text()"os,
+          # Examples 2 and 3 and the current Contents use isPublic; Example 1
+          # uses the stale `public`. Read the documented name.
+          is_public: ~x"./isPublic/text()"os,
+          image_owner_alias: ~x"./imageOwnerAlias/text()"os,
+          description: ~x"./description/text()"os,
+          architecture: ~x"./architecture/text()"os,
+          # `platform` is a Windows-only flag; platformDetails is the general
+          # field.
+          platform: ~x"./platform/text()"os,
+          platform_details: ~x"./platformDetails/text()"os,
+          usage_operation: ~x"./usageOperation/text()"os,
+          ena_support: ~x"./enaSupport/text()"os,
+          sriov_net_support: ~x"./sriovNetSupport/text()"os,
+          kernel_id: ~x"./kernelId/text()"os,
+          ramdisk_id: ~x"./ramdiskId/text()"os,
+          root_device_type: ~x"./rootDeviceType/text()"os,
+          root_device_name: ~x"./rootDeviceName/text()"os,
+          virtualization_type: ~x"./virtualizationType/text()"os,
+          hypervisor: ~x"./hypervisor/text()"os,
+          boot_mode: ~x"./bootMode/text()"os,
+          tpm_support: ~x"./tpmSupport/text()"os,
+          imds_support: ~x"./imdsSupport/text()"os,
+          deprecation_time: ~x"./deprecationTime/text()"os,
+          deregistration_protection: ~x"./deregistrationProtection/text()"os,
+          last_launched_time: ~x"./lastLaunchedTime/text()"os,
+          source_image_id: ~x"./sourceImageId/text()"os,
+          source_image_region: ~x"./sourceImageRegion/text()"os,
+          source_instance_id: ~x"./sourceInstanceId/text()"os,
+          public_ssm_parameter_name: ~x"./publicSsmParameterName/text()"os,
+          free_tier_eligible: ~x"./freeTierEligible/text()"os,
+          image_allowed: ~x"./imageAllowed/text()"os,
+          state_reason_code: ~x"./stateReason/code/text()"os,
+          state_reason_message: ~x"./stateReason/message/text()"os,
+          product_codes: [
+            ~x"./productCodes/item"l,
+            product_code: ~x"./productCode/text()"s,
+            type: ~x"./type/text()"os
+          ],
           block_device_mappings: [
             ~x"./blockDeviceMapping/item"l,
             device_name: ~x"./deviceName/text()"s,
-            snapshot_id: ~x"./ebs/snapshotId/text()"s
+            virtual_name: ~x"./virtualName/text()"os,
+            no_device: ~x"./noDevice/text()"os,
+            snapshot_id: ~x"./ebs/snapshotId/text()"s,
+            # Every EBS integer is Required: No -- never a plain cast.
+            volume_size: ~x"./ebs/volumeSize/text()"oi,
+            iops: ~x"./ebs/iops/text()"oi,
+            throughput: ~x"./ebs/throughput/text()"oi,
+            ebs_card_index: ~x"./ebs/ebsCardIndex/text()"oi,
+            volume_type: ~x"./ebs/volumeType/text()"os,
+            delete_on_termination: ~x"./ebs/deleteOnTermination/text()"os,
+            encrypted: ~x"./ebs/encrypted/text()"os,
+            outpost_arn: ~x"./ebs/outpostArn/text()"os
           ]
         )
 
@@ -583,7 +889,7 @@ defmodule AWS.EC2 do
           value: ~x"./value/text()"s
         )
 
-      {:ok, %{tags: tags}}
+      {:ok, %{tags: tags, next_token: xpath(body, ~x"//DescribeTagsResponse/nextToken/text()"os)}}
     end)
   end
 

@@ -10,7 +10,18 @@ defmodule AWS.S3.XMLParser do
       nil ->
         %{
           etag: xpath(doc, ~x"//ETag/text()"s),
-          last_modified: xpath(doc, ~x"//LastModified/text()"s)
+          last_modified: xpath(doc, ~x"//LastModified/text()"s),
+          checksum_crc32: xpath(doc, ~x"//CopyObjectResult/ChecksumCRC32/text()"so),
+          checksum_crc32c: xpath(doc, ~x"//CopyObjectResult/ChecksumCRC32C/text()"so),
+          checksum_crc64nvme: xpath(doc, ~x"//CopyObjectResult/ChecksumCRC64NVME/text()"so),
+          checksum_sha1: xpath(doc, ~x"//CopyObjectResult/ChecksumSHA1/text()"so),
+          checksum_sha256: xpath(doc, ~x"//CopyObjectResult/ChecksumSHA256/text()"so),
+          checksum_sha512: xpath(doc, ~x"//CopyObjectResult/ChecksumSHA512/text()"so),
+          checksum_md5: xpath(doc, ~x"//CopyObjectResult/ChecksumMD5/text()"so),
+          checksum_xxhash64: xpath(doc, ~x"//CopyObjectResult/ChecksumXXHASH64/text()"so),
+          checksum_xxhash3: xpath(doc, ~x"//CopyObjectResult/ChecksumXXHASH3/text()"so),
+          checksum_xxhash128: xpath(doc, ~x"//CopyObjectResult/ChecksumXXHASH128/text()"so),
+          checksum_type: xpath(doc, ~x"//CopyObjectResult/ChecksumType/text()"so)
         }
 
       error ->
@@ -27,7 +38,47 @@ defmodule AWS.S3.XMLParser do
   def parse_notification_configuration(xml) do
     doc = SweetXml.parse(xml)
     event_bridge_enabled = xpath(doc, ~x"//EventBridgeConfiguration"o) !== nil
-    %{event_bridge_enabled: event_bridge_enabled, raw_xml: xml}
+
+    %{
+      event_bridge_enabled: event_bridge_enabled,
+      raw_xml: xml,
+      topic_configurations:
+        xpath(doc, ~x"//NotificationConfiguration/TopicConfiguration"l,
+          id: ~x"./Id/text()"so,
+          topic: ~x"./Topic/text()"so,
+          # The wire element is the singular `Event`, repeated.
+          events: ~x"./Event/text()"sl,
+          filter_rules: [
+            ~x"./Filter/S3Key/FilterRule"l,
+            name: ~x"./Name/text()"so,
+            value: ~x"./Value/text()"so
+          ]
+        ),
+      queue_configurations:
+        xpath(doc, ~x"//NotificationConfiguration/QueueConfiguration"l,
+          id: ~x"./Id/text()"so,
+          queue: ~x"./Queue/text()"so,
+          events: ~x"./Event/text()"sl,
+          filter_rules: [
+            ~x"./Filter/S3Key/FilterRule"l,
+            name: ~x"./Name/text()"so,
+            value: ~x"./Value/text()"so
+          ]
+        ),
+      # The wire elements are `CloudFunctionConfiguration` / `CloudFunction`;
+      # `LambdaFunctionConfiguration` is the model name, not the XML name.
+      cloud_function_configurations:
+        xpath(doc, ~x"//NotificationConfiguration/CloudFunctionConfiguration"l,
+          id: ~x"./Id/text()"so,
+          cloud_function: ~x"./CloudFunction/text()"so,
+          events: ~x"./Event/text()"sl,
+          filter_rules: [
+            ~x"./Filter/S3Key/FilterRule"l,
+            name: ~x"./Name/text()"so,
+            value: ~x"./Value/text()"so
+          ]
+        )
+    }
   end
 
   @doc """
@@ -42,7 +93,9 @@ defmodule AWS.S3.XMLParser do
       buckets:
         xpath(doc, ~x"//Buckets/Bucket"l,
           name: ~x"./Name/text()"s,
-          creation_date: ~x"./CreationDate/text()"s
+          creation_date: ~x"./CreationDate/text()"s,
+          bucket_region: ~x"./BucketRegion/text()"so,
+          bucket_arn: ~x"./BucketArn/text()"so
         ),
       owner: %{
         id: xpath(doc, ~x"//Owner/ID/text()"s),
@@ -70,13 +123,32 @@ defmodule AWS.S3.XMLParser do
       is_truncated: to_bool(xpath(doc, ~x"//ListBucketResult/IsTruncated/text()"s)),
       continuation_token: xpath(doc, ~x"//ListBucketResult/ContinuationToken/text()"so),
       next_continuation_token: xpath(doc, ~x"//ListBucketResult/NextContinuationToken/text()"so),
+      delimiter: xpath(doc, ~x"//ListBucketResult/Delimiter/text()"so),
+      encoding_type: xpath(doc, ~x"//ListBucketResult/EncodingType/text()"so),
+      start_after: xpath(doc, ~x"//ListBucketResult/StartAfter/text()"so),
+      # `CommonPrefixes` repeats inline rather than sitting in a wrapper.
+      common_prefixes: xpath(doc, ~x"//ListBucketResult/CommonPrefixes/Prefix/text()"sl),
       contents:
         xpath(doc, ~x"//Contents"l,
           key: ~x"./Key/text()"s,
           last_modified: ~x"./LastModified/text()"s,
           etag: ~x"./ETag/text()"s,
           size: ~x"./Size/text()"s,
-          storage_class: ~x"./StorageClass/text()"s
+          storage_class: ~x"./StorageClass/text()"s,
+          # On `Object` this is an array, unlike the singular String of the
+          # same name on `ListPartsResult`.
+          checksum_algorithm: ~x"./ChecksumAlgorithm/text()"sl,
+          checksum_type: ~x"./ChecksumType/text()"so,
+          owner: [
+            ~x"./Owner"o,
+            id: ~x"./ID/text()"so,
+            display_name: ~x"./DisplayName/text()"so
+          ],
+          restore_status: [
+            ~x"./RestoreStatus"o,
+            is_restore_in_progress: ~x"./IsRestoreInProgress/text()"so,
+            restore_expiry_date: ~x"./RestoreExpiryDate/text()"so
+          ]
         )
     }
   end
@@ -113,12 +185,34 @@ defmodule AWS.S3.XMLParser do
       next_part_number_marker: xpath(doc, ~x"//ListPartsResult/NextPartNumberMarker/text()"so),
       max_parts: xpath(doc, ~x"//ListPartsResult/MaxParts/text()"s),
       is_truncated: to_bool(xpath(doc, ~x"//ListPartsResult/IsTruncated/text()"s)),
+      storage_class: xpath(doc, ~x"//ListPartsResult/StorageClass/text()"so),
+      # Singular String here, unlike the array on an Object in ListObjectsV2.
+      checksum_algorithm: xpath(doc, ~x"//ListPartsResult/ChecksumAlgorithm/text()"so),
+      checksum_type: xpath(doc, ~x"//ListPartsResult/ChecksumType/text()"so),
+      initiator: %{
+        id: xpath(doc, ~x"//ListPartsResult/Initiator/ID/text()"so),
+        display_name: xpath(doc, ~x"//ListPartsResult/Initiator/DisplayName/text()"so)
+      },
+      owner: %{
+        id: xpath(doc, ~x"//ListPartsResult/Owner/ID/text()"so),
+        display_name: xpath(doc, ~x"//ListPartsResult/Owner/DisplayName/text()"so)
+      },
       parts:
         xpath(doc, ~x"//Part"l,
           part_number: ~x"./PartNumber/text()"s,
           last_modified: ~x"./LastModified/text()"s,
           etag: ~x"./ETag/text()"s,
-          size: ~x"./Size/text()"s
+          size: ~x"./Size/text()"s,
+          checksum_crc32: ~x"./ChecksumCRC32/text()"so,
+          checksum_crc32c: ~x"./ChecksumCRC32C/text()"so,
+          checksum_crc64nvme: ~x"./ChecksumCRC64NVME/text()"so,
+          checksum_sha1: ~x"./ChecksumSHA1/text()"so,
+          checksum_sha256: ~x"./ChecksumSHA256/text()"so,
+          checksum_sha512: ~x"./ChecksumSHA512/text()"so,
+          checksum_md5: ~x"./ChecksumMD5/text()"so,
+          checksum_xxhash64: ~x"./ChecksumXXHASH64/text()"so,
+          checksum_xxhash3: ~x"./ChecksumXXHASH3/text()"so,
+          checksum_xxhash128: ~x"./ChecksumXXHASH128/text()"so
         )
     }
   end
@@ -133,7 +227,17 @@ defmodule AWS.S3.XMLParser do
 
     %{
       etag: xpath(doc, ~x"//ETag/text()"s),
-      last_modified: xpath(doc, ~x"//LastModified/text()"s)
+      last_modified: xpath(doc, ~x"//LastModified/text()"s),
+      checksum_crc32: xpath(doc, ~x"//CopyPartResult/ChecksumCRC32/text()"so),
+      checksum_crc32c: xpath(doc, ~x"//CopyPartResult/ChecksumCRC32C/text()"so),
+      checksum_crc64nvme: xpath(doc, ~x"//CopyPartResult/ChecksumCRC64NVME/text()"so),
+      checksum_sha1: xpath(doc, ~x"//CopyPartResult/ChecksumSHA1/text()"so),
+      checksum_sha256: xpath(doc, ~x"//CopyPartResult/ChecksumSHA256/text()"so),
+      checksum_sha512: xpath(doc, ~x"//CopyPartResult/ChecksumSHA512/text()"so),
+      checksum_md5: xpath(doc, ~x"//CopyPartResult/ChecksumMD5/text()"so),
+      checksum_xxhash64: xpath(doc, ~x"//CopyPartResult/ChecksumXXHASH64/text()"so),
+      checksum_xxhash3: xpath(doc, ~x"//CopyPartResult/ChecksumXXHASH3/text()"so),
+      checksum_xxhash128: xpath(doc, ~x"//CopyPartResult/ChecksumXXHASH128/text()"so)
     }
   end
 
@@ -151,7 +255,25 @@ defmodule AWS.S3.XMLParser do
           location: xpath(doc, ~x"//Location/text()"s),
           bucket: xpath(doc, ~x"//Bucket/text()"s),
           key: xpath(doc, ~x"//Key/text()"s),
-          etag: xpath(doc, ~x"//ETag/text()"s)
+          etag: xpath(doc, ~x"//ETag/text()"s),
+          checksum_crc32: xpath(doc, ~x"//CompleteMultipartUploadResult/ChecksumCRC32/text()"so),
+          checksum_crc32c:
+            xpath(doc, ~x"//CompleteMultipartUploadResult/ChecksumCRC32C/text()"so),
+          checksum_crc64nvme:
+            xpath(doc, ~x"//CompleteMultipartUploadResult/ChecksumCRC64NVME/text()"so),
+          checksum_sha1: xpath(doc, ~x"//CompleteMultipartUploadResult/ChecksumSHA1/text()"so),
+          checksum_sha256:
+            xpath(doc, ~x"//CompleteMultipartUploadResult/ChecksumSHA256/text()"so),
+          checksum_sha512:
+            xpath(doc, ~x"//CompleteMultipartUploadResult/ChecksumSHA512/text()"so),
+          checksum_md5: xpath(doc, ~x"//CompleteMultipartUploadResult/ChecksumMD5/text()"so),
+          checksum_xxhash64:
+            xpath(doc, ~x"//CompleteMultipartUploadResult/ChecksumXXHASH64/text()"so),
+          checksum_xxhash3:
+            xpath(doc, ~x"//CompleteMultipartUploadResult/ChecksumXXHASH3/text()"so),
+          checksum_xxhash128:
+            xpath(doc, ~x"//CompleteMultipartUploadResult/ChecksumXXHASH128/text()"so),
+          checksum_type: xpath(doc, ~x"//CompleteMultipartUploadResult/ChecksumType/text()"so)
         }
 
       error ->
