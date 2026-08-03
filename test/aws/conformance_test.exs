@@ -344,6 +344,47 @@ defmodule AWS.ConformanceTest do
     assert fun.cloud_function == "arn:aws:lambda:us-east-1:1:function:f"
   end
 
+  test "an IAM role keeps PermissionsBoundary and RoleLastUsed as structures" do
+    xml = """
+    <GetRoleResponse><GetRoleResult><Role>
+    <RoleName>AdminRole</RoleName><RoleId>AROA1</RoleId>
+    <Arn>arn:aws:iam::1:role/AdminRole</Arn><Path>/</Path>
+    <CreateDate>2026-01-01T00:00:00Z</CreateDate><MaxSessionDuration>3600</MaxSessionDuration>
+    <PermissionsBoundary>
+    <PermissionsBoundaryArn>arn:aws:iam::1:policy/b</PermissionsBoundaryArn>
+    <PermissionsBoundaryType>Policy</PermissionsBoundaryType></PermissionsBoundary>
+    <RoleLastUsed><LastUsedDate>2026-02-01T00:00:00Z</LastUsedDate><Region>us-east-1</Region>
+    </RoleLastUsed>
+    <Tags><member><Key>team</Key><Value>infra</Value></member></Tags>
+    </Role></GetRoleResult></GetRoleResponse>
+    """
+
+    role = AWS.IAM.parse_role_for_test(xml)
+
+    assert role.permissions_boundary.permissions_boundary_arn == "arn:aws:iam::1:policy/b"
+    assert role.permissions_boundary.permissions_boundary_type == "Policy"
+
+    # RoleLastUsed's members are LastUsedDate and Region; they were previously
+    # hoisted onto the role AND prefix-renamed to role_last_used_*.
+    assert role.role_last_used == %{last_used_date: "2026-02-01T00:00:00Z", region: "us-east-1"}
+    refute Map.has_key?(role, :role_last_used_date)
+
+    assert role.tags == [%{key: "team", value: "infra"}]
+    assert role.max_session_duration == 3600
+  end
+
+  test "GetAccountSummary keeps SummaryMap's entry list" do
+    xml = """
+    <GetAccountSummaryResponse><GetAccountSummaryResult><SummaryMap>
+    <entry><key>Users</key><value>3</value></entry>
+    <entry><key>Groups</key><value>1</value></entry>
+    </SummaryMap></GetAccountSummaryResult></GetAccountSummaryResponse>
+    """
+
+    assert %{summary_map: entries} = AWS.IAM.parse_account_summary_for_test(xml)
+    assert entries == [%{key: "Users", value: 3}, %{key: "Groups", value: 1}]
+  end
+
   test "a MixedInstancesPolicy keeps both of the levels it used to collapse" do
     xml = """
     <DescribeAutoScalingGroupsResponse><DescribeAutoScalingGroupsResult><AutoScalingGroups>

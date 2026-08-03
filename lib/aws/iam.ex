@@ -111,7 +111,7 @@ defmodule AWS.IAM do
     "CreateUser"
     |> perform(params, opts)
     |> deserialize_response(opts, fn body ->
-      {:ok, parse_user(body, ~x"//CreateUserResult/User"e)}
+      {:ok, %{user: parse_user(body, ~x"//CreateUserResult/User"e)}}
     end)
   end
 
@@ -137,7 +137,7 @@ defmodule AWS.IAM do
     "GetUser"
     |> perform(maybe_put(%{}, "UserName", opts[:user_name]), opts)
     |> deserialize_response(opts, fn body ->
-      {:ok, parse_user(body, ~x"//GetUserResult/User"e)}
+      {:ok, %{user: parse_user(body, ~x"//GetUserResult/User"e)}}
     end)
   end
 
@@ -171,25 +171,13 @@ defmodule AWS.IAM do
     "ListUsers"
     |> perform(params, opts)
     |> deserialize_response(opts, fn body ->
-      result =
-        xpath(body, ~x"//ListUsersResult"e,
-          users: [
-            ~x"./Users/member"l,
-            user_name: ~x"./UserName/text()"s,
-            user_id: ~x"./UserId/text()"s,
-            arn: ~x"./Arn/text()"s,
-            path: ~x"./Path/text()"s,
-            create_date: ~x"./CreateDate/text()"s
-          ],
-          is_truncated: ~x"./IsTruncated/text()"s,
-          marker: ~x"./Marker/text()"s
-        )
+      marker = xpath(body, ~x"//ListUsersResult/Marker/text()"s)
 
       {:ok,
        %{
-         users: result.users,
-         is_truncated: result.is_truncated === "true",
-         marker: if(result.marker === "", do: nil, else: result.marker)
+         users: parse_user(body, ~x"//ListUsersResult/Users/member"l),
+         is_truncated: xpath(body, ~x"//ListUsersResult/IsTruncated/text()"s) === "true",
+         marker: if(marker === "", do: nil, else: marker)
        }}
     end)
   end
@@ -246,7 +234,7 @@ defmodule AWS.IAM do
     "CreateAccessKey"
     |> perform(maybe_put(%{}, "UserName", opts[:user_name]), opts)
     |> deserialize_response(opts, fn body ->
-      {:ok, parse_access_key(body, ~x"//CreateAccessKeyResult/AccessKey"e)}
+      {:ok, %{access_key: parse_access_key(body, ~x"//CreateAccessKeyResult/AccessKey"e)}}
     end)
   end
 
@@ -259,7 +247,13 @@ defmodule AWS.IAM do
     * `opts` - Shared options.
   """
   @spec list_access_keys(opts :: keyword()) ::
-          {:ok, %{access_keys: list(map())}} | {:error, term()}
+          {:ok,
+           %{
+             access_key_metadata: list(map()),
+             is_truncated: boolean(),
+             marker: String.t() | nil
+           }}
+          | {:error, term()}
   def list_access_keys(opts \\ []) do
     if sandbox?(opts) do
       sandbox_list_access_keys_response(opts)
@@ -278,7 +272,7 @@ defmodule AWS.IAM do
     "ListAccessKeys"
     |> perform(params, opts)
     |> deserialize_response(opts, fn body ->
-      access_keys =
+      access_key_metadata =
         xpath(body, ~x"//AccessKeyMetadata/member"l,
           access_key_id: ~x"./AccessKeyId/text()"s,
           user_name: ~x"./UserName/text()"s,
@@ -288,9 +282,9 @@ defmodule AWS.IAM do
 
       {:ok,
        %{
-         access_keys: access_keys,
-         is_truncated: xpath(body, ~x"//IsTruncated/text()"s) == "true",
-         marker: xpath(body, ~x"//Marker/text()"so)
+         access_key_metadata: access_key_metadata,
+         is_truncated: xpath(body, ~x"//ListAccessKeysResult/IsTruncated/text()"s) == "true",
+         marker: xpath(body, ~x"//ListAccessKeysResult/Marker/text()"so)
        }}
     end)
   end
@@ -350,7 +344,7 @@ defmodule AWS.IAM do
     "CreateGroup"
     |> perform(params, opts)
     |> deserialize_response(opts, fn body ->
-      {:ok, parse_group(body, ~x"//CreateGroupResult/Group"e)}
+      {:ok, %{group: parse_group(body, ~x"//CreateGroupResult/Group"e)}}
     end)
   end
 
@@ -394,8 +388,8 @@ defmodule AWS.IAM do
       {:ok,
        %{
          groups: groups,
-         is_truncated: xpath(body, ~x"//IsTruncated/text()"s) == "true",
-         marker: xpath(body, ~x"//Marker/text()"so)
+         is_truncated: xpath(body, ~x"//ListGroupsResult/IsTruncated/text()"s) == "true",
+         marker: xpath(body, ~x"//ListGroupsResult/Marker/text()"so)
        }}
     end)
   end
@@ -520,7 +514,7 @@ defmodule AWS.IAM do
     "CreateRole"
     |> perform(params, opts)
     |> deserialize_response(opts, fn body ->
-      {:ok, parse_role(body, ~x"//Role"e)}
+      {:ok, %{role: parse_role(body, ~x"//Role"e)}}
     end)
   end
 
@@ -546,7 +540,7 @@ defmodule AWS.IAM do
     "GetRole"
     |> perform(%{"RoleName" => name}, opts)
     |> deserialize_response(opts, fn body ->
-      {:ok, parse_role(body, ~x"//Role"e)}
+      {:ok, %{role: parse_role(body, ~x"//Role"e)}}
     end)
   end
 
@@ -580,20 +574,11 @@ defmodule AWS.IAM do
     "ListRoles"
     |> perform(params, opts)
     |> deserialize_response(opts, fn body ->
-      roles =
-        xpath(body, ~x"//Roles/member"l,
-          role_name: ~x"./RoleName/text()"s,
-          role_id: ~x"./RoleId/text()"s,
-          arn: ~x"./Arn/text()"s,
-          path: ~x"./Path/text()"s,
-          create_date: ~x"./CreateDate/text()"s
-        )
-
       {:ok,
        %{
-         roles: roles,
-         is_truncated: xpath(body, ~x"//IsTruncated/text()"s) == "true",
-         marker: xpath(body, ~x"//Marker/text()"so)
+         roles: parse_role(body, ~x"//Roles/member"l),
+         is_truncated: xpath(body, ~x"//ListRolesResult/IsTruncated/text()"s) == "true",
+         marker: xpath(body, ~x"//ListRolesResult/Marker/text()"so)
        }}
     end)
   end
@@ -808,9 +793,9 @@ defmodule AWS.IAM do
     "ListRolePolicies"
     |> perform(params, opts)
     |> deserialize_response(opts, fn body ->
-      policy_names = xpath(body, ~x"//PolicyNames/member/text()"ls)
-      is_truncated = xpath(body, ~x"//IsTruncated/text()"s) === "true"
-      marker = xpath(body, ~x"//Marker/text()"s)
+      policy_names = xpath(body, ~x"//ListRolePoliciesResult/PolicyNames/member/text()"ls)
+      is_truncated = xpath(body, ~x"//ListRolePoliciesResult/IsTruncated/text()"s) === "true"
+      marker = xpath(body, ~x"//ListRolePoliciesResult/Marker/text()"s)
 
       {:ok,
        %{
@@ -857,7 +842,7 @@ defmodule AWS.IAM do
     "CreatePolicy"
     |> perform(params, opts)
     |> deserialize_response(opts, fn body ->
-      {:ok, parse_policy(body, ~x"//Policy"e)}
+      {:ok, %{policy: parse_policy(body, ~x"//Policy"e)}}
     end)
   end
 
@@ -883,7 +868,7 @@ defmodule AWS.IAM do
     "GetPolicy"
     |> perform(%{"PolicyArn" => policy_arn}, opts)
     |> deserialize_response(opts, fn body ->
-      {:ok, parse_policy(body, ~x"//Policy"e)}
+      {:ok, %{policy: parse_policy(body, ~x"//Policy"e)}}
     end)
   end
 
@@ -935,10 +920,12 @@ defmodule AWS.IAM do
 
       {:ok,
        %{
-         document: document,
-         version_id: fields.version_id,
-         is_default_version: fields.is_default_version === "true",
-         create_date: fields.create_date
+         policy_version: %{
+           document: document,
+           version_id: fields.version_id,
+           is_default_version: fields.is_default_version === "true",
+           create_date: fields.create_date
+         }
        }}
     end)
   end
@@ -977,21 +964,11 @@ defmodule AWS.IAM do
     "ListPolicies"
     |> perform(params, opts)
     |> deserialize_response(opts, fn body ->
-      policies =
-        xpath(body, ~x"//Policies/member"l,
-          policy_name: ~x"./PolicyName/text()"s,
-          policy_id: ~x"./PolicyId/text()"s,
-          arn: ~x"./Arn/text()"s,
-          path: ~x"./Path/text()"s,
-          create_date: ~x"./CreateDate/text()"s,
-          update_date: ~x"./UpdateDate/text()"s
-        )
-
       {:ok,
        %{
-         policies: policies,
-         is_truncated: xpath(body, ~x"//IsTruncated/text()"s) == "true",
-         marker: xpath(body, ~x"//Marker/text()"so)
+         policies: parse_policy(body, ~x"//Policies/member"l),
+         is_truncated: xpath(body, ~x"//ListPoliciesResult/IsTruncated/text()"s) == "true",
+         marker: xpath(body, ~x"//ListPoliciesResult/Marker/text()"so)
        }}
     end)
   end
@@ -1173,8 +1150,8 @@ defmodule AWS.IAM do
         )
         |> Enum.map(fn v -> %{v | is_default_version: v.is_default_version === "true"} end)
 
-      is_truncated = xpath(body, ~x"//IsTruncated/text()"s) === "true"
-      marker = xpath(body, ~x"//Marker/text()"s)
+      is_truncated = xpath(body, ~x"//ListPolicyVersionsResult/IsTruncated/text()"s) === "true"
+      marker = xpath(body, ~x"//ListPolicyVersionsResult/Marker/text()"s)
 
       {:ok,
        %{
@@ -1231,7 +1208,8 @@ defmodule AWS.IAM do
   Lists managed policies attached to a role.
   """
   @spec list_attached_role_policies(role_name :: String.t(), opts :: keyword()) ::
-          {:ok, %{policies: list(map()), is_truncated: boolean(), marker: String.t() | nil}}
+          {:ok,
+           %{attached_policies: list(map()), is_truncated: boolean(), marker: String.t() | nil}}
           | {:error, term()}
   def list_attached_role_policies(role_name, opts \\ []) do
     if sandbox?(opts) do
@@ -1259,9 +1237,10 @@ defmodule AWS.IAM do
 
       {:ok,
        %{
-         policies: policies,
-         is_truncated: xpath(body, ~x"//IsTruncated/text()"s) == "true",
-         marker: xpath(body, ~x"//Marker/text()"so)
+         attached_policies: policies,
+         is_truncated:
+           xpath(body, ~x"//ListAttachedRolePoliciesResult/IsTruncated/text()"s) == "true",
+         marker: xpath(body, ~x"//ListAttachedRolePoliciesResult/Marker/text()"so)
        }}
     end)
   end
@@ -1640,10 +1619,12 @@ defmodule AWS.IAM do
   integer-valued account attributes such as `"AccountAccessKeysPresent"`,
   `"AccountMFAEnabled"`, `"Users"`, `"Groups"`, `"Roles"`, etc.
 
-  Returns `{:ok, %{summary_map: map()}}` on success.
+  Returns `{:ok, %{summary_map: [%{key: String.t(), value: integer()}]}}`.
+  AWS sends `SummaryMap` as a list of `<entry><key/><value/></entry>`
+  elements, and that list is what comes back.
   """
   @spec get_account_summary(opts :: keyword()) ::
-          {:ok, %{summary_map: map()}} | {:error, term()}
+          {:ok, %{summary_map: list(map())}} | {:error, term()}
   def get_account_summary(opts \\ []) do
     if sandbox?(opts) do
       sandbox_get_account_summary_response(opts)
@@ -1655,16 +1636,23 @@ defmodule AWS.IAM do
   defp do_get_account_summary(opts) do
     "GetAccountSummary"
     |> perform(%{}, opts)
-    |> deserialize_response(opts, fn body ->
-      entries =
+    |> deserialize_response(opts, fn body -> {:ok, parse_account_summary(body)} end)
+  end
+
+  @doc false
+  def parse_account_summary_for_test(xml), do: parse_account_summary(xml)
+
+  # AWS sends SummaryMap as a list of <entry><key/><value/></entry>, so that
+  # is what comes back. Collapsing it to a plain map would be this library
+  # choosing a container AWS did not send.
+  defp parse_account_summary(body) do
+    %{
+      summary_map:
         xpath(body, ~x"//GetAccountSummaryResult/SummaryMap/entry"l,
           key: ~x"./key/text()"s,
           value: ~x"./value/text()"i
         )
-
-      summary_map = Map.new(entries, fn %{key: k, value: v} -> {k, v} end)
-      {:ok, %{summary_map: summary_map}}
-    end)
+    }
   end
 
   # ---------------------------------------------------------------------------
@@ -1732,8 +1720,11 @@ defmodule AWS.IAM do
       create_date: ~x"./CreateDate/text()"s,
       # Returned only by GetUser and ListUsers, and null if never signed in.
       password_last_used: ~x"./PasswordLastUsed/text()"os,
-      permissions_boundary_arn: ~x"./PermissionsBoundary/PermissionsBoundaryArn/text()"os,
-      permissions_boundary_type: ~x"./PermissionsBoundary/PermissionsBoundaryType/text()"os,
+      permissions_boundary: [
+        ~x"./PermissionsBoundary"o,
+        permissions_boundary_arn: ~x"./PermissionsBoundaryArn/text()"os,
+        permissions_boundary_type: ~x"./PermissionsBoundaryType/text()"os
+      ],
       tags: [~x"./Tags/member"l, key: ~x"./Key/text()"s, value: ~x"./Value/text()"s]
     )
   end
@@ -1759,6 +1750,9 @@ defmodule AWS.IAM do
     )
   end
 
+  @doc false
+  def parse_role_for_test(xml), do: parse_role(xml, ~x"//Role"e)
+
   defp parse_role(body, path) do
     xpath(body, path,
       role_name: ~x"./RoleName/text()"s,
@@ -1772,10 +1766,16 @@ defmodule AWS.IAM do
       description: ~x"./Description/text()"os,
       # Required: No, and absent from the GetRole/CreateRole/ListRoles samples.
       max_session_duration: ~x"./MaxSessionDuration/text()"oi,
-      permissions_boundary_arn: ~x"./PermissionsBoundary/PermissionsBoundaryArn/text()"os,
-      permissions_boundary_type: ~x"./PermissionsBoundary/PermissionsBoundaryType/text()"os,
-      role_last_used_date: ~x"./RoleLastUsed/LastUsedDate/text()"os,
-      role_last_used_region: ~x"./RoleLastUsed/Region/text()"os,
+      permissions_boundary: [
+        ~x"./PermissionsBoundary"o,
+        permissions_boundary_arn: ~x"./PermissionsBoundaryArn/text()"os,
+        permissions_boundary_type: ~x"./PermissionsBoundaryType/text()"os
+      ],
+      role_last_used: [
+        ~x"./RoleLastUsed"o,
+        last_used_date: ~x"./LastUsedDate/text()"os,
+        region: ~x"./Region/text()"os
+      ],
       tags: [~x"./Tags/member"l, key: ~x"./Key/text()"s, value: ~x"./Value/text()"s]
     )
   end

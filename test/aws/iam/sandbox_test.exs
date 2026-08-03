@@ -9,20 +9,22 @@ defmodule AWS.IAM.SandboxTest do
   describe "create_user/2" do
     test "returns mocked success" do
       Sandbox.set_create_user_responses([
-        {"alice", fn -> {:ok, %{user_name: "alice", arn: "arn:aws:iam::123:user/alice"}} end}
+        {"alice",
+         fn -> {:ok, %{user: %{user_name: "alice", arn: "arn:aws:iam::123:user/alice"}}} end}
       ])
 
-      assert {:ok, %{user_name: "alice"}} = IAM.create_user("alice", sandbox: [enabled: true])
+      assert {:ok, %{user: %{user_name: "alice"}}} =
+               IAM.create_user("alice", sandbox: [enabled: true])
     end
   end
 
   describe "get_user/1" do
     test "returns mocked success" do
       Sandbox.set_get_user_responses([
-        fn -> {:ok, %{user_name: "alice", user_id: "AIDA123"}} end
+        fn -> {:ok, %{user: %{user_name: "alice", user_id: "AIDA123"}}} end
       ])
 
-      assert {:ok, %{user_id: "AIDA123"}} =
+      assert {:ok, %{user: %{user_id: "AIDA123"}}} =
                IAM.get_user(user_name: "alice", sandbox: [enabled: true])
     end
   end
@@ -54,11 +56,11 @@ defmodule AWS.IAM.SandboxTest do
     test "returns mocked success" do
       Sandbox.set_create_access_key_responses([
         fn ->
-          {:ok, %{access_key_id: "AKIA123", secret_access_key: "secret", user_name: "alice"}}
+          {:ok, %{access_key: %{access_key_id: "AKIA123", secret_access_key: "secret"}}}
         end
       ])
 
-      assert {:ok, %{access_key_id: "AKIA123", secret_access_key: "secret"}} =
+      assert {:ok, %{access_key: %{access_key_id: "AKIA123", secret_access_key: "secret"}}} =
                IAM.create_access_key(user_name: "alice", sandbox: [enabled: true])
     end
   end
@@ -66,10 +68,10 @@ defmodule AWS.IAM.SandboxTest do
   describe "list_access_keys/1" do
     test "returns mocked list" do
       Sandbox.set_list_access_keys_responses([
-        fn -> {:ok, %{access_keys: [%{access_key_id: "AKIA123", status: "Active"}]}} end
+        fn -> {:ok, %{access_key_metadata: [%{access_key_id: "AKIA123", status: "Active"}]}} end
       ])
 
-      assert {:ok, %{access_keys: [%{access_key_id: "AKIA123"}]}} =
+      assert {:ok, %{access_key_metadata: [%{access_key_id: "AKIA123"}]}} =
                IAM.list_access_keys(user_name: "alice", sandbox: [enabled: true])
     end
   end
@@ -90,10 +92,12 @@ defmodule AWS.IAM.SandboxTest do
   describe "create_group/2" do
     test "returns mocked success" do
       Sandbox.set_create_group_responses([
-        {"devs", fn -> {:ok, %{group_name: "devs", arn: "arn:aws:iam::123:group/devs"}} end}
+        {"devs",
+         fn -> {:ok, %{group: %{group_name: "devs", arn: "arn:aws:iam::123:group/devs"}}} end}
       ])
 
-      assert {:ok, %{group_name: "devs"}} = IAM.create_group("devs", sandbox: [enabled: true])
+      assert {:ok, %{group: %{group_name: "devs"}}} =
+               IAM.create_group("devs", sandbox: [enabled: true])
     end
   end
 
@@ -144,12 +148,12 @@ defmodule AWS.IAM.SandboxTest do
   describe "create_role/3" do
     test "returns mocked success" do
       Sandbox.set_create_role_responses([
-        {"AdminRole", fn -> {:ok, %{role_name: "AdminRole", role_id: "AROA123"}} end}
+        {"AdminRole", fn -> {:ok, %{role: %{role_name: "AdminRole", role_id: "AROA123"}}} end}
       ])
 
       trust_policy = %{"Version" => "2012-10-17", "Statement" => []}
 
-      assert {:ok, %{role_name: "AdminRole"}} =
+      assert {:ok, %{role: %{role_name: "AdminRole"}}} =
                IAM.create_role("AdminRole", trust_policy, sandbox: [enabled: true])
     end
   end
@@ -158,10 +162,12 @@ defmodule AWS.IAM.SandboxTest do
     test "returns mocked success" do
       Sandbox.set_get_role_responses([
         {"AdminRole",
-         fn -> {:ok, %{role_name: "AdminRole", arn: "arn:aws:iam::123:role/AdminRole"}} end}
+         fn ->
+           {:ok, %{role: %{role_name: "AdminRole", arn: "arn:aws:iam::123:role/AdminRole"}}}
+         end}
       ])
 
-      assert {:ok, %{role_name: "AdminRole"}} =
+      assert {:ok, %{role: %{role_name: "AdminRole"}}} =
                IAM.get_role("AdminRole", sandbox: [enabled: true])
     end
   end
@@ -192,12 +198,12 @@ defmodule AWS.IAM.SandboxTest do
   describe "create_policy/3" do
     test "returns mocked success" do
       Sandbox.set_create_policy_responses([
-        {"ReadOnly", fn -> {:ok, %{policy_name: "ReadOnly", policy_id: "ANPA123"}} end}
+        {"ReadOnly", fn -> {:ok, %{policy: %{policy_name: "ReadOnly", policy_id: "ANPA123"}}} end}
       ])
 
       policy_doc = %{"Version" => "2012-10-17", "Statement" => []}
 
-      assert {:ok, %{policy_name: "ReadOnly"}} =
+      assert {:ok, %{policy: %{policy_name: "ReadOnly"}}} =
                IAM.create_policy("ReadOnly", policy_doc, sandbox: [enabled: true])
     end
   end
@@ -206,10 +212,10 @@ defmodule AWS.IAM.SandboxTest do
     test "returns mocked success" do
       Sandbox.set_get_policy_responses([
         {"arn:aws:iam::123:policy/ReadOnly",
-         fn -> {:ok, %{policy_name: "ReadOnly", default_version_id: "v1"}} end}
+         fn -> {:ok, %{policy: %{policy_name: "ReadOnly", default_version_id: "v1"}}} end}
       ])
 
-      assert {:ok, %{policy_name: "ReadOnly"}} =
+      assert {:ok, %{policy: %{policy_name: "ReadOnly"}}} =
                IAM.get_policy("arn:aws:iam::123:policy/ReadOnly", sandbox: [enabled: true])
     end
   end
@@ -220,11 +226,17 @@ defmodule AWS.IAM.SandboxTest do
         {"arn:aws:iam::123:policy/ReadOnly",
          fn ->
            {:ok,
-            %{document: %{"Version" => "2012-10-17"}, version_id: "v1", is_default_version: true}}
+            %{
+              policy_version: %{
+                document: %{"Version" => "2012-10-17"},
+                version_id: "v1",
+                is_default_version: true
+              }
+            }}
          end}
       ])
 
-      assert {:ok, %{version_id: "v1", is_default_version: true}} =
+      assert {:ok, %{policy_version: %{version_id: "v1", is_default_version: true}}} =
                IAM.get_policy_version("arn:aws:iam::123:policy/ReadOnly", "v1",
                  sandbox: [enabled: true]
                )
