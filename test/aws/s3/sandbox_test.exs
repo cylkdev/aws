@@ -601,19 +601,19 @@ defmodule AWS.S3.SandboxTest do
   describe "get_notification_configuration/2" do
     test "returns mocked configuration" do
       Sandbox.set_get_notification_configuration_responses([
-        {"test-bucket", fn -> {:ok, %{event_bridge_enabled: true}} end}
+        {"test-bucket", fn -> {:ok, %{event_bridge_configuration: %{}}} end}
       ])
 
-      assert {:ok, %{event_bridge_enabled: true}} =
+      assert {:ok, %{event_bridge_configuration: %{}}} =
                S3.get_notification_configuration("test-bucket", sandbox: [enabled: true])
     end
 
     test "returns mocked configuration with EventBridge disabled" do
       Sandbox.set_get_notification_configuration_responses([
-        {"test-bucket", fn -> {:ok, %{event_bridge_enabled: false}} end}
+        {"test-bucket", fn -> {:ok, %{event_bridge_configuration: nil}} end}
       ])
 
-      assert {:ok, %{event_bridge_enabled: false}} =
+      assert {:ok, %{event_bridge_configuration: nil}} =
                S3.get_notification_configuration("test-bucket", sandbox: [enabled: true])
     end
   end

@@ -332,16 +332,43 @@ defmodule AWS.ConformanceTest do
 
     parsed = AWS.S3.XMLParser.parse_notification_configuration(xml)
 
-    assert parsed.event_bridge_enabled
-    assert [queue] = parsed.queue_configurations
+    # EventBridgeConfiguration has no members, so presence is the payload.
+    assert parsed.event_bridge_configuration == %{}
+    assert [queue] = parsed.queue_configuration
     assert queue.queue == "arn:aws:sqs:us-east-1:1:q"
-    assert queue.events == ["s3:ObjectCreated:*"]
-    assert queue.filter_rules == [%{name: "prefix", value: "logs/"}]
+    assert queue.event == ["s3:ObjectCreated:*"]
+
+    # Filter and S3Key are two real wrapper elements, not decoration.
+    assert queue.filter.s3_key.filter_rule == [%{name: "prefix", value: "logs/"}]
 
     # The wire element is CloudFunctionConfiguration/CloudFunction, not the
     # model's LambdaFunctionConfiguration/LambdaFunctionArn.
-    assert [fun] = parsed.cloud_function_configurations
+    assert [fun] = parsed.cloud_function_configuration
     assert fun.cloud_function == "arn:aws:lambda:us-east-1:1:function:f"
+  end
+
+  test "ListObjectsV2 keeps CommonPrefix a structure and casts its integers" do
+    xml = """
+    <ListBucketResult><Name>b</Name><Prefix>logs/</Prefix><KeyCount>1</KeyCount>
+    <MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated><Delimiter>/</Delimiter>
+    <Contents><Key>logs/a.txt</Key><LastModified>2026-01-01T00:00:00Z</LastModified>
+    <ETag>"e"</ETag><Size>42</Size><StorageClass>STANDARD</StorageClass>
+    <Owner><ID>oid</ID><DisplayName>o</DisplayName></Owner></Contents>
+    <CommonPrefixes><Prefix>logs/2026/</Prefix></CommonPrefixes>
+    <CommonPrefixes><Prefix>logs/2025/</Prefix></CommonPrefixes>
+    </ListBucketResult>
+    """
+
+    parsed = AWS.S3.XMLParser.parse_list_objects(xml)
+
+    # Each CommonPrefixes entry is a CommonPrefix structure with a Prefix
+    # member, not a bare string.
+    assert parsed.common_prefixes == [%{prefix: "logs/2026/"}, %{prefix: "logs/2025/"}]
+
+    # KeyCount, MaxKeys and Size are Integers in the model.
+    assert parsed.key_count == 1
+    assert parsed.max_keys == 1000
+    assert [%{size: 42, owner: %{id: "oid"}}] = parsed.contents
   end
 
   test "an IAM role keeps PermissionsBoundary and RoleLastUsed as structures" do

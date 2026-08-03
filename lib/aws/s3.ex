@@ -1092,7 +1092,11 @@ defmodule AWS.S3 do
   @doc """
   Returns the notification configuration for an S3 bucket.
 
-  The result includes `:event_bridge_enabled` (boolean) and `:raw_xml` (the original XML).
+  Mirrors AWS's `NotificationConfiguration`: `:topic_configuration`,
+  `:queue_configuration`, and `:cloud_function_configuration` lists, plus
+  `:event_bridge_configuration`, which is `%{}` when EventBridge is enabled
+  and `nil` when it is not (the element carries no members, so its presence
+  is the entire signal).
   """
   @spec get_notification_configuration(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
