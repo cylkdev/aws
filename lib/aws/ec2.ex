@@ -12,9 +12,10 @@ defmodule AWS.EC2 do
   with SigV4 signing under the same region.
 
   The scope of this module is deliberately narrow: security groups,
-  VPC/subnet discovery, instance and tag lookup, and AMI/snapshot
-  lifecycle — the operations needed by the callers of this library.
-  Instances are described but never launched or terminated here; the
+  VPC/subnet discovery, instance and tag lookup, launch template reads,
+  and AMI/snapshot lifecycle — the operations needed by the callers of
+  this library. Instances are described but never launched or terminated
+  here; launch templates are read but never created or modified; the
   image operations exist to retire AMIs a build pipeline has
   superseded. Each public function mirrors the wrapper
   pattern used throughout `AWS.*` (inline sandbox branch + `do_*`
@@ -1033,6 +1034,328 @@ defmodule AWS.EC2 do
     |> deserialize_response(opts, fn body -> {:ok, parse_return(body)} end)
   end
 
+  # ---------------------------------------------------------------------------
+  # Launch templates
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Describes launch templates.
+
+  Returns `%{launch_templates: [...], next_token: ...}`. Each entry carries
+  the template's identity and version pointers (`:launch_template_id`,
+  `:launch_template_name`, `:default_version_number`,
+  `:latest_version_number`, `:tag_set`) but *not* its contents -- the
+  configuration lives on a version, via `describe_launch_template_versions/1`.
+
+  ## Options
+
+    * `:launch_template_ids` - List of template IDs, encoded as `LaunchTemplateId.N`.
+    * `:launch_template_names` - List of template names, encoded as `LaunchTemplateName.N`.
+    * `:filters` - List of `%{name:, values:}` filters.
+    * `:next_token` - Pagination token from a previous response.
+    * `:max_results` - Maximum templates per page.
+  """
+  @spec describe_launch_templates(opts :: keyword()) ::
+          {:ok, %{launch_templates: list(map()), next_token: String.t() | nil}}
+          | {:error, term()}
+  def describe_launch_templates(opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_describe_launch_templates_response(opts)
+    else
+      do_describe_launch_templates(opts)
+    end
+  end
+
+  defp do_describe_launch_templates(opts) do
+    params =
+      %{}
+      |> put_member_list("LaunchTemplateId", opts[:launch_template_ids] || [])
+      |> put_member_list("LaunchTemplateName", opts[:launch_template_names] || [])
+      |> put_filters(opts[:filters] || [])
+      |> maybe_put("NextToken", opts[:next_token])
+      |> maybe_put("MaxResults", opts[:max_results])
+
+    "DescribeLaunchTemplates"
+    |> perform(params, opts)
+    |> deserialize_response(opts, fn body -> {:ok, parse_describe_launch_templates(body)} end)
+  end
+
+  @doc false
+  def parse_describe_launch_templates_for_test(xml), do: parse_describe_launch_templates(xml)
+
+  defp parse_describe_launch_templates(body) do
+    %{
+      launch_templates:
+        xpath(body, ~x"//launchTemplates/item"l,
+          launch_template_id: ~x"./launchTemplateId/text()"s,
+          launch_template_name: ~x"./launchTemplateName/text()"s,
+          create_time: ~x"./createTime/text()"os,
+          created_by: ~x"./createdBy/text()"os,
+          default_version_number: ~x"./defaultVersionNumber/text()"oi,
+          latest_version_number: ~x"./latestVersionNumber/text()"oi,
+          operator: [
+            ~x"./operator"o,
+            managed: ~x"./managed/text()"os,
+            principal: ~x"./principal/text()"os
+          ],
+          tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
+        ),
+      next_token: xpath(body, ~x"//DescribeLaunchTemplatesResponse/nextToken/text()"os)
+    }
+  end
+
+  @doc """
+  Describes launch template versions, including each version's
+  `:launch_template_data`.
+
+  Returns `%{launch_template_versions: [...], next_token: ...}`. The version
+  metadata (`:version_number`, `:default_version`, `:create_time`, ...) sits
+  alongside `:launch_template_data`, which mirrors AWS's `ResponseLaunchTemplateData`
+  structure -- `:placement`, `:metadata_options`, `:iam_instance_profile` and
+  friends are nested maps, and the repeated sets
+  (`:block_device_mapping_set`, `:network_interface_set`, `:tag_specification_set`,
+  `:security_group_id_set`) are lists.
+
+  Supply exactly one of `:launch_template_id` or `:launch_template_name`; AWS
+  rejects both together. Without `:versions`, AWS returns every version.
+
+  ## Options
+
+    * `:launch_template_id` - The template ID.
+    * `:launch_template_name` - The template name.
+    * `:versions` - List of version numbers, or `"$Latest"` / `"$Default"`.
+    * `:min_version`, `:max_version` - Inclusive version range.
+    * `:filters` - List of `%{name:, values:}` filters.
+    * `:next_token`, `:max_results` - Pagination.
+    * `:resolve_alias` - When `true`, resolves an AMI alias in `:image_id` to
+      the underlying AMI ID.
+  """
+  @spec describe_launch_template_versions(opts :: keyword()) ::
+          {:ok, %{launch_template_versions: list(map()), next_token: String.t() | nil}}
+          | {:error, term()}
+  def describe_launch_template_versions(opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_describe_launch_template_versions_response(opts)
+    else
+      do_describe_launch_template_versions(opts)
+    end
+  end
+
+  defp do_describe_launch_template_versions(opts) do
+    params =
+      %{}
+      |> maybe_put("LaunchTemplateId", opts[:launch_template_id])
+      |> maybe_put("LaunchTemplateName", opts[:launch_template_name])
+      |> put_member_list("LaunchTemplateVersion", opts[:versions] || [])
+      |> maybe_put("MinVersion", opts[:min_version])
+      |> maybe_put("MaxVersion", opts[:max_version])
+      |> maybe_put("ResolveAlias", opts[:resolve_alias])
+      |> put_filters(opts[:filters] || [])
+      |> maybe_put("NextToken", opts[:next_token])
+      |> maybe_put("MaxResults", opts[:max_results])
+
+    "DescribeLaunchTemplateVersions"
+    |> perform(params, opts)
+    |> deserialize_response(opts, fn body ->
+      {:ok, parse_describe_launch_template_versions(body)}
+    end)
+  end
+
+  @doc false
+  def parse_describe_launch_template_versions_for_test(xml),
+    do: parse_describe_launch_template_versions(xml)
+
+  defp parse_describe_launch_template_versions(body) do
+    %{
+      launch_template_versions:
+        xpath(
+          body,
+          ~x"//launchTemplateVersionSet/item"l,
+          launch_template_id: ~x"./launchTemplateId/text()"s,
+          launch_template_name: ~x"./launchTemplateName/text()"s,
+          version_number: ~x"./versionNumber/text()"oi,
+          version_description: ~x"./versionDescription/text()"os,
+          create_time: ~x"./createTime/text()"os,
+          created_by: ~x"./createdBy/text()"os,
+          default_version: ~x"./defaultVersion/text()"os,
+          operator: [
+            ~x"./operator"o,
+            managed: ~x"./managed/text()"os,
+            principal: ~x"./principal/text()"os
+          ],
+          launch_template_data: [~x"./launchTemplateData"o | launch_template_data_fields()]
+        ),
+      next_token: xpath(body, ~x"//DescribeLaunchTemplateVersionsResponse/nextToken/text()"os)
+    }
+  end
+
+  # ResponseLaunchTemplateData. Every member is Required: No -- a template may
+  # specify as little as an image ID -- so nothing is cast unconditionally and
+  # every sub-structure anchor is optional.
+  defp launch_template_data_fields do
+    [
+      image_id: ~x"./imageId/text()"os,
+      instance_type: ~x"./instanceType/text()"os,
+      kernel_id: ~x"./kernelId/text()"os,
+      ram_disk_id: ~x"./ramDiskId/text()"os,
+      key_name: ~x"./keyName/text()"os,
+      # Base64 as AWS stores it; decoding here would be this module inventing
+      # a representation, and the value is not always valid UTF-8.
+      user_data: ~x"./userData/text()"os,
+      ebs_optimized: ~x"./ebsOptimized/text()"os,
+      disable_api_termination: ~x"./disableApiTermination/text()"os,
+      disable_api_stop: ~x"./disableApiStop/text()"os,
+      instance_initiated_shutdown_behavior: ~x"./instanceInitiatedShutdownBehavior/text()"os,
+      security_group_id_set: ~x"./securityGroupIdSet/item/text()"sl,
+      security_group_set: ~x"./securityGroupSet/item/text()"sl,
+      iam_instance_profile: [
+        ~x"./iamInstanceProfile"o,
+        arn: ~x"./arn/text()"os,
+        name: ~x"./name/text()"os
+      ],
+      monitoring: [~x"./monitoring"o, enabled: ~x"./enabled/text()"os],
+      placement: [
+        ~x"./placement"o,
+        availability_zone: ~x"./availabilityZone/text()"os,
+        affinity: ~x"./affinity/text()"os,
+        group_name: ~x"./groupName/text()"os,
+        group_id: ~x"./groupId/text()"os,
+        host_id: ~x"./hostId/text()"os,
+        tenancy: ~x"./tenancy/text()"os,
+        spread_domain: ~x"./spreadDomain/text()"os,
+        host_resource_group_arn: ~x"./hostResourceGroupArn/text()"os,
+        availability_zone_id: ~x"./availabilityZoneId/text()"os,
+        partition_number: ~x"./partitionNumber/text()"oi
+      ],
+      cpu_options: [
+        ~x"./cpuOptions"o,
+        core_count: ~x"./coreCount/text()"oi,
+        threads_per_core: ~x"./threadsPerCore/text()"oi,
+        amd_sev_snp: ~x"./amdSevSnp/text()"os
+      ],
+      metadata_options: [
+        ~x"./metadataOptions"o,
+        state: ~x"./state/text()"os,
+        http_tokens: ~x"./httpTokens/text()"os,
+        http_endpoint: ~x"./httpEndpoint/text()"os,
+        http_protocol_ipv6: ~x"./httpProtocolIpv6/text()"os,
+        instance_metadata_tags: ~x"./instanceMetadataTags/text()"os,
+        http_put_response_hop_limit: ~x"./httpPutResponseHopLimit/text()"oi
+      ],
+      enclave_options: [~x"./enclaveOptions"o, enabled: ~x"./enabled/text()"os],
+      hibernation_options: [~x"./hibernationOptions"o, configured: ~x"./configured/text()"os],
+      maintenance_options: [
+        ~x"./maintenanceOptions"o,
+        auto_recovery: ~x"./autoRecovery/text()"os,
+        reboot_migration: ~x"./rebootMigration/text()"os
+      ],
+      private_dns_name_options: [
+        ~x"./privateDnsNameOptions"o,
+        hostname_type: ~x"./hostnameType/text()"os,
+        enable_resource_name_dns_a_record: ~x"./enableResourceNameDnsARecord/text()"os,
+        enable_resource_name_dns_aaaa_record: ~x"./enableResourceNameDnsAAAARecord/text()"os
+      ],
+      instance_market_options: [
+        ~x"./instanceMarketOptions"o,
+        market_type: ~x"./marketType/text()"os,
+        spot_options: [
+          ~x"./spotOptions"o,
+          max_price: ~x"./maxPrice/text()"os,
+          spot_instance_type: ~x"./spotInstanceType/text()"os,
+          block_duration_minutes: ~x"./blockDurationMinutes/text()"oi,
+          valid_until: ~x"./validUntil/text()"os,
+          instance_interruption_behavior: ~x"./instanceInterruptionBehavior/text()"os
+        ]
+      ],
+      credit_specification: [
+        ~x"./creditSpecification"o,
+        cpu_credits: ~x"./cpuCredits/text()"os
+      ],
+      capacity_reservation_specification: [
+        ~x"./capacityReservationSpecification"o,
+        capacity_reservation_preference: ~x"./capacityReservationPreference/text()"os,
+        capacity_reservation_target: [
+          ~x"./capacityReservationTarget"o,
+          capacity_reservation_id: ~x"./capacityReservationId/text()"os,
+          capacity_reservation_resource_group_arn:
+            ~x"./capacityReservationResourceGroupArn/text()"os
+        ]
+      ],
+      instance_requirements: [
+        ~x"./instanceRequirements"o,
+        v_cpu_count: [
+          ~x"./vCpuCount"o,
+          min: ~x"./min/text()"oi,
+          max: ~x"./max/text()"oi
+        ],
+        memory_mi_b: [~x"./memoryMiB"o, min: ~x"./min/text()"oi, max: ~x"./max/text()"oi],
+        cpu_manufacturer_set: ~x"./cpuManufacturerSet/item/text()"sl,
+        instance_generation_set: ~x"./instanceGenerationSet/item/text()"sl,
+        excluded_instance_type_set: ~x"./excludedInstanceTypeSet/item/text()"sl,
+        burstable_performance: ~x"./burstablePerformance/text()"os,
+        bare_metal: ~x"./bareMetal/text()"os,
+        local_storage: ~x"./localStorage/text()"os
+      ],
+      block_device_mapping_set: [
+        ~x"./blockDeviceMappingSet/item"l,
+        device_name: ~x"./deviceName/text()"os,
+        virtual_name: ~x"./virtualName/text()"os,
+        no_device: ~x"./noDevice/text()"os,
+        ebs: [
+          ~x"./ebs"o,
+          snapshot_id: ~x"./snapshotId/text()"os,
+          volume_size: ~x"./volumeSize/text()"oi,
+          volume_type: ~x"./volumeType/text()"os,
+          iops: ~x"./iops/text()"oi,
+          throughput: ~x"./throughput/text()"oi,
+          delete_on_termination: ~x"./deleteOnTermination/text()"os,
+          encrypted: ~x"./encrypted/text()"os,
+          kms_key_id: ~x"./kmsKeyId/text()"os
+        ]
+      ],
+      network_interface_set: [
+        ~x"./networkInterfaceSet/item"l,
+        network_interface_id: ~x"./networkInterfaceId/text()"os,
+        device_index: ~x"./deviceIndex/text()"oi,
+        network_card_index: ~x"./networkCardIndex/text()"oi,
+        subnet_id: ~x"./subnetId/text()"os,
+        description: ~x"./description/text()"os,
+        associate_public_ip_address: ~x"./associatePublicIpAddress/text()"os,
+        associate_carrier_ip_address: ~x"./associateCarrierIpAddress/text()"os,
+        delete_on_termination: ~x"./deleteOnTermination/text()"os,
+        interface_type: ~x"./interfaceType/text()"os,
+        private_ip_address: ~x"./privateIpAddress/text()"os,
+        ipv6_address_count: ~x"./ipv6AddressCount/text()"oi,
+        secondary_private_ip_address_count: ~x"./secondaryPrivateIpAddressCount/text()"oi,
+        group_set: ~x"./groupSet/item/text()"sl,
+        private_ip_addresses_set: [
+          ~x"./privateIpAddressesSet/item"l,
+          primary: ~x"./primary/text()"os,
+          private_ip_address: ~x"./privateIpAddress/text()"os
+        ],
+        ipv6_addresses_set: [
+          ~x"./ipv6AddressesSet/item"l,
+          ipv6_address: ~x"./ipv6Address/text()"os,
+          is_primary_ipv6: ~x"./isPrimaryIpv6/text()"os
+        ]
+      ],
+      # A TagSpecification nests its own tagSet, so tags live two levels down.
+      tag_specification_set: [
+        ~x"./tagSpecificationSet/item"l,
+        resource_type: ~x"./resourceType/text()"os,
+        tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
+      ],
+      license_set: [
+        ~x"./licenseSet/item"l,
+        license_configuration_arn: ~x"./licenseConfigurationArn/text()"os
+      ],
+      elastic_gpu_specification_set: [
+        ~x"./elasticGpuSpecificationSet/item"l,
+        type: ~x"./type/text()"os
+      ]
+    ]
+  end
+
   @doc """
   Describes the specified tags for the given resources.
 
@@ -1278,6 +1601,16 @@ defmodule AWS.EC2 do
       as: :describe_tags_response
 
     @doc false
+    defdelegate sandbox_describe_launch_templates_response(opts),
+      to: AWS.EC2.Sandbox,
+      as: :describe_launch_templates_response
+
+    @doc false
+    defdelegate sandbox_describe_launch_template_versions_response(opts),
+      to: AWS.EC2.Sandbox,
+      as: :describe_launch_template_versions_response
+
+    @doc false
     defdelegate sandbox_describe_instances_response(opts),
       to: AWS.EC2.Sandbox,
       as: :describe_instances_response
@@ -1319,6 +1652,11 @@ defmodule AWS.EC2 do
     defp sandbox_describe_subnets_response(_), do: raise("sandbox not available")
     defp sandbox_create_tags_response(_, _), do: raise("sandbox not available")
     defp sandbox_describe_tags_response(_), do: raise("sandbox not available")
+    defp sandbox_describe_launch_templates_response(_), do: raise("sandbox not available")
+
+    defp sandbox_describe_launch_template_versions_response(_),
+      do: raise("sandbox not available")
+
     defp sandbox_describe_instances_response(_), do: raise("sandbox not available")
     defp sandbox_describe_images_response(_), do: raise("sandbox not available")
     defp sandbox_deregister_image_response(_, _), do: raise("sandbox not available")

@@ -197,4 +197,63 @@ defmodule AWS.EC2.SandboxTest do
       assert {:ok, %{}} = EC2.delete_snapshot("snap-aaa", sandbox: [enabled: true])
     end
   end
+
+  describe "describe_launch_templates/1" do
+    test "returns the registered launch templates" do
+      Sandbox.set_describe_launch_templates_responses([
+        fn ->
+          {:ok,
+           %{
+             launch_templates: [
+               %{
+                 launch_template_id: "lt-1",
+                 launch_template_name: "web",
+                 default_version_number: 1,
+                 latest_version_number: 3
+               }
+             ],
+             next_token: nil
+           }}
+        end
+      ])
+
+      assert {:ok, %{launch_templates: [%{launch_template_id: "lt-1"}]}} =
+               EC2.describe_launch_templates(sandbox: [enabled: true])
+    end
+  end
+
+  describe "describe_launch_template_versions/1" do
+    test "returns the registered versions with their template data" do
+      Sandbox.set_describe_launch_template_versions_responses([
+        fn ->
+          {:ok,
+           %{
+             launch_template_versions: [
+               %{
+                 launch_template_id: "lt-1",
+                 version_number: 3,
+                 launch_template_data: %{
+                   image_id: "ami-1",
+                   instance_type: "t3.micro",
+                   placement: %{group_name: "g"}
+                 }
+               }
+             ],
+             next_token: nil
+           }}
+        end
+      ])
+
+      assert {:ok,
+              %{
+                launch_template_versions: [
+                  %{version_number: 3, launch_template_data: %{image_id: "ami-1"}}
+                ]
+              }} =
+               EC2.describe_launch_template_versions(
+                 launch_template_id: "lt-1",
+                 sandbox: [enabled: true]
+               )
+    end
+  end
 end

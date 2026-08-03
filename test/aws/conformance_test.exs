@@ -347,6 +347,99 @@ defmodule AWS.ConformanceTest do
     assert fun.cloud_function == "arn:aws:lambda:us-east-1:1:function:f"
   end
 
+  test "LaunchTemplateData keeps every nested structure and repeated set" do
+    xml = """
+    <DescribeLaunchTemplateVersionsResponse><launchTemplateVersionSet><item>
+    <launchTemplateId>lt-1</launchTemplateId><launchTemplateName>web</launchTemplateName>
+    <versionNumber>3</versionNumber><defaultVersion>false</defaultVersion>
+    <createTime>2026-01-01T00:00:00Z</createTime>
+    <launchTemplateData>
+    <imageId>ami-1</imageId><instanceType>t3.micro</instanceType><keyName>k</keyName>
+    <userData>ZWNobyBoaQ==</userData>
+    <securityGroupIdSet><item>sg-1</item><item>sg-2</item></securityGroupIdSet>
+    <iamInstanceProfile><arn>arn:aws:iam::1:instance-profile/p</arn></iamInstanceProfile>
+    <placement><availabilityZone>us-east-1a</availabilityZone><groupName>g</groupName>
+    <tenancy>default</tenancy></placement>
+    <metadataOptions><httpTokens>required</httpTokens>
+    <httpPutResponseHopLimit>2</httpPutResponseHopLimit></metadataOptions>
+    <instanceMarketOptions><marketType>spot</marketType>
+    <spotOptions><maxPrice>0.02</maxPrice><spotInstanceType>one-time</spotInstanceType>
+    </spotOptions></instanceMarketOptions>
+    <blockDeviceMappingSet>
+    <item><deviceName>/dev/xvda</deviceName>
+    <ebs><volumeSize>30</volumeSize><volumeType>gp3</volumeType>
+    <deleteOnTermination>true</deleteOnTermination></ebs></item>
+    <item><deviceName>/dev/sdb</deviceName><virtualName>ephemeral0</virtualName></item>
+    </blockDeviceMappingSet>
+    <networkInterfaceSet><item><deviceIndex>0</deviceIndex><subnetId>subnet-1</subnetId>
+    <associatePublicIpAddress>true</associatePublicIpAddress>
+    <groupSet><item>sg-1</item></groupSet></item></networkInterfaceSet>
+    <tagSpecificationSet><item><resourceType>instance</resourceType>
+    <tagSet><item><key>Name</key><value>web</value></item></tagSet></item></tagSpecificationSet>
+    </launchTemplateData>
+    </item></launchTemplateVersionSet></DescribeLaunchTemplateVersionsResponse>
+    """
+
+    parsed = AWS.EC2.parse_describe_launch_template_versions_for_test(xml)
+
+    assert [version] = parsed.launch_template_versions
+    assert version.version_number == 3
+    assert version.launch_template_id == "lt-1"
+
+    data = version.launch_template_data
+    assert data.image_id == "ami-1"
+
+    # userData stays the base64 AWS stores; decoding it here would invent a
+    # representation, and it is not always valid UTF-8.
+    assert data.user_data == "ZWNobyBoaQ=="
+
+    # Singleton sub-structures are maps, not prefixed scalars.
+    assert data.placement.group_name == "g"
+    assert data.placement.availability_zone == "us-east-1a"
+    assert data.metadata_options.http_put_response_hop_limit == 2
+    assert data.iam_instance_profile.arn == "arn:aws:iam::1:instance-profile/p"
+    assert data.instance_market_options.spot_options.max_price == "0.02"
+    refute Map.has_key?(data, :placement_group_name)
+
+    # Repeated sets are lists -- the shape the old flattening could not express.
+    assert data.security_group_id_set == ["sg-1", "sg-2"]
+
+    assert [ebs_backed, instance_store] = data.block_device_mapping_set
+    assert ebs_backed.ebs.volume_size == 30
+    assert ebs_backed.ebs.volume_type == "gp3"
+    assert instance_store.ebs == nil
+
+    assert [eni] = data.network_interface_set
+    assert eni.device_index == 0
+    assert eni.group_set == ["sg-1"]
+
+    # A TagSpecification nests its own tagSet.
+    assert [%{resource_type: "instance", tag_set: [%{key: "Name", value: "web"}]}] =
+             data.tag_specification_set
+  end
+
+  test "a launch template listing carries version pointers but no template data" do
+    xml = """
+    <DescribeLaunchTemplatesResponse><launchTemplates>
+    <item><launchTemplateId>lt-1</launchTemplateId><launchTemplateName>web</launchTemplateName>
+    <createTime>2026-01-01T00:00:00Z</createTime><createdBy>arn:aws:iam::1:user/u</createdBy>
+    <defaultVersionNumber>1</defaultVersionNumber><latestVersionNumber>3</latestVersionNumber>
+    <tagSet><item><key>env</key><value>prod</value></item></tagSet></item>
+    </launchTemplates><nextToken>tok</nextToken></DescribeLaunchTemplatesResponse>
+    """
+
+    parsed = AWS.EC2.parse_describe_launch_templates_for_test(xml)
+
+    assert [template] = parsed.launch_templates
+    assert template.default_version_number == 1
+    assert template.latest_version_number == 3
+    assert template.tag_set == [%{key: "env", value: "prod"}]
+    assert parsed.next_token == "tok"
+
+    # DescribeLaunchTemplates returns no configuration; that lives on a version.
+    refute Map.has_key?(template, :launch_template_data)
+  end
+
   test "ListObjectsV2 keeps CommonPrefix a structure and casts its integers" do
     xml = """
     <ListBucketResult><Name>b</Name><Prefix>logs/</Prefix><KeyCount>1</KeyCount>

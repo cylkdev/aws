@@ -281,5 +281,44 @@ if Code.ensure_loaded?(SandboxRegistry) do
         AWS.Sandbox.normalize_no_key(tuples)
       )
     end
+
+    def describe_launch_templates_response(opts) do
+      examples = AWS.Sandbox.doc_examples([])
+      func = AWS.Sandbox.find!(@registry, __MODULE__, :describe_launch_templates, "*", examples)
+      AWS.Sandbox.apply_func(func, [opts], examples)
+    end
+
+    def set_describe_launch_templates_responses(tuples) do
+      AWS.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :describe_launch_templates,
+        AWS.Sandbox.normalize_no_key(tuples)
+      )
+    end
+
+    def describe_launch_template_versions_response(opts) do
+      examples = AWS.Sandbox.doc_examples([])
+
+      func =
+        AWS.Sandbox.find!(
+          @registry,
+          __MODULE__,
+          :describe_launch_template_versions,
+          "*",
+          examples
+        )
+
+      AWS.Sandbox.apply_func(func, [opts], examples)
+    end
+
+    def set_describe_launch_template_versions_responses(tuples) do
+      AWS.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :describe_launch_template_versions,
+        AWS.Sandbox.normalize_no_key(tuples)
+      )
+    end
   end
 end
