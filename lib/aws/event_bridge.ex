@@ -77,6 +77,24 @@ defmodule AWS.EventBridge do
     * `name` - The rule name (1-64 chars).
     * `opts` - Options including `:event_pattern`, `:description`, `:state`,
       `:role_arn`, `:event_bus_name`, plus shared options.
+
+  ## Examples
+
+      pattern = AWS.EventBridge.s3_object_created_pattern("uploads-bucket")
+
+      AWS.EventBridge.put_rule("s3-uploads",
+        event_pattern: pattern,
+        description: "Fan out new uploads",
+        state: "ENABLED"
+      )
+      #=> {:ok, %{rule_arn: "arn:aws:events:us-east-1:123456789012:rule/s3-uploads"}}
+
+      # A schedule instead of a pattern.
+      AWS.EventBridge.put_rule("nightly", schedule_expression: "cron(0 3 * * ? *)")
+      #=> {:ok, %{rule_arn: "arn:aws:events:us-east-1:123456789012:rule/nightly"}}
+
+  Creates or updates; supply exactly one of `:event_pattern` or
+  `:schedule_expression`.
   """
   @spec put_rule(name :: String.t(), opts :: keyword()) ::
           {:ok, %{rule_arn: String.t()}} | {:error, term()}
@@ -106,6 +124,21 @@ defmodule AWS.EventBridge do
 
   @doc """
   Returns details about an EventBridge rule.
+
+  ## Examples
+
+      AWS.EventBridge.describe_rule("s3-uploads")
+      #=> {:ok,
+      #=>  %{
+      #=>    name: "s3-uploads",
+      #=>    arn: "arn:aws:events:us-east-1:123456789012:rule/s3-uploads",
+      #=>    event_pattern: "{\"source\":[\"aws.s3\"],...}",
+      #=>    state: "ENABLED",
+      #=>    description: "Fan out new uploads",
+      #=>    event_bus_name: "default"
+      #=>  }}
+
+  `:event_pattern` comes back as a JSON string, as AWS stores it.
   """
   @spec describe_rule(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -128,6 +161,23 @@ defmodule AWS.EventBridge do
 
   @doc """
   Lists EventBridge rules, optionally filtered by name prefix.
+
+  ## Examples
+
+      AWS.EventBridge.list_rules(name_prefix: "s3-")
+      #=> {:ok,
+      #=>  %{
+      #=>    rules: [
+      #=>      %{
+      #=>        name: "s3-uploads",
+      #=>        arn: "arn:aws:events:us-east-1:123456789012:rule/s3-uploads",
+      #=>        state: "ENABLED",
+      #=>        description: "Fan out new uploads",
+      #=>        event_bus_name: "default"
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
   """
   @spec list_rules(opts :: keyword()) ::
           {:ok, %{rules: list(map()), next_token: String.t() | nil}} | {:error, term()}
@@ -155,6 +205,14 @@ defmodule AWS.EventBridge do
 
   @doc """
   Deletes an EventBridge rule. Targets must be removed first.
+
+  ## Examples
+
+      AWS.EventBridge.delete_rule("s3-uploads")
+      #=> {:ok, %{}}
+
+  Remove the rule's targets first with `remove_targets/3`, or pass
+  `force: true`.
   """
   @spec delete_rule(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -188,6 +246,32 @@ defmodule AWS.EventBridge do
     * `rule` - The rule name.
     * `targets` - List of target maps with `:id`, `:arn`, and optional `:role_arn`, `:input`, `:input_path`.
     * `opts` - Options including `:event_bus_name`, plus shared options.
+
+  ## Examples
+
+      AWS.EventBridge.put_targets("s3-uploads", [
+        %{
+          id: "sqs-queue",
+          arn: "arn:aws:sqs:us-east-1:123456789012:uploads"
+        }
+      ])
+      #=> {:ok, %{failed_entry_count: 0, failed_entries: []}}
+
+      # A partial failure reports per-target errors instead of erroring out.
+      #=> {:ok,
+      #=>  %{
+      #=>    failed_entry_count: 1,
+      #=>    failed_entries: [
+      #=>      %{
+      #=>        target_id: "sqs-queue",
+      #=>        error_code: "AccessDeniedException",
+      #=>        error_message: "EventBridge cannot assume the role"
+      #=>      }
+      #=>    ]
+      #=>  }}
+
+  Always check `:failed_entry_count` -- a partial failure still returns
+  `{:ok, _}`.
   """
   @spec put_targets(rule :: String.t(), targets :: list(map()), opts :: keyword()) ::
           {:ok, %{failed_entry_count: integer(), failed_entries: list()}} | {:error, term()}
@@ -215,6 +299,20 @@ defmodule AWS.EventBridge do
 
   @doc """
   Lists targets attached to an EventBridge rule.
+
+  ## Examples
+
+      AWS.EventBridge.list_targets_by_rule("s3-uploads")
+      #=> {:ok,
+      #=>  %{
+      #=>    targets: [
+      #=>      %{
+      #=>        id: "sqs-queue",
+      #=>        arn: "arn:aws:sqs:us-east-1:123456789012:uploads"
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
   """
   @spec list_targets_by_rule(rule :: String.t(), opts :: keyword()) ::
           {:ok, %{targets: list(map()), next_token: String.t() | nil}} | {:error, term()}
@@ -241,6 +339,13 @@ defmodule AWS.EventBridge do
 
   @doc """
   Removes targets from an EventBridge rule.
+
+  ## Examples
+
+      AWS.EventBridge.remove_targets("s3-uploads", ["sqs-queue"])
+      #=> {:ok, %{failed_entry_count: 0, failed_entries: []}}
+
+  Targets are removed by the `:id` given to `put_targets/3`, not by ARN.
   """
   @spec remove_targets(rule :: String.t(), ids :: list(String.t()), opts :: keyword()) ::
           {:ok, %{failed_entry_count: integer(), failed_entries: list()}} | {:error, term()}
@@ -276,6 +381,26 @@ defmodule AWS.EventBridge do
     * `auth_parameters` - Map with PascalCase keys matching the AWS API
       (e.g., `%{"ApiKeyAuthParameters" => %{"ApiKeyName" => "...", "ApiKeyValue" => "..."}}`).
     * `opts` - Options including `:description`, plus shared options.
+
+  ## Examples
+
+      AWS.EventBridge.create_connection("partner-api", "API_KEY",
+        auth_parameters: %{
+          "ApiKeyAuthParameters" => %{
+            "ApiKeyName" => "x-api-key",
+            "ApiKeyValue" => "s3cr3t"
+          }
+        }
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    connection_arn: "arn:aws:events:us-east-1:123456789012:connection/partner-api/aa11bb22",
+      #=>    connection_state: "AUTHORIZING",
+      #=>    creation_time: 1.7e9,
+      #=>    last_modified_time: 1.7e9
+      #=>  }}
+
+  The secret is stored in Secrets Manager and never returned again.
   """
   @spec create_connection(
           name :: String.t(),
@@ -313,6 +438,20 @@ defmodule AWS.EventBridge do
 
   @doc """
   Returns details about a connection.
+
+  ## Examples
+
+      AWS.EventBridge.describe_connection("partner-api")
+      #=> {:ok,
+      #=>  %{
+      #=>    name: "partner-api",
+      #=>    connection_arn: "arn:aws:events:us-east-1:123456789012:connection/partner-api/aa11bb22",
+      #=>    connection_state: "AUTHORIZED",
+      #=>    authorization_type: "API_KEY",
+      #=>    secret_arn: "arn:aws:secretsmanager:us-east-1:123456789012:secret:events!connection/partner-api-aa11bb22",
+      #=>    auth_parameters: %{api_key_auth_parameters: %{api_key_name: "x-api-key"}},
+      #=>    creation_time: 1.7e9
+      #=>  }}
   """
   @spec describe_connection(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -339,6 +478,20 @@ defmodule AWS.EventBridge do
     * `:authorization_type` - New auth type.
     * `:auth_parameters` - New auth parameters (PascalCase map).
     * `:description` - New description.
+
+  ## Examples
+
+      AWS.EventBridge.update_connection("partner-api",
+        auth_parameters: %{
+          "ApiKeyAuthParameters" => %{"ApiKeyName" => "x-api-key", "ApiKeyValue" => "rotated"}
+        }
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    connection_arn: "arn:aws:events:us-east-1:123456789012:connection/partner-api/aa11bb22",
+      #=>    connection_state: "AUTHORIZING",
+      #=>    last_modified_time: 1.7e9
+      #=>  }}
   """
   @spec update_connection(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -365,6 +518,16 @@ defmodule AWS.EventBridge do
 
   @doc """
   Deletes a connection.
+
+  ## Examples
+
+      AWS.EventBridge.delete_connection("partner-api")
+      #=> {:ok,
+      #=>  %{
+      #=>    connection_arn: "arn:aws:events:us-east-1:123456789012:connection/partner-api/aa11bb22",
+      #=>    connection_state: "DELETING",
+      #=>    last_modified_time: 1.7e9
+      #=>  }}
   """
   @spec delete_connection(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -385,6 +548,23 @@ defmodule AWS.EventBridge do
 
   @doc """
   Lists connections, optionally filtered by name prefix or state.
+
+  ## Examples
+
+      AWS.EventBridge.list_connections(name_prefix: "partner-")
+      #=> {:ok,
+      #=>  %{
+      #=>    connections: [
+      #=>      %{
+      #=>        name: "partner-api",
+      #=>        connection_arn: "arn:aws:events:us-east-1:123456789012:connection/partner-api/aa11bb22",
+      #=>        connection_state: "AUTHORIZED",
+      #=>        authorization_type: "API_KEY",
+      #=>        creation_time: 1.7e9
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
   """
   @spec list_connections(opts :: keyword()) ::
           {:ok, %{connections: list(map()), next_token: String.t() | nil}} | {:error, term()}
@@ -422,6 +602,23 @@ defmodule AWS.EventBridge do
     * `invocation_endpoint` - Full URL of the HTTP endpoint.
     * `http_method` - HTTP method (`"POST"`, `"GET"`, `"PUT"`, etc.).
     * `opts` - Options including `:description`, `:invocation_rate_limit_per_second`, plus shared options.
+
+  ## Examples
+
+      AWS.EventBridge.create_api_destination(
+        "partner-webhook",
+        "arn:aws:events:us-east-1:123456789012:connection/partner-api/aa11bb22",
+        "https://partner.example.com/hooks/events",
+        "POST",
+        invocation_rate_limit_per_second: 10
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    api_destination_arn: "arn:aws:events:us-east-1:123456789012:api-destination/partner-webhook/cc33dd44",
+      #=>    api_destination_state: "ACTIVE",
+      #=>    creation_time: 1.7e9,
+      #=>    last_modified_time: 1.7e9
+      #=>  }}
   """
   @spec create_api_destination(
           name :: String.t(),
@@ -466,6 +663,21 @@ defmodule AWS.EventBridge do
 
   @doc """
   Returns details about an API destination.
+
+  ## Examples
+
+      AWS.EventBridge.describe_api_destination("partner-webhook")
+      #=> {:ok,
+      #=>  %{
+      #=>    name: "partner-webhook",
+      #=>    api_destination_arn: "arn:aws:events:us-east-1:123456789012:api-destination/partner-webhook/cc33dd44",
+      #=>    api_destination_state: "ACTIVE",
+      #=>    connection_arn: "arn:aws:events:us-east-1:123456789012:connection/partner-api/aa11bb22",
+      #=>    invocation_endpoint: "https://partner.example.com/hooks/events",
+      #=>    http_method: "POST",
+      #=>    invocation_rate_limit_per_second: 10,
+      #=>    creation_time: 1.7e9
+      #=>  }}
   """
   @spec describe_api_destination(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -494,6 +706,18 @@ defmodule AWS.EventBridge do
     * `:http_method` - New HTTP method.
     * `:description` - New description.
     * `:invocation_rate_limit_per_second` - New rate limit.
+
+  ## Examples
+
+      AWS.EventBridge.update_api_destination("partner-webhook",
+        invocation_rate_limit_per_second: 50
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    api_destination_arn: "arn:aws:events:us-east-1:123456789012:api-destination/partner-webhook/cc33dd44",
+      #=>    api_destination_state: "ACTIVE",
+      #=>    last_modified_time: 1.7e9
+      #=>  }}
   """
   @spec update_api_destination(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -522,6 +746,11 @@ defmodule AWS.EventBridge do
 
   @doc """
   Deletes an API destination.
+
+  ## Examples
+
+      AWS.EventBridge.delete_api_destination("partner-webhook")
+      #=> {:ok, %{}}
   """
   @spec delete_api_destination(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -542,6 +771,23 @@ defmodule AWS.EventBridge do
 
   @doc """
   Lists API destinations, optionally filtered by name prefix or connection.
+
+  ## Examples
+
+      AWS.EventBridge.list_api_destinations(name_prefix: "partner-")
+      #=> {:ok,
+      #=>  %{
+      #=>    api_destinations: [
+      #=>      %{
+      #=>        name: "partner-webhook",
+      #=>        api_destination_arn: "arn:aws:events:us-east-1:123456789012:api-destination/partner-webhook/cc33dd44",
+      #=>        api_destination_state: "ACTIVE",
+      #=>        connection_arn: "arn:aws:events:us-east-1:123456789012:connection/partner-api/aa11bb22",
+      #=>        http_method: "POST"
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
   """
   @spec list_api_destinations(opts :: keyword()) ::
           {:ok, %{api_destinations: list(map()), next_token: String.t() | nil}} | {:error, term()}
@@ -571,6 +817,11 @@ defmodule AWS.EventBridge do
 
   @doc """
   Creates a custom event bus.
+
+  ## Examples
+
+      AWS.EventBridge.create_event_bus("app-bus")
+      #=> {:ok, %{event_bus_arn: "arn:aws:events:us-east-1:123456789012:event-bus/app-bus"}}
   """
   @spec create_event_bus(name :: String.t(), opts :: keyword()) ::
           {:ok, %{event_bus_arn: String.t()}} | {:error, term()}
@@ -593,6 +844,18 @@ defmodule AWS.EventBridge do
 
   @doc """
   Returns details about an event bus.
+
+  ## Examples
+
+      AWS.EventBridge.describe_event_bus(name: "app-bus")
+      #=> {:ok,
+      #=>  %{
+      #=>    name: "app-bus",
+      #=>    arn: "arn:aws:events:us-east-1:123456789012:event-bus/app-bus",
+      #=>    policy: "{\"Version\":\"2012-10-17\",...}"
+      #=>  }}
+
+  Omit `:name` to describe the account's `default` bus.
   """
   @spec describe_event_bus(name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -613,6 +876,13 @@ defmodule AWS.EventBridge do
 
   @doc """
   Deletes a custom event bus. Cannot delete the default bus.
+
+  ## Examples
+
+      AWS.EventBridge.delete_event_bus("app-bus")
+      #=> {:ok, %{}}
+
+  The `default` bus cannot be deleted.
   """
   @spec delete_event_bus(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -633,6 +903,18 @@ defmodule AWS.EventBridge do
 
   @doc """
   Lists event buses, optionally filtered by name prefix.
+
+  ## Examples
+
+      AWS.EventBridge.list_event_buses()
+      #=> {:ok,
+      #=>  %{
+      #=>    event_buses: [
+      #=>      %{name: "default", arn: "arn:aws:events:us-east-1:123456789012:event-bus/default"},
+      #=>      %{name: "app-bus", arn: "arn:aws:events:us-east-1:123456789012:event-bus/app-bus"}
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
   """
   @spec list_event_buses(opts :: keyword()) ::
           {:ok, %{event_buses: list(map()), next_token: String.t() | nil}} | {:error, term()}
@@ -667,6 +949,35 @@ defmodule AWS.EventBridge do
     * `entries` - List of event maps. Each entry should have `:source`, `:detail_type`,
       `:detail` (JSON string), and optionally `:event_bus_name`, `:time`, `:resources`.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.EventBridge.put_events([
+        %{
+          source: "com.example.app",
+          detail_type: "OrderPlaced",
+          detail: %{"order_id" => "abc123", "total" => 42},
+          event_bus_name: "app-bus"
+        }
+      ])
+      #=> {:ok,
+      #=>  %{
+      #=>    failed_entry_count: 0,
+      #=>    entries: [%{event_id: "12345678-1234-1234-1234-123456789012"}]
+      #=>  }}
+
+      # A rejected entry carries an error in place of an event ID.
+      #=> {:ok,
+      #=>  %{
+      #=>    failed_entry_count: 1,
+      #=>    entries: [
+      #=>      %{error_code: "NotAuthorizedForSourceException", error_message: "..."}
+      #=>    ]
+      #=>  }}
+
+  Entries stay in order, so `:entries` lines up positionally with what you
+  sent. Check `:failed_entry_count` -- a partial failure still returns
+  `{:ok, _}`.
   """
   @spec put_events(entries :: list(map()), opts :: keyword()) ::
           {:ok, %{entries: list(map()), failed_entry_count: integer()}} | {:error, term()}
@@ -691,6 +1002,11 @@ defmodule AWS.EventBridge do
 
   @doc """
   Enables a disabled rule.
+
+  ## Examples
+
+      AWS.EventBridge.enable_rule("s3-uploads")
+      #=> {:ok, %{}}
   """
   @spec enable_rule(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -713,6 +1029,13 @@ defmodule AWS.EventBridge do
 
   @doc """
   Disables an enabled rule.
+
+  ## Examples
+
+      AWS.EventBridge.disable_rule("s3-uploads")
+      #=> {:ok, %{}}
+
+  The rule and its targets are kept; it just stops matching.
   """
   @spec disable_rule(name :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -742,6 +1065,24 @@ defmodule AWS.EventBridge do
 
       iex> AWS.EventBridge.s3_object_created_pattern("my-bucket")
       %{"source" => ["aws.s3"], "detail-type" => ["Object Created"], "detail" => %{"bucket" => %{"name" => ["my-bucket"]}}}
+
+  ## Examples
+
+      AWS.EventBridge.s3_object_created_pattern("uploads-bucket")
+      #=> %{
+      #=>   "source" => ["aws.s3"],
+      #=>   "detail-type" => ["Object Created"],
+      #=>   "detail" => %{"bucket" => %{"name" => ["uploads-bucket"]}}
+      #=> }
+
+  Pass the result straight to `put_rule/2`:
+
+      AWS.EventBridge.put_rule("s3-uploads",
+        event_pattern: AWS.EventBridge.s3_object_created_pattern("uploads-bucket")
+      )
+
+  Requires EventBridge notifications to be enabled on the bucket; see
+  `AWS.S3.put_notification_configuration/3`.
   """
   @spec s3_object_created_pattern(bucket :: String.t()) :: map()
   def s3_object_created_pattern(bucket) do
@@ -755,6 +1096,15 @@ defmodule AWS.EventBridge do
 
       iex> AWS.EventBridge.s3_object_deleted_pattern("my-bucket")
       %{"source" => ["aws.s3"], "detail-type" => ["Object Deleted"], "detail" => %{"bucket" => %{"name" => ["my-bucket"]}}}
+
+  ## Examples
+
+      AWS.EventBridge.s3_object_deleted_pattern("uploads-bucket")
+      #=> %{
+      #=>   "source" => ["aws.s3"],
+      #=>   "detail-type" => ["Object Deleted"],
+      #=>   "detail" => %{"bucket" => %{"name" => ["uploads-bucket"]}}
+      #=> }
   """
   @spec s3_object_deleted_pattern(bucket :: String.t()) :: map()
   def s3_object_deleted_pattern(bucket) do
@@ -771,6 +1121,17 @@ defmodule AWS.EventBridge do
 
       iex> AWS.EventBridge.s3_all_events_pattern("my-bucket")
       %{"source" => ["aws.s3"], "detail" => %{"bucket" => %{"name" => ["my-bucket"]}}}
+
+  ## Examples
+
+      AWS.EventBridge.s3_all_events_pattern("uploads-bucket")
+      #=> %{
+      #=>   "source" => ["aws.s3"],
+      #=>   "detail" => %{"bucket" => %{"name" => ["uploads-bucket"]}}
+      #=> }
+
+  No `"detail-type"` key at all, which is what makes it match every S3 event
+  for the bucket.
   """
   @spec s3_all_events_pattern(bucket :: String.t()) :: map()
   def s3_all_events_pattern(bucket) do
@@ -791,6 +1152,18 @@ defmodule AWS.EventBridge do
 
       iex> AWS.EventBridge.s3_event_pattern("Object Deleted", "my-bucket")
       %{"source" => ["aws.s3"], "detail-type" => ["Object Deleted"], "detail" => %{"bucket" => %{"name" => ["my-bucket"]}}}
+
+  ## Examples
+
+      AWS.EventBridge.s3_event_pattern("Object Restore Completed", "uploads-bucket")
+      #=> %{
+      #=>   "source" => ["aws.s3"],
+      #=>   "detail-type" => ["Object Restore Completed"],
+      #=>   "detail" => %{"bucket" => %{"name" => ["uploads-bucket"]}}
+      #=> }
+
+  Note the argument order: the detail type comes first, the bucket second.
+  Use this for event types the named helpers above do not cover.
   """
   @spec s3_event_pattern(detail_type :: String.t(), bucket :: String.t()) :: map()
   def s3_event_pattern(detail_type, bucket) do
