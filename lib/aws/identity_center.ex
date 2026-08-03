@@ -80,6 +80,25 @@ defmodule AWS.IdentityCenter do
   Lists the IAM Identity Center instances accessible in the current AWS account.
 
   Returns instance ARNs and identity store IDs needed for other operations.
+
+  ## Examples
+
+      AWS.IdentityCenter.list_instances()
+      #=> {:ok,
+      #=>  %{
+      #=>    instances: [
+      #=>      %{
+      #=>        instance_arn: "arn:aws:sso:::instance/ssoins-1234567890abcdef",
+      #=>        identity_store_id: "d-1234567890",
+      #=>        owner_account_id: "123456789012",
+      #=>        status: "ACTIVE"
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  Both the instance ARN and the identity store ID are needed by the other
+  operations in this module.
   """
   @spec list_instances(opts :: keyword()) :: {:ok, map()} | {:error, term()}
   def list_instances(opts \\ []) do
@@ -110,6 +129,25 @@ defmodule AWS.IdentityCenter do
     * `name` - The permission set name.
     * `opts` - Options including `:description`, `:session_duration` (ISO 8601, e.g. `"PT8H"`),
       `:relay_state`, plus shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.create_permission_set("arn:aws:sso:::instance/ssoins-1234567890abcdef", "AdminAccess",
+        description: "Full admin",
+        session_duration: "PT8H"
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    permission_set: %{
+      #=>      name: "AdminAccess",
+      #=>      permission_set_arn: "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef",
+      #=>      description: "Full admin",
+      #=>      session_duration: "PT8H",
+      #=>      created_date: 1.7e9
+      #=>    }
+      #=>  }}
+
+  `:session_duration` is an ISO 8601 duration.
   """
   @spec create_permission_set(instance_arn :: String.t(), name :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -143,6 +181,11 @@ defmodule AWS.IdentityCenter do
     * `instance_arn` - The ARN of the Identity Center instance.
     * `permission_set_arn` - The ARN of the permission set.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.delete_permission_set("arn:aws:sso:::instance/ssoins-1234567890abcdef", "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef")
+      #=> {:ok, %{}}
   """
   @spec delete_permission_set(
           instance_arn :: String.t(),
@@ -181,6 +224,19 @@ defmodule AWS.IdentityCenter do
 
     * `instance_arn` - The ARN of the Identity Center instance.
     * `opts` - Options including `:max_results`, `:next_token`, plus shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.list_permission_sets("arn:aws:sso:::instance/ssoins-1234567890abcdef")
+      #=> {:ok,
+      #=>  %{
+      #=>    permission_sets: [
+      #=>      "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef"
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  ARNs only; call `describe_permission_set/3` for the details.
   """
   @spec list_permission_sets(instance_arn :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -213,6 +269,18 @@ defmodule AWS.IdentityCenter do
     * `permission_set_arn` - The ARN of the permission set.
     * `managed_policy_arn` - The ARN of the managed policy to attach.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.attach_managed_policy_to_permission_set(
+        "arn:aws:sso:::instance/ssoins-1234567890abcdef",
+        "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef",
+        "arn:aws:iam::aws:policy/ReadOnlyAccess"
+      )
+      #=> {:ok, %{}}
+
+  Call `provision_permission_set/3` afterwards to push the change to the
+  accounts the permission set is assigned to.
   """
   @spec attach_managed_policy_to_permission_set(
           instance_arn :: String.t(),
@@ -269,6 +337,21 @@ defmodule AWS.IdentityCenter do
     * `instance_arn` - The ARN of the Identity Center instance.
     * `permission_set_arn` - The ARN of the permission set.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.describe_permission_set("arn:aws:sso:::instance/ssoins-1234567890abcdef", "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef")
+      #=> {:ok,
+      #=>  %{
+      #=>    permission_set: %{
+      #=>      name: "AdminAccess",
+      #=>      permission_set_arn: "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef",
+      #=>      description: "Full admin",
+      #=>      session_duration: "PT8H",
+      #=>      relay_state: "",
+      #=>      created_date: 1.7e9
+      #=>    }
+      #=>  }}
   """
   @spec describe_permission_set(
           instance_arn :: String.t(),
@@ -311,6 +394,29 @@ defmodule AWS.IdentityCenter do
   Returns AWS's `GetInlinePolicyForPermissionSet` response, with
   `:inline_policy` decoded from the JSON string AWS sends it as. `nil` when
   no inline policy is attached.
+
+  ## Examples
+
+      AWS.IdentityCenter.get_inline_policy_for_permission_set("arn:aws:sso:::instance/ssoins-1234567890abcdef", "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef")
+      #=> {:ok,
+      #=>  %{
+      #=>    inline_policy: %{
+      #=>      "Version" => "2012-10-17",
+      #=>      "Statement" => [
+      #=>        %{
+      #=>          "Effect" => "Allow",
+      #=>          "Action" => "s3:GetObject",
+      #=>          "Resource" => "arn:aws:s3:::bucket/*"
+      #=>        }
+      #=>      ]
+      #=>    }
+      #=>  }}
+
+      # No inline policy attached.
+      #=> {:ok, %{inline_policy: nil}}
+
+  AWS sends the document as a JSON string; it is decoded here. Every other
+  member of the response is returned untouched.
   """
   @spec get_inline_policy_for_permission_set(
           instance_arn :: String.t(),
@@ -369,6 +475,17 @@ defmodule AWS.IdentityCenter do
   Returns AWS's response unchanged: `:attached_managed_policies` plus
   `:next_token`, where each attached policy has
   `:arn` and `:name`.
+
+  ## Examples
+
+      AWS.IdentityCenter.list_managed_policies_in_permission_set("arn:aws:sso:::instance/ssoins-1234567890abcdef", "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef")
+      #=> {:ok,
+      #=>  %{
+      #=>    attached_managed_policies: [
+      #=>      %{name: "ReadOnlyAccess", arn: "arn:aws:iam::aws:policy/ReadOnlyAccess"}
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
   """
   @spec list_managed_policies_in_permission_set(
           instance_arn :: String.t(),
@@ -414,6 +531,22 @@ defmodule AWS.IdentityCenter do
   Returns AWS's response unchanged: `:account_assignments` plus
   `:next_token`, where each assignment has
   `:account_id`, `:permission_set_arn`, `:principal_id`, `:principal_type`.
+
+  ## Examples
+
+      AWS.IdentityCenter.list_account_assignments("arn:aws:sso:::instance/ssoins-1234567890abcdef", "333333333333", "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef")
+      #=> {:ok,
+      #=>  %{
+      #=>    account_assignments: [
+      #=>      %{
+      #=>        account_id: "333333333333",
+      #=>        permission_set_arn: "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef",
+      #=>        principal_type: "GROUP",
+      #=>        principal_id: "9067b2e8-4051-7096-b1e0-EXAMPLE"
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
   """
   @spec list_account_assignments(
           instance_arn :: String.t(),
@@ -459,6 +592,11 @@ defmodule AWS.IdentityCenter do
     * `instance_arn` - The ARN of the Identity Center instance.
     * `permission_set_arn` - The ARN of the permission set.
     * `opts` - Options including `:max_results`, `:next_token`, plus shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.list_accounts_for_provisioned_permission_set("arn:aws:sso:::instance/ssoins-1234567890abcdef", "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef")
+      #=> {:ok, %{account_ids: ["333333333333", "444444444444"], next_token: nil}}
   """
   @spec list_accounts_for_provisioned_permission_set(
           instance_arn :: String.t(),
@@ -499,6 +637,20 @@ defmodule AWS.IdentityCenter do
     * `permission_set_arn` - The ARN of the permission set.
     * `policy` - The policy document as a map (will be JSON-encoded).
     * `opts` - Shared options.
+
+  ## Examples
+
+      policy = %{
+        "Version" => "2012-10-17",
+        "Statement" => [
+          %{"Effect" => "Allow", "Action" => "s3:GetObject", "Resource" => "arn:aws:s3:::bucket/*"}
+        ]
+      }
+
+      AWS.IdentityCenter.put_inline_policy_to_permission_set("arn:aws:sso:::instance/ssoins-1234567890abcdef", "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef", policy)
+      #=> {:ok, %{}}
+
+  Replaces any existing inline policy outright. Re-provision afterwards.
   """
   @spec put_inline_policy_to_permission_set(
           instance_arn :: String.t(),
@@ -545,6 +697,15 @@ defmodule AWS.IdentityCenter do
     * `permission_set_arn` - The ARN of the permission set.
     * `managed_policy_arn` - The ARN of the managed policy to detach.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.detach_managed_policy_from_permission_set(
+        "arn:aws:sso:::instance/ssoins-1234567890abcdef",
+        "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef",
+        "arn:aws:iam::aws:policy/ReadOnlyAccess"
+      )
+      #=> {:ok, %{}}
   """
   @spec detach_managed_policy_from_permission_set(
           instance_arn :: String.t(),
@@ -611,6 +772,32 @@ defmodule AWS.IdentityCenter do
         - `:principal_type` - `"USER"` or `"GROUP"`.
         - `:principal_id` - The user or group ID.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.create_account_assignment(
+        "arn:aws:sso:::instance/ssoins-1234567890abcdef",
+        "333333333333",
+        "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef",
+        principal_type: "GROUP",
+        principal_id: "9067b2e8-4051-7096-b1e0-EXAMPLE"
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    account_assignment_creation_status: %{
+      #=>      status: "IN_PROGRESS",
+      #=>      request_id: "4c1b2f1a-EXAMPLE",
+      #=>      target_id: "333333333333",
+      #=>      target_type: "AWS_ACCOUNT",
+      #=>      permission_set_arn: "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef",
+      #=>      principal_type: "GROUP",
+      #=>      principal_id: "9067b2e8-4051-7096-b1e0-EXAMPLE",
+      #=>      created_date: 1.7e9
+      #=>    }
+      #=>  }}
+
+  Assignment is asynchronous; the status describes the job, not a finished
+  assignment.
   """
   @spec create_account_assignment(
           instance_arn :: String.t(),
@@ -651,6 +838,25 @@ defmodule AWS.IdentityCenter do
     * `instance_arn` - The ARN of the Identity Center instance.
     * `assignment` - Same shape as in `create_account_assignment/3`.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.delete_account_assignment(
+        "arn:aws:sso:::instance/ssoins-1234567890abcdef",
+        "333333333333",
+        "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef",
+        principal_type: "GROUP",
+        principal_id: "9067b2e8-4051-7096-b1e0-EXAMPLE"
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    account_assignment_deletion_status: %{
+      #=>      status: "IN_PROGRESS",
+      #=>      request_id: "5d2c3f2b-EXAMPLE",
+      #=>      target_id: "333333333333",
+      #=>      target_type: "AWS_ACCOUNT"
+      #=>    }
+      #=>  }}
   """
   @spec delete_account_assignment(
           instance_arn :: String.t(),
@@ -697,6 +903,24 @@ defmodule AWS.IdentityCenter do
 
   Returns AWS's `ProvisionPermissionSet` response unchanged, i.e.
   `%{permission_set_provisioning_status: map()}` describing the async job.
+
+  ## Examples
+
+      AWS.IdentityCenter.provision_permission_set("arn:aws:sso:::instance/ssoins-1234567890abcdef", "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef",
+        target_type: "ALL_PROVISIONED_ACCOUNTS"
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    permission_set_provisioning_status: %{
+      #=>      status: "IN_PROGRESS",
+      #=>      request_id: "6e3d4a3c-EXAMPLE",
+      #=>      permission_set_arn: "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-1234567890abcdef",
+      #=>      created_date: 1.7e9
+      #=>    }
+      #=>  }}
+
+  Use `target_type: "AWS_ACCOUNT"` with `:target_id` to provision one
+  account instead.
   """
   @spec provision_permission_set(
           instance_arn :: String.t(),
@@ -744,6 +968,16 @@ defmodule AWS.IdentityCenter do
     * `opts` - Options including `:display_name`, `:given_name`, `:family_name`,
       `:emails` (list of `%{value: "...", type: "...", primary: true/false}`),
       plus shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.create_identity_store_user("d-1234567890", "alice",
+        display_name: "Alice Example",
+        given_name: "Alice",
+        family_name: "Example",
+        email: "alice@example.com"
+      )
+      #=> {:ok, %{user_id: "9067b2e8-4051-7096-b1e0-EXAMPLEUSER", identity_store_id: "d-1234567890"}}
   """
   @spec create_identity_store_user(
           identity_store_id :: String.t(),
@@ -781,6 +1015,11 @@ defmodule AWS.IdentityCenter do
     * `identity_store_id` - The identity store ID.
     * `user_id` - The user ID.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.delete_identity_store_user("d-1234567890", "9067b2e8-4051-7096-b1e0-EXAMPLEUSER")
+      #=> {:ok, %{}}
   """
   @spec delete_identity_store_user(
           identity_store_id :: String.t(),
@@ -822,6 +1061,19 @@ defmodule AWS.IdentityCenter do
     * `opts` - Shared options.
 
   Returns `{:ok, map()}` containing the user's attributes.
+
+  ## Examples
+
+      AWS.IdentityCenter.describe_identity_store_user("d-1234567890", "9067b2e8-4051-7096-b1e0-EXAMPLEUSER")
+      #=> {:ok,
+      #=>  %{
+      #=>    user_id: "9067b2e8-4051-7096-b1e0-EXAMPLEUSER",
+      #=>    identity_store_id: "d-1234567890",
+      #=>    user_name: "alice",
+      #=>    display_name: "Alice Example",
+      #=>    name: %{given_name: "Alice", family_name: "Example"},
+      #=>    emails: [%{value: "alice@example.com", type: "work", primary: true}]
+      #=>  }}
   """
   @spec describe_identity_store_user(
           identity_store_id :: String.t(),
@@ -862,6 +1114,15 @@ defmodule AWS.IdentityCenter do
       accepted.
 
   Returns AWS's response body, which is empty for this operation.
+
+  ## Examples
+
+      AWS.IdentityCenter.update_identity_store_user("d-1234567890", "9067b2e8-4051-7096-b1e0-EXAMPLEUSER", [
+        %{attribute_path: "displayName", attribute_value: "Alice E."}
+      ])
+      #=> {:ok, %{}}
+
+  Each operation targets one SCIM attribute path.
   """
   @spec update_identity_store_user(
           identity_store_id :: String.t(),
@@ -906,6 +1167,24 @@ defmodule AWS.IdentityCenter do
 
     * `identity_store_id` - The identity store ID.
     * `opts` - Options including `:max_results`, `:next_token`, plus shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.list_identity_store_users("d-1234567890")
+      #=> {:ok,
+      #=>  %{
+      #=>    users: [
+      #=>      %{
+      #=>        user_id: "9067b2e8-4051-7096-b1e0-EXAMPLEUSER",
+      #=>        identity_store_id: "d-1234567890",
+      #=>        user_name: "alice",
+      #=>        display_name: "Alice Example",
+      #=>        name: %{given_name: "Alice", family_name: "Example"},
+      #=>        emails: [%{value: "alice@example.com", type: "work", primary: true}]
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
   """
   @spec list_identity_store_users(identity_store_id :: String.t(), opts :: keyword()) ::
           {:ok, %{users: list(map()), next_token: String.t() | nil}} | {:error, term()}
@@ -942,6 +1221,13 @@ defmodule AWS.IdentityCenter do
     * `identity_store_id` - The identity store ID.
     * `display_name` - The group display name.
     * `opts` - Options including `:description`, plus shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.create_identity_store_group("d-1234567890", "engineering",
+        description: "Engineering team"
+      )
+      #=> {:ok, %{group_id: "a1b2c3d4-5061-7080-b1e0-EXAMPLEGRP", identity_store_id: "d-1234567890"}}
   """
   @spec create_identity_store_group(
           identity_store_id :: String.t(),
@@ -980,6 +1266,11 @@ defmodule AWS.IdentityCenter do
     * `identity_store_id` - The identity store ID.
     * `group_id` - The group ID.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.delete_identity_store_group("d-1234567890", "a1b2c3d4-5061-7080-b1e0-EXAMPLEGRP")
+      #=> {:ok, %{}}
   """
   @spec delete_identity_store_group(
           identity_store_id :: String.t(),
@@ -1021,6 +1312,17 @@ defmodule AWS.IdentityCenter do
     * `opts` - Shared options.
 
   Returns `{:ok, map()}` containing the group's attributes.
+
+  ## Examples
+
+      AWS.IdentityCenter.describe_identity_store_group("d-1234567890", "a1b2c3d4-5061-7080-b1e0-EXAMPLEGRP")
+      #=> {:ok,
+      #=>  %{
+      #=>    group_id: "a1b2c3d4-5061-7080-b1e0-EXAMPLEGRP",
+      #=>    identity_store_id: "d-1234567890",
+      #=>    display_name: "engineering",
+      #=>    description: "Engineering team"
+      #=>  }}
   """
   @spec describe_identity_store_group(
           identity_store_id :: String.t(),
@@ -1055,6 +1357,22 @@ defmodule AWS.IdentityCenter do
 
     * `identity_store_id` - The identity store ID.
     * `opts` - Options including `:max_results`, `:next_token`, plus shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.list_identity_store_groups("d-1234567890")
+      #=> {:ok,
+      #=>  %{
+      #=>    groups: [
+      #=>      %{
+      #=>        group_id: "a1b2c3d4-5061-7080-b1e0-EXAMPLEGRP",
+      #=>        identity_store_id: "d-1234567890",
+      #=>        display_name: "engineering",
+      #=>        description: "Engineering team"
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
   """
   @spec list_identity_store_groups(identity_store_id :: String.t(), opts :: keyword()) ::
           {:ok, %{groups: list(map()), next_token: String.t() | nil}} | {:error, term()}
@@ -1088,6 +1406,15 @@ defmodule AWS.IdentityCenter do
     * `group_id` - The group ID.
     * `user_id` - The user ID.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.create_group_membership("d-1234567890", "a1b2c3d4-5061-7080-b1e0-EXAMPLEGRP", "9067b2e8-4051-7096-b1e0-EXAMPLEUSER")
+      #=> {:ok,
+      #=>  %{
+      #=>    membership_id: "b2c3d4e5-6071-8090-c1f0-EXAMPLEMEMB",
+      #=>    identity_store_id: "d-1234567890"
+      #=>  }}
   """
   @spec create_group_membership(
           identity_store_id :: String.t(),
@@ -1128,6 +1455,17 @@ defmodule AWS.IdentityCenter do
     * `identity_store_id` - The identity store ID.
     * `membership_id` - The membership ID (from `create_group_membership/4`).
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.IdentityCenter.delete_group_membership(
+        "d-1234567890",
+        "b2c3d4e5-6071-8090-c1f0-EXAMPLEMEMB"
+      )
+      #=> {:ok, %{}}
+
+  Takes the membership ID from `create_group_membership/4`, not the user and
+  group IDs.
   """
   @spec delete_group_membership(
           identity_store_id :: String.t(),
