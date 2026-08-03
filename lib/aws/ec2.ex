@@ -62,6 +62,11 @@ defmodule AWS.EC2 do
 
   Returns the `CreateSecurityGroup` result as AWS models it: `:group_id` plus
   the `:tag_set` applied at creation.
+
+  ## Examples
+
+      AWS.EC2.create_security_group("WebServers", "Web servers", "vpc-1a2b3c4d")
+      #=> {:ok, %{group_id: "sg-1a2b3c4d", tag_set: []}}
   """
   @spec create_security_group(
           name :: String.t(),
@@ -105,6 +110,40 @@ defmodule AWS.EC2 do
     * `:group_ids` - List of security group IDs.
     * `:group_names` - List of security group names (EC2-Classic / default VPC only).
     * `:filters` - List of `%{name: String.t(), values: [String.t()]}` filters.
+
+  ## Examples
+
+      AWS.EC2.describe_security_groups(group_ids: ["sg-1a2b3c4d"])
+      #=> {:ok,
+      #=>  %{
+      #=>    security_group_info: [
+      #=>      %{
+      #=>        group_id: "sg-1a2b3c4d",
+      #=>        group_name: "WebServers",
+      #=>        group_description: "Web servers",
+      #=>        vpc_id: "vpc-1a2b3c4d",
+      #=>        owner_id: "123456789012",
+      #=>        security_group_arn: "",
+      #=>        ip_permissions: [
+      #=>          %{
+      #=>            ip_protocol: "tcp",
+      #=>            from_port: 443,
+      #=>            to_port: 443,
+      #=>            ip_ranges: [%{cidr_ip: "0.0.0.0/0", description: ""}],
+      #=>            ipv6_ranges: [],
+      #=>            prefix_list_ids: [],
+      #=>            groups: []
+      #=>          }
+      #=>        ],
+      #=>        ip_permissions_egress: [],
+      #=>        tag_set: [%{key: "Name", value: "web"}]
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  `:from_port` / `:to_port` are `nil` when `ip_protocol` is `"-1"` (all
+  protocols) -- AWS omits the elements rather than sending -1.
   """
   @spec describe_security_groups(opts :: keyword()) ::
           {:ok, %{security_group_info: list(map()), next_token: String.t() | nil}}
@@ -216,6 +255,15 @@ defmodule AWS.EC2 do
 
   @doc """
   Deletes a security group.
+
+  ## Examples
+
+      AWS.EC2.delete_security_group(group_id: "sg-1a2b3c4d")
+      #=> {:ok, %{return: true}}
+
+      # GroupId and GroupName are alternatives; supply one.
+      AWS.EC2.delete_security_group(group_name: "WebServers")
+      #=> {:ok, %{return: true}}
   """
   @spec delete_security_group(opts :: keyword()) :: {:ok, map()} | {:error, term()}
   def delete_security_group(opts \\ []) do
@@ -245,6 +293,39 @@ defmodule AWS.EC2 do
   `ip_permissions` is a list of maps with keys `:protocol`, `:from_port`,
   `:to_port`, and either `:ip_ranges` (list of `%{cidr_ip:, description:}`)
   or `:user_id_group_pairs` (list of `%{group_id:, description:}`).
+
+  ## Examples
+
+      AWS.EC2.authorize_security_group_ingress("sg-1a2b3c4d", [
+        %{
+          protocol: "tcp",
+          from_port: 443,
+          to_port: 443,
+          ip_ranges: [%{cidr_ip: "0.0.0.0/0", description: "https"}]
+        }
+      ])
+      #=> {:ok,
+      #=>  %{
+      #=>    return: true,
+      #=>    security_group_rule_set: [
+      #=>      %{
+      #=>        security_group_rule_id: "sgr-0a1b2c3d",
+      #=>        group_id: "sg-1a2b3c4d",
+      #=>        group_owner_id: "123456789012",
+      #=>        is_egress: "false",
+      #=>        ip_protocol: "tcp",
+      #=>        from_port: 443,
+      #=>        to_port: 443,
+      #=>        cidr_ipv4: "0.0.0.0/0",
+      #=>        cidr_ipv6: "",
+      #=>        prefix_list_id: "",
+      #=>        referenced_group_info: nil,
+      #=>        description: "https",
+      #=>        tag_set: [],
+      #=>        security_group_rule_arn: ""
+      #=>      }
+      #=>    ]
+      #=>  }}
   """
   @spec authorize_security_group_ingress(
           group_id :: String.t(),
@@ -261,6 +342,24 @@ defmodule AWS.EC2 do
 
   @doc """
   Revokes ingress rules from a security group.
+
+  ## Examples
+
+      AWS.EC2.revoke_security_group_ingress("sg-1a2b3c4d", [
+        %{protocol: "tcp", from_port: 443, to_port: 443,
+          ip_ranges: [%{cidr_ip: "0.0.0.0/0"}]}
+      ])
+      #=> {:ok,
+      #=>  %{
+      #=>    return: true,
+      #=>    unknown_ip_permission_set: [],
+      #=>    revoked_security_group_rule_set: [
+      #=>      %{security_group_rule_id: "sgr-0a1b2c3d", ip_protocol: "tcp"}
+      #=>    ]
+      #=>  }}
+
+  Rules AWS could not find come back in `:unknown_ip_permission_set` rather
+  than as an error.
   """
   @spec revoke_security_group_ingress(
           group_id :: String.t(),
@@ -277,6 +376,27 @@ defmodule AWS.EC2 do
 
   @doc """
   Adds egress rules to a security group.
+
+  ## Examples
+
+      AWS.EC2.authorize_security_group_egress("sg-1a2b3c4d", [
+        %{protocol: "tcp", from_port: 5432, to_port: 5432,
+          user_id_group_pairs: [%{group_id: "sg-9z8y7x6w"}]}
+      ])
+      #=> {:ok,
+      #=>  %{
+      #=>    return: true,
+      #=>    security_group_rule_set: [
+      #=>      %{
+      #=>        security_group_rule_id: "sgr-1b2c3d4e",
+      #=>        is_egress: "true",
+      #=>        ip_protocol: "tcp",
+      #=>        from_port: 5432,
+      #=>        to_port: 5432,
+      #=>        referenced_group_info: %{group_id: "sg-9z8y7x6w"}
+      #=>      }
+      #=>    ]
+      #=>  }}
   """
   @spec authorize_security_group_egress(
           group_id :: String.t(),
@@ -293,6 +413,18 @@ defmodule AWS.EC2 do
 
   @doc """
   Revokes egress rules from a security group.
+
+  ## Examples
+
+      AWS.EC2.revoke_security_group_egress("sg-1a2b3c4d", [
+        %{protocol: "-1", ip_ranges: [%{cidr_ip: "0.0.0.0/0"}]}
+      ])
+      #=> {:ok,
+      #=>  %{
+      #=>    return: true,
+      #=>    unknown_ip_permission_set: [],
+      #=>    revoked_security_group_rule_set: [%{security_group_rule_id: "sgr-2c3d4e5f"}]
+      #=>  }}
   """
   @spec revoke_security_group_egress(
           group_id :: String.t(),
@@ -408,6 +540,38 @@ defmodule AWS.EC2 do
 
     * `:vpc_ids` - List of VPC IDs.
     * `:filters` - List of `%{name:, values:}` filters.
+
+  ## Examples
+
+      AWS.EC2.describe_vpcs(filters: [%{name: "isDefault", values: ["true"]}])
+      #=> {:ok,
+      #=>  %{
+      #=>    vpc_set: [
+      #=>      %{
+      #=>        vpc_id: "vpc-1a2b3c4d",
+      #=>        cidr_block: "10.0.0.0/16",
+      #=>        state: "available",
+      #=>        is_default: true,
+      #=>        owner_id: "123456789012",
+      #=>        dhcp_options_id: "dopt-7a8b9c2d",
+      #=>        instance_tenancy: "default",
+      #=>        cidr_block_association_set: [
+      #=>          %{
+      #=>            cidr_block: "10.0.0.0/16",
+      #=>            association_id: "vpc-cidr-assoc-a2b3c4d5",
+      #=>            cidr_block_state: %{state: "associated", status_message: ""}
+      #=>          }
+      #=>        ],
+      #=>        ipv6_cidr_block_association_set: [],
+      #=>        tag_set: [%{key: "Name", value: "prod"}],
+      #=>        block_public_access_states: nil
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  `:is_default` is a real boolean; every other flag AWS models as a String
+  (`"true"` / `"false"`) is left as sent.
   """
   @spec describe_vpcs(opts :: keyword()) ::
           {:ok, %{vpc_set: list(map()), next_token: String.t() | nil}} | {:error, term()}
@@ -487,6 +651,34 @@ defmodule AWS.EC2 do
 
     * `:subnet_ids` - List of subnet IDs.
     * `:filters` - List of `%{name:, values:}` filters.
+
+  ## Examples
+
+      AWS.EC2.describe_subnets(filters: [%{name: "vpc-id", values: ["vpc-1a2b3c4d"]}])
+      #=> {:ok,
+      #=>  %{
+      #=>    subnet_set: [
+      #=>      %{
+      #=>        subnet_id: "subnet-9d4a7b6c",
+      #=>        vpc_id: "vpc-1a2b3c4d",
+      #=>        cidr_block: "10.0.1.0/24",
+      #=>        availability_zone: "us-east-1a",
+      #=>        availability_zone_id: "use1-az2",
+      #=>        state: "available",
+      #=>        subnet_arn: "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-9d4a7b6c",
+      #=>        owner_id: "123456789012",
+      #=>        available_ip_address_count: 251,
+      #=>        default_for_az: "false",
+      #=>        map_public_ip_on_launch: "false",
+      #=>        ipv6_cidr_block_association_set: [],
+      #=>        tag_set: [%{key: "Name", value: "private-a"}]
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  `:available_ip_address_count` is `nil` on IPv6-only subnets, where AWS
+  omits it.
   """
   @spec describe_subnets(opts :: keyword()) ::
           {:ok, %{subnet_set: list(map()), next_token: String.t() | nil}} | {:error, term()}
@@ -571,6 +763,87 @@ defmodule AWS.EC2 do
 
     * `:instance_ids` - List of instance IDs to describe.
     * `:filters` - List of `%{name:, values:}` filters.
+
+  ## Examples
+
+      AWS.EC2.describe_instances(instance_ids: ["i-1234567890abcdef0"])
+      #=> {:ok,
+      #=>  %{
+      #=>    reservation_set: [
+      #=>      %{
+      #=>        reservation_id: "r-1a2b3c4d",
+      #=>        owner_id: "123456789012",
+      #=>        requester_id: "",
+      #=>        instances_set: [
+      #=>          %{
+      #=>            instance_id: "i-1234567890abcdef0",
+      #=>            image_id: "ami-0abcdef1234567890",
+      #=>            instance_type: "t3.micro",
+      #=>            instance_state: %{code: 16, name: "running"},
+      #=>            private_ip_address: "10.0.1.5",
+      #=>            ip_address: "54.0.0.1",
+      #=>            private_dns_name: "ip-10-0-1-5.ec2.internal",
+      #=>            dns_name: "ec2-54-0-0-1.compute-1.amazonaws.com",
+      #=>            subnet_id: "subnet-9d4a7b6c",
+      #=>            vpc_id: "vpc-1a2b3c4d",
+      #=>            launch_time: "2026-01-01T00:00:00.000Z",
+      #=>            placement: %{
+      #=>              availability_zone: "us-east-1a",
+      #=>              group_name: "",
+      #=>              tenancy: "default",
+      #=>              partition_number: nil
+      #=>            },
+      #=>            cpu_options: %{core_count: 1, threads_per_core: 2, amd_sev_snp: ""},
+      #=>            metadata_options: %{
+      #=>              state: "applied",
+      #=>              http_tokens: "required",
+      #=>              http_endpoint: "enabled",
+      #=>              http_put_response_hop_limit: 2
+      #=>            },
+      #=>            iam_instance_profile: %{
+      #=>              arn: "arn:aws:iam::123456789012:instance-profile/app",
+      #=>              id: "AIPA1EXAMPLE"
+      #=>            },
+      #=>            monitoring: %{state: "disabled"},
+      #=>            state_reason: nil,
+      #=>            block_device_mapping: [
+      #=>              %{
+      #=>                device_name: "/dev/xvda",
+      #=>                ebs: %{
+      #=>                  volume_id: "vol-0a1b2c3d",
+      #=>                  status: "attached",
+      #=>                  attach_time: "2026-01-01T00:00:00.000Z",
+      #=>                  delete_on_termination: "true"
+      #=>                }
+      #=>              }
+      #=>            ],
+      #=>            network_interface_set: [
+      #=>              %{
+      #=>                network_interface_id: "eni-0a1b2c3d",
+      #=>                subnet_id: "subnet-9d4a7b6c",
+      #=>                status: "in-use",
+      #=>                association: %{public_ip: "54.0.0.1", ip_owner_id: "amazon"},
+      #=>                attachment: %{attachment_id: "eni-attach-0a1b", device_index: 0},
+      #=>                group_set: [%{group_id: "sg-1a2b3c4d", group_name: "WebServers"}],
+      #=>                private_ip_addresses_set: [
+      #=>                  %{private_ip_address: "10.0.1.5", primary: "true"}
+      #=>                ],
+      #=>                ipv6_addresses_set: []
+      #=>              }
+      #=>            ],
+      #=>            tag_set: [%{key: "Name", value: "web-1"}],
+      #=>            group_set: [%{group_id: "sg-1a2b3c4d", group_name: "WebServers"}]
+      #=>          }
+      #=>        ]
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  Only the commonly-read members are shown; the parser returns every
+  documented member of the response. Note the state is
+  `instance_state.name`, not a top-level `:state`, and the public address is
+  `:ip_address`, which is AWS's member name.
   """
   @spec describe_instances(opts :: keyword()) ::
           {:ok, %{reservation_set: list(map()), next_token: String.t() | nil}}
@@ -833,6 +1106,50 @@ defmodule AWS.EC2 do
         owners: ["self"],
         filters: [%{name: "tag:ReleaseGroup", values: ["deployd"]}]
       )
+
+  ## Examples
+
+      AWS.EC2.describe_images(
+        owners: ["self"],
+        filters: [%{name: "tag:ReleaseGroup", values: ["deployd"]}]
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    images_set: [
+      #=>      %{
+      #=>        image_id: "ami-0abcdef1234567890",
+      #=>        name: "app-2026-01-01",
+      #=>        image_state: "available",
+      #=>        image_owner_id: "123456789012",
+      #=>        creation_date: "2026-01-01T00:00:00.000Z",
+      #=>        architecture: "x86_64",
+      #=>        root_device_type: "ebs",
+      #=>        root_device_name: "/dev/xvda",
+      #=>        virtualization_type: "hvm",
+      #=>        is_public: "false",
+      #=>        state_reason: nil,
+      #=>        tag_set: [%{key: "ReleaseGroup", value: "deployd"}],
+      #=>        block_device_mapping: [
+      #=>          %{
+      #=>            device_name: "/dev/xvda",
+      #=>            virtual_name: "",
+      #=>            no_device: "",
+      #=>            ebs: %{
+      #=>              snapshot_id: "snap-0a1b2c3d",
+      #=>              volume_size: 30,
+      #=>              volume_type: "gp3",
+      #=>              delete_on_termination: "true"
+      #=>            }
+      #=>          },
+      #=>          %{device_name: "/dev/sdb", virtual_name: "ephemeral0", ebs: nil}
+      #=>        ]
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  An instance-store device carries no `<ebs>` element, so its `:ebs` is
+  `nil` rather than a map of empty strings.
   """
   @spec describe_images(opts :: keyword()) ::
           {:ok, %{images_set: list(map()), next_token: String.t() | nil}} | {:error, term()}
@@ -955,6 +1272,11 @@ defmodule AWS.EC2 do
 
   The backing snapshots are not deleted; delete them separately with
   `delete_snapshot/2`.
+
+  ## Examples
+
+      AWS.EC2.deregister_image("ami-0abcdef1234567890")
+      #=> {:ok, %{return: true, delete_associated_snapshot_result_set: []}}
   """
   @spec deregister_image(image_id :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -984,6 +1306,11 @@ defmodule AWS.EC2 do
 
   @doc """
   Deletes an EBS snapshot.
+
+  ## Examples
+
+      AWS.EC2.delete_snapshot("snap-0a1b2c3d")
+      #=> {:ok, %{return: true}}
   """
   @spec delete_snapshot(snapshot_id :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -1009,6 +1336,15 @@ defmodule AWS.EC2 do
   Adds or overwrites tags on one or more EC2 resources.
 
   `tags` is a list of `%{key:, value:}` maps or `{key, value}` tuples.
+
+  ## Examples
+
+      AWS.EC2.create_tags(["i-1234567890abcdef0"], [%{key: "Name", value: "web-1"}])
+      #=> {:ok, %{return: true}}
+
+      # Tuples work too.
+      AWS.EC2.create_tags(["ami-0abcdef1234567890"], [{"ReleaseGroup", "deployd"}])
+      #=> {:ok, %{return: true}}
   """
   @spec create_tags(
           resource_ids :: list(String.t()),
@@ -1054,6 +1390,29 @@ defmodule AWS.EC2 do
     * `:filters` - List of `%{name:, values:}` filters.
     * `:next_token` - Pagination token from a previous response.
     * `:max_results` - Maximum templates per page.
+
+  ## Examples
+
+      AWS.EC2.describe_launch_templates(launch_template_names: ["web"])
+      #=> {:ok,
+      #=>  %{
+      #=>    launch_templates: [
+      #=>      %{
+      #=>        launch_template_id: "lt-0a1b2c3d4e5f6789a",
+      #=>        launch_template_name: "web",
+      #=>        create_time: "2026-01-01T00:00:00.000Z",
+      #=>        created_by: "arn:aws:iam::123456789012:user/deploy",
+      #=>        default_version_number: 1,
+      #=>        latest_version_number: 3,
+      #=>        operator: nil,
+      #=>        tag_set: [%{key: "env", value: "prod"}]
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  The configuration itself is not here -- fetch a version with
+  `describe_launch_template_versions/1`.
   """
   @spec describe_launch_templates(opts :: keyword()) ::
           {:ok, %{launch_templates: list(map()), next_token: String.t() | nil}}
@@ -1129,6 +1488,73 @@ defmodule AWS.EC2 do
     * `:next_token`, `:max_results` - Pagination.
     * `:resolve_alias` - When `true`, resolves an AMI alias in `:image_id` to
       the underlying AMI ID.
+
+  ## Examples
+
+      AWS.EC2.describe_launch_template_versions(
+        launch_template_id: "lt-0a1b2c3d4e5f6789a",
+        versions: ["$Latest"]
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    launch_template_versions: [
+      #=>      %{
+      #=>        launch_template_id: "lt-0a1b2c3d4e5f6789a",
+      #=>        launch_template_name: "web",
+      #=>        version_number: 3,
+      #=>        version_description: "",
+      #=>        create_time: "2026-01-01T00:00:00.000Z",
+      #=>        created_by: "arn:aws:iam::123456789012:user/deploy",
+      #=>        default_version: "false",
+      #=>        operator: nil,
+      #=>        launch_template_data: %{
+      #=>          image_id: "ami-0abcdef1234567890",
+      #=>          instance_type: "t3.micro",
+      #=>          key_name: "deploy-key",
+      #=>          # Base64, exactly as AWS stores it.
+      #=>          user_data: "IyEvYmluL2Jhc2gKZWNobyBoaQ==",
+      #=>          security_group_id_set: ["sg-1a2b3c4d"],
+      #=>          iam_instance_profile: %{
+      #=>            arn: "arn:aws:iam::123456789012:instance-profile/app",
+      #=>            name: ""
+      #=>          },
+      #=>          placement: %{availability_zone: "us-east-1a", tenancy: "default"},
+      #=>          metadata_options: %{
+      #=>            http_tokens: "required",
+      #=>            http_put_response_hop_limit: 2
+      #=>          },
+      #=>          instance_market_options: %{
+      #=>            market_type: "spot",
+      #=>            spot_options: %{max_price: "0.02", spot_instance_type: "one-time"}
+      #=>          },
+      #=>          block_device_mapping_set: [
+      #=>            %{
+      #=>              device_name: "/dev/xvda",
+      #=>              ebs: %{volume_size: 30, volume_type: "gp3", delete_on_termination: "true"}
+      #=>            }
+      #=>          ],
+      #=>          network_interface_set: [
+      #=>            %{
+      #=>              device_index: 0,
+      #=>              subnet_id: "subnet-9d4a7b6c",
+      #=>              associate_public_ip_address: "true",
+      #=>              group_set: ["sg-1a2b3c4d"]
+      #=>            }
+      #=>          ],
+      #=>          tag_specification_set: [
+      #=>            %{
+      #=>              resource_type: "instance",
+      #=>              tag_set: [%{key: "Name", value: "web"}]
+      #=>            }
+      #=>          ]
+      #=>        }
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  Every member of `:launch_template_data` is optional in AWS's model, so a
+  minimal template returns mostly `nil` sub-structures and empty lists.
   """
   @spec describe_launch_template_versions(opts :: keyword()) ::
           {:ok, %{launch_template_versions: list(map()), next_token: String.t() | nil}}
@@ -1366,6 +1792,22 @@ defmodule AWS.EC2 do
 
     * `:filters` - List of `%{name:, values:}` filters. Common filter names:
       `"key"`, `"value"`, `"resource-id"`, `"resource-type"`.
+
+  ## Examples
+
+      AWS.EC2.describe_tags(filters: [%{name: "resource-id", values: ["i-1234567890abcdef0"]}])
+      #=> {:ok,
+      #=>  %{
+      #=>    tag_set: [
+      #=>      %{
+      #=>        resource_id: "i-1234567890abcdef0",
+      #=>        resource_type: "instance",
+      #=>        key: "Name",
+      #=>        value: "web-1"
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
   """
   @spec describe_tags(opts :: keyword()) ::
           {:ok, %{tag_set: list(map()), next_token: String.t() | nil}} | {:error, term()}
