@@ -105,7 +105,17 @@ defmodule AWS.AuthCache do
     end
   end
 
-  @doc "Drops every cached entry. Intended for tests."
+  @doc """
+  Drops every cached entry. Intended for tests.
+
+  ## Examples
+
+      AWS.AuthCache.clear()
+      #=> :ok
+
+  Call it between tests that stub different credential sources, so a cached
+  entry from an earlier test cannot answer a later one.
+  """
   @spec clear :: :ok
   def clear do
     GenServer.call(__MODULE__, :clear)

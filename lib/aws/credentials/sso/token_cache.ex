@@ -25,7 +25,17 @@ defmodule AWS.Credentials.SSO.TokenCache do
           optional(:registrationExpiresAt) => String.t()
         }
 
-  @doc "Returns the cache file path for `key` inside `home`."
+  @doc """
+  Returns the cache file path for `key` inside `home`.
+
+  ## Examples
+
+      AWS.Credentials.SSO.TokenCache.path("https://example.awsapps.com/start")
+      #=> "/Users/you/.aws/sso/cache/13f8e2a9c0b74d1e5f6a7b8c9d0e1f2a3b4c5d6e.json"
+
+  The filename is the SHA-1 of the key, which is what the AWS CLI does, so
+  a token cached by `aws sso login` is found here and vice versa.
+  """
   @spec path(String.t(), keyword) :: Path.t()
   def path(key, opts \\ []) when is_binary(key) do
     hash = :sha |> :crypto.hash(key) |> Base.encode16(case: :lower)
@@ -37,6 +47,23 @@ defmodule AWS.Credentials.SSO.TokenCache do
 
   Returns `{:ok, map}`, `{:error, :enoent}` when the file is missing,
   or `{:error, {:invalid_json, reason}}` on a parse failure.
+
+  ## Examples
+
+      AWS.Credentials.SSO.TokenCache.read("https://example.awsapps.com/start")
+      #=> {:ok,
+      #=>  %{
+      #=>    "accessToken" => "eyJlbmMiOiJBMjU2R0NN...",
+      #=>    "expiresAt" => "2026-01-01T08:00:00Z",
+      #=>    "region" => "us-east-1",
+      #=>    "startUrl" => "https://example.awsapps.com/start"
+      #=>  }}
+
+      AWS.Credentials.SSO.TokenCache.read("https://never-logged-in.example.com/start")
+      #=> {:error, :enoent}
+
+  The key is hashed with SHA-1 to form the filename, matching the AWS CLI,
+  so a token cached by `aws sso login` is readable here and vice versa.
   """
   @spec read(String.t(), keyword) :: {:ok, map} | {:error, term}
   def read(key, opts \\ []) when is_binary(key) do
@@ -50,6 +77,22 @@ defmodule AWS.Credentials.SSO.TokenCache do
 
   The temp file is `<target>.tmp.<unique>`, chmodded to `0600`, then
   renamed onto the target path.
+
+  ## Examples
+
+      AWS.Credentials.SSO.TokenCache.write("https://example.awsapps.com/start", %{
+        "accessToken" => "eyJlbmMiOiJBMjU2R0NN...",
+        "expiresAt" => "2026-01-01T08:00:00Z",
+        "region" => "us-east-1"
+      })
+      #=> :ok
+
+      AWS.Credentials.SSO.TokenCache.write("...", contents)
+      #=> {:error, :eacces}
+
+  Writes to a `0600` temp file and renames it onto the target, so a reader
+  never sees a half-written token, and the access token is never briefly
+  world-readable.
   """
   @spec write(String.t(), map, keyword) :: :ok | {:error, term}
   def write(key, contents, opts \\ []) when is_binary(key) and is_map(contents) do

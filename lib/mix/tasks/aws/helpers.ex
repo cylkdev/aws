@@ -15,6 +15,21 @@ defmodule Mix.Tasks.AWS.Helpers do
   @doc """
   Parses argv with common AWS switches plus any task-specific ones.
   Returns `{parsed_opts, remaining_args, invalid}`.
+
+  ## Examples
+
+      Mix.Tasks.Aws.Helpers.parse_opts(["--region", "eu-west-1", "--force", "my-rule"])
+      #=> {[region: "eu-west-1", force: true], ["my-rule"], []}
+
+      # Task-specific switches are added to the common set.
+      Mix.Tasks.Aws.Helpers.parse_opts(["--rule", "s3-uploads"], rule: :string)
+      #=> {[rule: "s3-uploads"], [], []}
+
+      # Parsing is strict, so an unknown switch is reported rather than ignored.
+      Mix.Tasks.Aws.Helpers.parse_opts(["--nope"])
+      #=> {[], [], [{"--nope", nil}]}
+
+  Aliases: `-r` for `--region`, `-f` for `--force`, `-p` for `--profile`.
   """
   def parse_opts(argv, extra_switches \\ []) do
     OptionParser.parse(argv,
@@ -39,6 +54,28 @@ defmodule Mix.Tasks.AWS.Helpers do
 
   Region resolution prefers `--region`, then Mix config, then
   `AWS.Config.region/0`.
+
+  ## Examples
+
+      Mix.Tasks.Aws.Helpers.build_opts(profile: "dev")
+      #=> [
+      #=>   access_key_id: {:awscli, "dev", 30},
+      #=>   secret_access_key: {:awscli, "dev", 30},
+      #=>   security_token: {:awscli, "dev", 30},
+      #=>   region: {:awscli, "dev", 30}
+      #=> ]
+
+      Mix.Tasks.Aws.Helpers.build_opts(
+        access_key_id: "AKIA1EXAMPLE",
+        secret_access_key: "SK",
+        region: "eu-west-1"
+      )
+      #=> [access_key_id: "AKIA1EXAMPLE", secret_access_key: "SK", region: "eu-west-1"]
+
+      # With no credential flags, the keys are omitted so the default chain
+      # (env vars, IMDS, ECS) resolves them.
+      Mix.Tasks.Aws.Helpers.build_opts([])
+      #=> [region: "us-east-1"]
   """
   def build_opts(parsed_opts) do
     []
@@ -93,6 +130,18 @@ defmodule Mix.Tasks.AWS.Helpers do
   On error, prints the full error (code, message, details) to stderr so the
   failure is visible even when Mix truncates its own error message, then
   raises to fail the task with a non-zero exit code.
+
+  ## Examples
+
+      Mix.Tasks.Aws.Helpers.handle_result({:ok, %{rule_arn: "arn:aws:events:...:rule/s3-uploads"}})
+      # Prints the result and returns :ok.
+
+      Mix.Tasks.Aws.Helpers.handle_result({:error, %ErrorMessage{code: :not_found}})
+      # Prints the full error to stderr, then raises to exit non-zero:
+      #=> ** (Mix.Error) AWS API call failed
+
+  The error is printed in full before raising, because Mix truncates its own
+  error message and would otherwise hide the AWS code and details.
   """
   def handle_result({:ok, result}), do: print_result(result)
 
@@ -108,6 +157,27 @@ defmodule Mix.Tasks.AWS.Helpers do
   - Without `--force`: if the resource exists, prints a skip message and returns `:skipped`.
     If it does not exist (`:not_found`), calls `action_fn` and returns its result.
   - With `--force`: always calls `action_fn`.
+
+  ## Examples
+
+      Mix.Tasks.Aws.Helpers.idempotent(
+        "s3-uploads",
+        fn -> AWS.EventBridge.describe_rule("s3-uploads", opts) end,
+        fn -> AWS.EventBridge.put_rule("s3-uploads", opts) end,
+        false
+      )
+      # Already exists:
+      #=> :skipped
+      # Does not exist -- runs the action:
+      #=> {:ok, %{rule_arn: "arn:aws:events:us-east-1:123456789012:rule/s3-uploads"}}
+
+      # --force skips the check and always acts.
+      Mix.Tasks.Aws.Helpers.idempotent("s3-uploads", check_fn, action_fn, true)
+      #=> {:ok, %{rule_arn: "..."}}
+
+  Only `{:error, %{code: :not_found}}` means "safe to create"; any other
+  error is reported through `handle_result/1` rather than being treated as
+  absence.
   """
   def idempotent(name, check_fn, action_fn, force) do
     if force do
@@ -130,6 +200,16 @@ defmodule Mix.Tasks.AWS.Helpers do
   @doc """
   Checks whether a target with `target_id` exists on `rule`. Returns `{:ok, %{}}` if found,
   `{:error, %{code: :not_found}}` if not. Used by `idempotent/4` for target checks.
+
+  ## Examples
+
+      Mix.Tasks.Aws.Helpers.find_target("s3-uploads", "sqs-queue", opts)
+      #=> {:ok, %{}}
+
+      Mix.Tasks.Aws.Helpers.find_target("s3-uploads", "not-attached", opts)
+      #=> {:error, %{code: :not_found}}
+
+  Shaped to be passed straight to `idempotent/4` as its `check_fn`.
   """
   def find_target(rule, target_id, opts) do
     case AWS.EventBridge.list_targets_by_rule(rule, opts) do
@@ -167,6 +247,18 @@ defmodule Mix.Tasks.AWS.Helpers do
 
   Returns `{remaining_argv, filters}` where `filters` is a keyword list
   shaped like `[{field, [value1, value2, ...]}, ...]`.
+
+  ## Examples
+
+      Mix.Tasks.Aws.Helpers.extract_filters([
+        "--filter-lifecycle-state", "InService",
+        "--region", "us-east-1",
+        "--filter-lifecycle-state=Pending"
+      ])
+      #=> {["--region", "us-east-1"], [lifecycle_state: ["InService", "Pending"]]}
+
+  Repeating a flag OR-combines its values; different keys AND-combine. The
+  unconsumed argv comes back first so it can be passed on to `parse_opts/2`.
   """
   @spec extract_filters([String.t()]) :: {[String.t()], keyword([String.t()])}
   def extract_filters(argv) do
@@ -227,6 +319,37 @@ defmodule Mix.Tasks.AWS.Helpers do
 
   Comparison is string-based after `to_string/1` on both sides, so values like
   integers, booleans, and atoms compare against their textual form.
+
+  ## Examples
+
+      result =
+        {:ok,
+         %{
+           auto_scaling_groups: [
+             %{
+               name: "web-asg",
+               instances: [
+                 %{instance_id: "i-1", lifecycle_state: "InService"},
+                 %{instance_id: "i-2", lifecycle_state: "Pending"}
+               ]
+             }
+           ]
+         }}
+
+      Mix.Tasks.Aws.Helpers.apply_filters(result, lifecycle_state: ["InService"])
+      #=> {:ok,
+      #=>  %{
+      #=>    auto_scaling_groups: [
+      #=>      %{
+      #=>        name: "web-asg",
+      #=>        instances: [%{instance_id: "i-1", lifecycle_state: "InService"}]
+      #=>      }
+      #=>    ]
+      #=>  }}
+
+  The outer list is untouched because its maps have no `:lifecycle_state`;
+  only the level where the key exists is narrowed. An empty filter list and
+  an `{:error, _}` both pass straight through.
   """
   @spec apply_filters({:ok, term} | {:error, term} | term, keyword([String.t()])) ::
           {:ok, term} | {:error, term} | term

@@ -100,13 +100,33 @@ defmodule AWS.HTTP do
   defp put_body(req_opts, body) when body in [nil, "", []], do: req_opts
   defp put_body(req_opts, body), do: Keyword.put(req_opts, :body, body)
 
-  @doc "Convenience wrapper for `request(:post, url, body, headers, opts)`."
+  @doc """
+  Convenience wrapper for `request(:post, url, body, headers, opts)`.
+
+  ## Examples
+
+      AWS.HTTP.post("https://example.com/api", ~s({"a":1}), [{"content-type", "application/json"}])
+      #=> {:ok, %{status: 200, body: ~s({"ok":true}), headers: [...]}}
+  """
   @spec post(String.t(), iodata, [header], keyword) :: {:ok, response} | {:error, %{reason: term}}
   def post(url, body, headers, opts \\ []) do
     request(:post, url, body, headers, opts)
   end
 
-  @doc "Convenience wrapper for `request(:get, url, nil, headers, opts)`."
+  @doc """
+  Convenience wrapper for `request(:get, url, nil, headers, opts)`.
+
+  ## Examples
+
+      AWS.HTTP.get("https://example.com/health")
+      #=> {:ok, %{status: 200, body: "ok", headers: [...]}}
+
+      # Used for IMDS credential lookups, which need a token header.
+      AWS.HTTP.get("http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+        [{"x-aws-ec2-metadata-token", token}]
+      )
+      #=> {:ok, %{status: 200, body: "my-instance-role", headers: [...]}}
+  """
   @spec get(String.t(), [header], keyword) :: {:ok, response} | {:error, %{reason: term}}
   def get(url, headers \\ [], opts \\ []) do
     request(:get, url, nil, headers, opts)

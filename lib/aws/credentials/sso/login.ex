@@ -39,6 +39,32 @@ defmodule AWS.Credentials.SSO.Login do
 
   On success, returns `{:ok, cache}` where `cache` is the new cache
   contents (also persisted to disk via `TokenCache`).
+
+  ## Examples
+
+      AWS.Credentials.SSO.Login.run("dev")
+      # Prints the verification URL and code, then polls until you approve:
+      #
+      #   Attempting to open https://device.sso.us-east-1.amazonaws.com/ ...
+      #   Then enter the code: ABCD-EFGH
+      #
+      #=> {:ok,
+      #=>  %{
+      #=>    "accessToken" => "eyJlbmMiOiJBMjU2R0NN...",
+      #=>    "expiresAt" => "2026-01-01T08:00:00Z",
+      #=>    "region" => "us-east-1",
+      #=>    "startUrl" => "https://example.awsapps.com/start",
+      #=>    "clientId" => "...",
+      #=>    "clientSecret" => "..."
+      #=>  }}
+
+      AWS.Credentials.SSO.Login.run("no-such-profile")
+      #=> {:error, :sso_profile_not_found}
+
+  The token is written to `~/.aws/sso/cache` before returning. A failed
+  write is reported as an error rather than success, because reporting
+  success would tell you that you are logged in while the next command finds
+  no token.
   """
   @spec run(String.t(), login_opts) :: result
   def run(profile_name, opts \\ []) when is_binary(profile_name) do
@@ -66,6 +92,20 @@ defmodule AWS.Credentials.SSO.Login do
 
   Honors `auto_sso_login_noninteractive`: when stdin is not a tty,
   returns `:ok` only if the opt is truthy.
+
+  ## Examples
+
+      AWS.Credentials.SSO.Login.confirm("dev")
+      # AWS SSO credentials for profile dev have expired.
+      # Run interactive login now? [Y/n]
+      #=> :ok
+
+      # Declined, EOF, or no answer within 60 seconds:
+      #=> {:error, :sso_login_declined}
+
+  When stdin is not a tty there is nobody to prompt, so this declines unless
+  `auto_sso_login_noninteractive` is truthy -- otherwise a CI run would hang
+  on a prompt no one can answer.
   """
   @spec confirm(String.t(), login_opts) :: :ok | {:error, term}
   def confirm(profile_name, opts \\ []) do

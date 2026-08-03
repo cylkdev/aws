@@ -42,7 +42,17 @@ defmodule AWS.HTTP.FinchPool do
   ]
   @plain_transport_opts [timeout: @connect_timeout]
 
-  @doc "Registered name of the Finch instance used by `AWS.HTTP`."
+  @doc """
+  Registered name of the Finch instance used by `AWS.HTTP`.
+
+  ## Examples
+
+      AWS.HTTP.FinchPool.name()
+      #=> AWS.HTTP.FinchPool
+
+  Pass it to Finch directly when you need a call this library does not
+  wrap: `Finch.build(:get, url) |> Finch.request(AWS.HTTP.FinchPool.name())`.
+  """
   @spec name() :: atom()
   def name, do: @name
 

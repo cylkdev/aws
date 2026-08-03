@@ -1082,7 +1082,7 @@ defmodule AWS.EventBridge do
       )
 
   Requires EventBridge notifications to be enabled on the bucket; see
-  `AWS.S3.put_notification_configuration/3`.
+  `AWS.S3.enable_event_bridge/2`.
   """
   @spec s3_object_created_pattern(bucket :: String.t()) :: map()
   def s3_object_created_pattern(bucket) do

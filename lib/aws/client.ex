@@ -84,6 +84,23 @@ defmodule AWS.Client do
       `:request_timeout`).
     * `:now` — override `DateTime.utc_now/0` for deterministic
       signatures in tests.
+
+  ## Examples
+
+      {:ok, op} = AWS.EC2.build_operation("DescribeTags", %{}, access_key_id: "AK", secret_access_key: "SK")
+
+      AWS.Client.execute(op)
+      #=> {:ok, %{status: 200, body: "<DescribeTagsResponse>...", headers: [...]}}
+
+      # Non-2xx is an error at this layer, unlike AWS.HTTP.
+      AWS.Client.execute(op)
+      #=> {:error, {:http_error, 403, "<ErrorResponse>...</ErrorResponse>"}}
+
+      AWS.Client.execute(op)
+      #=> {:error, %Mint.TransportError{reason: :nxdomain}}
+
+  The three shapes above are exactly what each service module's
+  `deserialize_response/3` pattern-matches on.
   """
   @spec execute(struct) ::
           {:ok, response}

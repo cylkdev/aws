@@ -157,21 +157,60 @@ defmodule AWS.Config do
     |> Enum.find_value(%{}, &resolve_credentials(&1, opts))
   end
 
-  @doc "Resolves the access key id."
+  @doc """
+  Resolves the access key id.
+
+  ## Examples
+
+      AWS.Config.access_key_id(access_key_id: "AKIA1EXAMPLE")
+      #=> "AKIA1EXAMPLE"
+
+      # Unresolvable from any source.
+      AWS.Config.access_key_id()
+      #=> nil
+  """
   @spec access_key_id(keyword) :: String.t() | nil
   def access_key_id(opts \\ []), do: opts |> credentials() |> Map.get(:access_key_id)
 
-  @doc "Resolves the secret access key."
+  @doc """
+  Resolves the secret access key.
+
+  ## Examples
+
+      AWS.Config.secret_access_key(profile: "dev")
+      #=> "wJalrXUtnFEMI/K7MDENG/bPxRfiCY"
+  """
   @spec secret_access_key(keyword) :: String.t() | nil
   def secret_access_key(opts \\ []), do: opts |> credentials() |> Map.get(:secret_access_key)
 
-  @doc "Resolves the security (session) token."
+  @doc """
+  Resolves the security (session) token.
+
+  ## Examples
+
+      AWS.Config.security_token(profile: "dev")
+      #=> "IQoJb3JpZ2luX2VjEJr..."
+
+      # Long-lived IAM user keys carry no session token.
+      AWS.Config.security_token(access_key_id: "AKIA1EXAMPLE", secret_access_key: "SK")
+      #=> nil
+  """
   @spec security_token(keyword) :: String.t() | nil
   def security_token(opts \\ []), do: opts |> credentials() |> Map.get(:security_token)
 
   @doc """
   Resolves the region chain. Falls back to `\"us-east-1\"` because the
   built-in chain ends with that literal.
+
+  ## Examples
+
+      AWS.Config.region(region: "eu-west-1")
+      #=> "eu-west-1"
+
+      # Falls back to the app env, then AWS_REGION / AWS_DEFAULT_REGION,
+      # then the shared config profile, then "us-east-1".
+      AWS.Config.region()
+      #=> "us-east-1"
   """
   @spec region(keyword) :: String.t()
   def region(opts \\ []), do: region(opts, credentials(opts))
@@ -179,6 +218,16 @@ defmodule AWS.Config do
   @doc """
   Resolves the region against an already-resolved credential set,
   avoiding a second chain walk. Used by `new/1`.
+
+  ## Examples
+
+      creds = AWS.Config.credentials(profile: "dev")
+      AWS.Config.region([], creds)
+      #=> "eu-west-1"
+
+  Same chain as `region/1`, but reads the profile's region off an
+  already-resolved credential map instead of walking the source chain a
+  second time.
   """
   @spec region(keyword, map) :: String.t()
   def region(opts, creds) when is_list(opts) and is_map(creds) do

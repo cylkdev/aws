@@ -1720,6 +1720,18 @@ defmodule AWS.S3 do
   Returns the URL a caller would hit for `{bucket, key, query}` given
   `opts`. Used by presigning so the SigV4 signature lines up with the
   URL built by `s3_request/4`.
+
+  ## Examples
+
+      {:ok, config} = AWS.S3.resolve_config(region: "us-east-1")
+
+      AWS.S3.build_url(config, "uploads", "reports/jan.csv", %{})
+      #=> "https://uploads.s3.us-east-1.amazonaws.com/reports/jan.csv"
+
+      # Reserved characters are percent-encoded with AWS's UriEncode rules,
+      # so the signer can sign the path verbatim and still match the wire.
+      AWS.S3.build_url(config, "uploads", "my file+a:b#c.txt", %{"versionId" => "abc"})
+      #=> "https://uploads.s3.us-east-1.amazonaws.com/my%20file%2Ba%3Ab%23c.txt?versionId=abc"
   """
   @spec build_url(keyword | map, binary | nil, binary | nil, map | keyword) :: String.t()
   def build_url(opts, bucket, key, query) when is_list(opts) do
@@ -1741,6 +1753,25 @@ defmodule AWS.S3 do
   @doc """
   Resolves the full config map (region, scheme, host, port, creds,
   path_style) for a given opts keyword. Exposed so presigners can reuse it.
+
+  ## Examples
+
+      AWS.S3.resolve_config(access_key_id: "AK", secret_access_key: "SK", region: "us-east-1")
+      #=> {:ok,
+      #=>  %{
+      #=>    scheme: "https",
+      #=>    host: "s3.us-east-1.amazonaws.com",
+      #=>    port: nil,
+      #=>    region: "us-east-1",
+      #=>    access_key_id: "AK",
+      #=>    secret_access_key: "SK",
+      #=>    security_token: nil,
+      #=>    path_style: false
+      #=>  }}
+
+  Adds `:path_style` to the shared config shape, since S3 is the only
+  service here that has to choose between virtual-hosted and path
+  addressing.
   """
   @spec resolve_config(keyword) :: {:ok, map} | {:error, term}
   def resolve_config(opts) do
