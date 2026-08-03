@@ -3,6 +3,26 @@ defmodule AWS.S3.XMLParser do
 
   import SweetXml, only: [sigil_x: 2, xpath: 2, xpath: 3]
 
+  @doc """
+  Parses a `CopyObjectResult` XML response.
+
+  ## Examples
+
+      AWS.S3.XMLParser.parse_copy_object_result(
+        ~s(<CopyObjectResult><ETag>"9a03"</ETag><LastModified>2026-01-01T00:00:00.000Z</LastModified></CopyObjectResult>)
+      )
+      #=> %{
+      #=>   etag: "\"9a03\"",
+      #=>   last_modified: "2026-01-01T00:00:00.000Z",
+      #=>   checksum_crc32: "",
+      #=>   checksum_sha256: "",
+      #=>   checksum_type: ""
+      #=>   # ...one key per documented checksum algorithm
+      #=> }
+
+  S3 can return a 200 whose body is an `<Error>`; that case yields
+  `{:error, %ErrorMessage{}}` instead of a map.
+  """
   def parse_copy_object_result(xml) do
     doc = SweetXml.parse(xml)
 
@@ -36,6 +56,27 @@ defmodule AWS.S3.XMLParser do
   and `:event_bridge_configuration` is an empty map when the element is
   present and `nil` when it is not -- presence is the whole payload, since
   `EventBridgeConfiguration` has no members.
+
+  ## Examples
+
+      AWS.S3.XMLParser.parse_notification_configuration(xml)
+      #=> %{
+      #=>   event_bridge_configuration: %{},
+      #=>   topic_configuration: [],
+      #=>   queue_configuration: [
+      #=>     %{
+      #=>       id: "uploads-to-sqs",
+      #=>       queue: "arn:aws:sqs:us-east-1:123456789012:uploads",
+      #=>       event: ["s3:ObjectCreated:*"],
+      #=>       filter: %{s3_key: %{filter_rule: [%{name: "prefix", value: "incoming/"}]}}
+      #=>     }
+      #=>   ],
+      #=>   cloud_function_configuration: []
+      #=> }
+
+  `:event_bridge_configuration` is `%{}` when the element is present and
+  `nil` when it is absent -- `EventBridgeConfiguration` has no members, so
+  presence is the whole payload.
   """
   @spec parse_notification_configuration(xml :: binary()) :: map()
   def parse_notification_configuration(xml) do
@@ -105,6 +146,28 @@ defmodule AWS.S3.XMLParser do
   Parses a `ListAllMyBucketsResult` XML response.
 
   Returns `%{buckets: [...], owner: %{id, display_name}}`.
+
+  ## Examples
+
+      AWS.S3.XMLParser.parse_list_buckets(xml)
+      #=> %{
+      #=>   buckets: %{
+      #=>     bucket: [
+      #=>       %{
+      #=>         name: "uploads",
+      #=>         creation_date: "2026-01-01T00:00:00.000Z",
+      #=>         bucket_region: "us-east-1",
+      #=>         bucket_arn: ""
+      #=>       }
+      #=>     ]
+      #=>   },
+      #=>   owner: %{id: "abc", display_name: "example"},
+      #=>   continuation_token: "",
+      #=>   prefix: ""
+      #=> }
+
+  `<Buckets>` is a wrapper holding repeated `<Bucket>` elements, so the list
+  sits under `buckets.bucket` rather than collapsing to a bare list.
   """
   def parse_list_buckets(xml) do
     doc = SweetXml.parse(xml)
@@ -136,6 +199,38 @@ defmodule AWS.S3.XMLParser do
 
   Returns `%{contents: [...], is_truncated, key_count, max_keys, name, prefix,
   continuation_token, next_continuation_token}`.
+
+  ## Examples
+
+      AWS.S3.XMLParser.parse_list_objects(xml)
+      #=> %{
+      #=>   name: "uploads",
+      #=>   prefix: "reports/",
+      #=>   delimiter: "/",
+      #=>   key_count: 1,
+      #=>   max_keys: 1000,
+      #=>   is_truncated: false,
+      #=>   continuation_token: "",
+      #=>   next_continuation_token: "",
+      #=>   contents: [
+      #=>     %{
+      #=>       key: "reports/jan.csv",
+      #=>       last_modified: "2026-01-01T00:00:00.000Z",
+      #=>       etag: "\"9a03\"",
+      #=>       size: 18,
+      #=>       storage_class: "STANDARD",
+      #=>       checksum_algorithm: [],
+      #=>       owner: nil,
+      #=>       restore_status: nil
+      #=>     }
+      #=>   ],
+      #=>   common_prefixes: [%{prefix: "reports/2025/"}]
+      #=> }
+
+  Each `CommonPrefixes` entry is a structure with a `:prefix` member, not a
+  bare string. `:key_count`, `:max_keys` and `:size` are cast to integers
+  per the AWS model; `:checksum_algorithm` is a list on an Object, unlike
+  the singular String of the same name in `parse_list_parts/1`.
   """
   def parse_list_objects(xml) do
     doc = SweetXml.parse(xml)
@@ -184,6 +279,13 @@ defmodule AWS.S3.XMLParser do
   Parses an `InitiateMultipartUploadResult` XML response.
 
   Returns `%{bucket, key, upload_id}`.
+
+  ## Examples
+
+      AWS.S3.XMLParser.parse_initiate_multipart(
+        ~s(<InitiateMultipartUploadResult><Bucket>uploads</Bucket><Key>big.bin</Key><UploadId>2~kTX</UploadId></InitiateMultipartUploadResult>)
+      )
+      #=> %{bucket: "uploads", key: "big.bin", upload_id: "2~kTX"}
   """
   def parse_initiate_multipart(xml) do
     doc = SweetXml.parse(xml)
@@ -200,6 +302,31 @@ defmodule AWS.S3.XMLParser do
 
   Returns `%{parts: [...], is_truncated, part_number_marker, next_part_number_marker,
   max_parts, bucket, key, upload_id}`.
+
+  ## Examples
+
+      AWS.S3.XMLParser.parse_list_parts(xml)
+      #=> %{
+      #=>   bucket: "uploads",
+      #=>   key: "big.bin",
+      #=>   upload_id: "2~kTX",
+      #=>   max_parts: 1000,
+      #=>   is_truncated: false,
+      #=>   part_number_marker: "",
+      #=>   next_part_number_marker: "",
+      #=>   storage_class: "STANDARD",
+      #=>   checksum_algorithm: "",
+      #=>   initiator: %{id: "abc", display_name: "example"},
+      #=>   owner: %{id: "abc", display_name: "example"},
+      #=>   parts: [
+      #=>     %{
+      #=>       part_number: 1,
+      #=>       size: 5_242_880,
+      #=>       etag: "\"9a03\"",
+      #=>       last_modified: "2026-01-01T00:00:00.000Z"
+      #=>     }
+      #=>   ]
+      #=> }
   """
   def parse_list_parts(xml) do
     doc = SweetXml.parse(xml)
@@ -250,6 +377,19 @@ defmodule AWS.S3.XMLParser do
   Parses a `CopyPartResult` XML response.
 
   Returns `%{etag, last_modified}`.
+
+  ## Examples
+
+      AWS.S3.XMLParser.parse_copy_part(
+        ~s(<CopyPartResult><ETag>"9a03"</ETag><LastModified>2026-01-01T00:00:00.000Z</LastModified></CopyPartResult>)
+      )
+      #=> %{
+      #=>   etag: "\"9a03\"",
+      #=>   last_modified: "2026-01-01T00:00:00.000Z",
+      #=>   checksum_crc32: "",
+      #=>   checksum_sha256: ""
+      #=>   # ...one key per documented checksum algorithm
+      #=> }
   """
   def parse_copy_part(xml) do
     doc = SweetXml.parse(xml)
@@ -274,6 +414,24 @@ defmodule AWS.S3.XMLParser do
   Parses a `CompleteMultipartUploadResult` XML response.
 
   Returns `%{location, bucket, key, etag}`.
+
+  ## Examples
+
+      AWS.S3.XMLParser.parse_complete_multipart(xml)
+      #=> %{
+      #=>   location: "https://uploads.s3.us-east-1.amazonaws.com/big.bin",
+      #=>   bucket: "uploads",
+      #=>   key: "big.bin",
+      #=>   etag: "\"9a03-2\""
+      #=> }
+
+  This is the operation most likely to return a 200 carrying an `<Error>`
+  body, which yields `{:error, %ErrorMessage{}}`:
+
+      AWS.S3.XMLParser.parse_complete_multipart(
+        ~s(<Error><Code>InternalError</Code><Message>We encountered an internal error.</Message></Error>)
+      )
+      #=> {:error, %ErrorMessage{}}
   """
   def parse_complete_multipart(xml) do
     doc = SweetXml.parse(xml)

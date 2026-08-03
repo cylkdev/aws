@@ -131,6 +131,30 @@ defmodule AWS.Client do
   `extra` is an optional keyword list of additional keys to merge into
   the result from the namespace opts (e.g. S3 passes `[:path_style]`
   so callers can read `config.path_style` directly).
+
+  ## Examples
+
+      AWS.Client.resolve_config(
+        :iam,
+        [access_key_id: "AKIA1EXAMPLE", secret_access_key: "SK", region: "us-east-1"],
+        fn _region -> "iam.amazonaws.com" end
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    scheme: "https",
+      #=>    host: "iam.amazonaws.com",
+      #=>    port: nil,
+      #=>    region: "us-east-1",
+      #=>    access_key_id: "AKIA1EXAMPLE",
+      #=>    secret_access_key: "SK",
+      #=>    security_token: nil
+      #=>  }}
+
+  Endpoint overrides come from the service's own opts key, which is how you
+  point a service at a local stub:
+
+      AWS.Client.resolve_config(:iam, [iam: [scheme: "http", host: "localhost", port: 4566]], fun)
+      #=> {:ok, %{scheme: "http", host: "localhost", port: 4566, ...}}
   """
   @spec resolve_config(atom, keyword, (String.t() -> String.t())) ::
           {:ok, map} | {:error, term}
@@ -218,6 +242,15 @@ defmodule AWS.Client do
   @doc """
   Builds a `"{scheme}://{host}{maybe_port}/"` URL for services that
   always POST to root (everyone except S3).
+
+  ## Examples
+
+      AWS.Client.simple_url(%{scheme: "https", host: "iam.amazonaws.com", port: nil})
+      #=> "https://iam.amazonaws.com/"
+
+      # A port is only appended when it is not the scheme's default.
+      AWS.Client.simple_url(%{scheme: "http", host: "localhost", port: 4566})
+      #=> "http://localhost:4566/"
   """
   @spec simple_url(map) :: String.t()
   def simple_url(%{scheme: scheme, host: host, port: port}) do

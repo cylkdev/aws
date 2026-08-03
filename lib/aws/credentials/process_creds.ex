@@ -32,6 +32,26 @@ defmodule AWS.Credentials.ProcessCreds do
   @doc """
   Runs `command` and parses the JSON it prints on stdout. `source` is
   the atom stamped onto the resulting credential map.
+
+  ## Examples
+
+      AWS.Credentials.ProcessCreds.run("aws-vault exec dev --json", :credential_process)
+      #=> {:ok,
+      #=>  %{
+      #=>    access_key_id: "ASIA1EXAMPLE",
+      #=>    secret_access_key: "...",
+      #=>    security_token: "IQoJb3JpZ2luX2VjEJr...",
+      #=>    expires_at: ~U[2026-01-01 01:00:00Z],
+      #=>    source: :credential_process
+      #=>  }}
+
+      AWS.Credentials.ProcessCreds.run("false", :credential_process)
+      #=> {:error, :no_credentials}
+
+  Runs the command and reads AWS's documented JSON contract from stdout
+  (`Version`, `AccessKeyId`, `SecretAccessKey`, `SessionToken`,
+  `Expiration`). A non-zero exit or unparseable output is an error, never a
+  partial credential.
   """
   @spec run(String.t(), atom) :: {:ok, creds} | {:error, term}
   def run(command, source) when is_binary(command) and is_atom(source) do

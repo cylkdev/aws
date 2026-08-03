@@ -27,6 +27,20 @@ defmodule AWS.S3.XMLBuilder do
     * `:ignore_public_acls` - Optional boolean.
     * `:block_public_policy` - Optional boolean.
     * `:restrict_public_buckets` - Optional boolean.
+
+  ## Examples
+
+      AWS.S3.XMLBuilder.build_public_access_block(
+        block_public_acls: true,
+        ignore_public_acls: true
+      )
+      #=> ~s(<PublicAccessBlockConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">) <>
+      #=>   "<BlockPublicAcls>true</BlockPublicAcls>" <>
+      #=>   "<IgnorePublicAcls>true</IgnorePublicAcls>" <>
+      #=>   "</PublicAccessBlockConfiguration>"
+
+  Only the flags supplied are emitted; omitted flags are left out entirely
+  rather than sent as false.
   """
   @spec build_public_access_block(opts :: keyword()) :: binary()
   # Only the flags the caller supplied are emitted. Defaulting them all to
@@ -54,6 +68,27 @@ defmodule AWS.S3.XMLBuilder do
     * `:sse_algorithm` - One of `"AES256"` (default), `"aws:kms"`, or `"aws:kms:dsse"`.
     * `:kms_master_key_id` - Required when `:sse_algorithm` is a KMS variant.
     * `:bucket_key_enabled` - Optional boolean.
+
+  ## Examples
+
+      AWS.S3.XMLBuilder.build_bucket_encryption([])
+      #=> ~s(<ServerSideEncryptionConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">) <>
+      #=>   "<Rule><ApplyServerSideEncryptionByDefault>" <>
+      #=>   "<SSEAlgorithm>AES256</SSEAlgorithm>" <>
+      #=>   "</ApplyServerSideEncryptionByDefault></Rule>" <>
+      #=>   "</ServerSideEncryptionConfiguration>"
+
+      AWS.S3.XMLBuilder.build_bucket_encryption(
+        sse_algorithm: "aws:kms",
+        kms_master_key_id: "arn:aws:kms:us-east-1:123456789012:key/abc",
+        bucket_key_enabled: true
+      )
+      #=> "...<SSEAlgorithm>aws:kms</SSEAlgorithm>" <>
+      #=>   "<KMSMasterKeyID>arn:aws:kms:us-east-1:123456789012:key/abc</KMSMasterKeyID>" <>
+      #=>   "...<BucketKeyEnabled>true</BucketKeyEnabled>..."
+
+  Defaults to `AES256` when no algorithm is given, rather than emitting an
+  empty element AWS would reject.
   """
   @spec build_bucket_encryption(opts :: keyword()) :: binary()
   def build_bucket_encryption(opts \\ []) do
@@ -81,6 +116,20 @@ defmodule AWS.S3.XMLBuilder do
 
   See `AWS.S3.put_bucket_lifecycle_configuration/3` for the supported rule
   shape.
+
+  ## Examples
+
+      AWS.S3.XMLBuilder.build_lifecycle_configuration([
+        %{id: "expire", filter: %{prefix: "incoming/"}, expiration: %{days: 30}}
+      ])
+      #=> ~s(<LifecycleConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">) <>
+      #=>   "<Rule><ID>expire</ID>" <>
+      #=>   "<Filter><Prefix>incoming/</Prefix></Filter>" <>
+      #=>   "<Status>Enabled</Status>" <>
+      #=>   "<Expiration><Days>30</Days></Expiration>" <>
+      #=>   "</Rule></LifecycleConfiguration>"
+
+  A rule with no `:status` defaults to `Enabled`.
   """
   @spec build_lifecycle_configuration(rules :: list(map())) :: binary()
   def build_lifecycle_configuration(rules) when is_list(rules) do

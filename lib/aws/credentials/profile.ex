@@ -33,6 +33,16 @@ defmodule AWS.Credentials.Profile do
   @doc """
   Returns the effective `~/.aws/config` path, honoring the
   `AWS_CONFIG_FILE` env var and the `:home_dir` opt.
+
+  ## Examples
+
+      AWS.Credentials.Profile.config_path()
+      #=> "/Users/you/.aws/config"
+
+      # AWS_CONFIG_FILE wins when set.
+      System.put_env("AWS_CONFIG_FILE", "/etc/aws/config")
+      AWS.Credentials.Profile.config_path()
+      #=> "/etc/aws/config"
   """
   @spec config_path(keyword) :: Path.t()
   def config_path(opts \\ []) do
@@ -44,6 +54,16 @@ defmodule AWS.Credentials.Profile do
   @doc """
   Returns the effective `~/.aws/credentials` path, honoring the
   `AWS_SHARED_CREDENTIALS_FILE` env var and the `:home_dir` opt.
+
+  ## Examples
+
+      AWS.Credentials.Profile.credentials_path()
+      #=> "/Users/you/.aws/credentials"
+
+      # AWS_SHARED_CREDENTIALS_FILE wins when set.
+      System.put_env("AWS_SHARED_CREDENTIALS_FILE", "/etc/aws/creds")
+      AWS.Credentials.Profile.credentials_path()
+      #=> "/etc/aws/creds"
   """
   @spec credentials_path(keyword) :: Path.t()
   def credentials_path(opts \\ []) do
@@ -55,6 +75,22 @@ defmodule AWS.Credentials.Profile do
   @doc """
   Loads a named profile, returning the merged key/value map or `nil`
   when the profile is defined in neither file.
+
+  ## Examples
+
+      AWS.Credentials.Profile.load("dev")
+      #=> %{
+      #=>   "region" => "eu-west-1",
+      #=>   "role_arn" => "arn:aws:iam::123456789012:role/dev",
+      #=>   "source_profile" => "default"
+      #=> }
+
+      AWS.Credentials.Profile.load("no-such-profile")
+      #=> %{}
+
+  Merges the two shared files, with `~/.aws/credentials` taking precedence.
+  In `~/.aws/config` the section is `[profile dev]`; in `~/.aws/credentials`
+  it is `[dev]`. Both resolve from the same `"dev"` name.
   """
   @spec load(String.t(), keyword) :: profile | nil
   def load(profile_name, opts \\ []) when is_binary(profile_name) do
@@ -75,6 +111,18 @@ defmodule AWS.Credentials.Profile do
 
   Returns the session's key/value map or `nil` when no such block
   exists.
+
+  ## Examples
+
+      AWS.Credentials.Profile.load_sso_session("my-sso")
+      #=> %{
+      #=>   "sso_start_url" => "https://example.awsapps.com/start",
+      #=>   "sso_region" => "us-east-1",
+      #=>   "sso_registration_scopes" => "sso:account:access"
+      #=> }
+
+  Reads an `[sso-session my-sso]` section, which is the modern form a
+  profile references via `sso_session = my-sso`.
   """
   @spec load_sso_session(String.t(), keyword) :: profile | nil
   def load_sso_session(session_name, opts \\ []) when is_binary(session_name) do
@@ -84,6 +132,16 @@ defmodule AWS.Credentials.Profile do
 
   @doc """
   The default profile name, honoring `AWS_PROFILE` then `AWS_DEFAULT_PROFILE`.
+
+  ## Examples
+
+      AWS.Credentials.Profile.default()
+      #=> "default"
+
+      # AWS_PROFILE overrides it.
+      System.put_env("AWS_PROFILE", "dev")
+      AWS.Credentials.Profile.default()
+      #=> "dev"
   """
   @spec default :: String.t()
   def default do
@@ -111,6 +169,25 @@ defmodule AWS.Credentials.Profile do
 
   Returns `{:error, reason}` when the profile cannot be resolved or
   does not carry any of the dispatch keys above.
+
+  ## Examples
+
+      AWS.Credentials.Profile.security_credentials("dev")
+      #=> {:ok,
+      #=>  %{
+      #=>    access_key_id: "ASIA1EXAMPLE",
+      #=>    secret_access_key: "...",
+      #=>    security_token: "IQoJb3JpZ2luX2VjEJr...",
+      #=>    expires_at: ~U[2026-01-01 01:00:00Z],
+      #=>    source: :sts
+      #=>  }}
+
+      AWS.Credentials.Profile.security_credentials("no-such-profile")
+      #=> {:error, :no_credentials}
+
+  Picks the provider the profile implies: static keys, `role_arn` +
+  `source_profile` (AssumeRole), `sso_session` (SSO), or
+  `credential_process`. `:source` says which one answered.
   """
   @spec security_credentials(String.t(), keyword) :: {:ok, map} | {:error, term}
   def security_credentials(profile_name, opts \\ []) when is_binary(profile_name) do

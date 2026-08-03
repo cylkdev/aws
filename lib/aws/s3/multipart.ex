@@ -28,6 +28,15 @@ defmodule AWS.S3.Multipart do
 
       iex> AWS.S3.Multipart.content_byte_stream(0, 64, 64) |> Enum.to_list()
       [{0, 63}]
+
+  ## Examples
+
+      AWS.S3.Multipart.content_byte_stream(0, 12_000_000, 5_242_880) |> Enum.to_list()
+      #=> [{0, 5_242_879}, {5_242_880, 10_485_759}, {10_485_760, 11_999_999}]
+
+  Each tuple is an inclusive `{first_byte, last_byte}` range, ready to
+  format as an HTTP `Range` header. The final range is short whenever the
+  content does not divide evenly by the chunk size.
   """
   @spec content_byte_stream(
           start_index :: non_neg_integer(),

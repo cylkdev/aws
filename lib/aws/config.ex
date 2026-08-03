@@ -91,6 +91,22 @@ defmodule AWS.Config do
   @doc """
   Aggregates the resolved credential set, region and sandbox flag into
   a single keyword list.
+
+  ## Examples
+
+      AWS.Config.new(access_key_id: "AKIA1EXAMPLE", secret_access_key: "SK", region: "eu-west-1")
+      #=> [
+      #=>   access_key_id: "AKIA1EXAMPLE",
+      #=>   secret_access_key: "SK",
+      #=>   security_token: nil,
+      #=>   region: "eu-west-1",
+      #=>   sandbox: [enabled: false]
+      #=> ]
+
+      # With nothing passed, every key is resolved from the app env and the
+      # built-in source chain.
+      AWS.Config.new()
+      #=> [access_key_id: "...", secret_access_key: "...", region: "us-east-1", ...]
   """
   @spec new(keyword) :: keyword
   def new(opts \\ []) when is_list(opts) do
@@ -111,6 +127,27 @@ defmodule AWS.Config do
   provides them — `:security_token` and `:region`.
 
   Returns an empty map when no source yields credentials.
+
+  ## Examples
+
+      AWS.Config.credentials(access_key_id: "AKIA1EXAMPLE", secret_access_key: "SK")
+      #=> %{
+      #=>   access_key_id: "AKIA1EXAMPLE",
+      #=>   secret_access_key: "SK",
+      #=>   security_token: nil
+      #=> }
+
+      # Resolve everything from a named shared-config profile.
+      AWS.Config.credentials(profile: "dev")
+      #=> %{
+      #=>   access_key_id: "ASIA1EXAMPLE",
+      #=>   secret_access_key: "...",
+      #=>   security_token: "IQoJb3JpZ2luX2VjEJr..."
+      #=> }
+
+  Passing `:profile` skips the built-in chains entirely, so nothing is read
+  from the system or application environment. Precedence is
+  explicit key opt > `:profile` > app env > built-in defaults.
   """
   @spec credentials(keyword) :: map
   def credentials(opts \\ []) when is_list(opts) do
@@ -155,6 +192,14 @@ defmodule AWS.Config do
   @doc """
   Returns the merged sandbox keyword list. Defaults are overlaid with
   the `:aws` `:sandbox` app-env entry, then with `opts[:sandbox]`.
+
+  ## Examples
+
+      AWS.Config.sandbox()
+      #=> [enabled: false]
+
+      AWS.Config.sandbox(sandbox: [enabled: true])
+      #=> [enabled: true]
   """
   @spec sandbox(keyword) :: keyword
   def sandbox(opts \\ []) do

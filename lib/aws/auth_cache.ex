@@ -76,6 +76,26 @@ defmodule AWS.AuthCache do
 
   `opts` is forwarded to the fetcher. `opts[:ttl_seconds]` caps the
   cache lifetime.
+
+  ## Examples
+
+      AWS.AuthCache.get({:awscli, "dev"}, [])
+      #=> {:ok,
+      #=>  %{
+      #=>    access_key_id: "ASIA1EXAMPLE",
+      #=>    secret_access_key: "...",
+      #=>    security_token: "IQoJb3JpZ2luX2VjEJr...",
+      #=>    expires_at: ~U[2026-01-01 01:00:00Z],
+      #=>    source: :sts
+      #=>  }}
+
+      AWS.AuthCache.get({:awscli, "no-such-profile"}, [])
+      #=> {:error, :no_credentials}
+
+  Concurrent callers for the same key share one in-flight fetch rather than
+  each hitting the provider. A cached entry is refreshed once `:expires_at`
+  is near, so a long-running process keeps working without re-authenticating
+  on every call.
   """
   @spec get(key, keyword) :: {:ok, creds} | {:error, term}
   def get(key, opts) do

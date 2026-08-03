@@ -15,6 +15,20 @@ defmodule AWS.Credentials.INI do
   Returns `{:ok, sections}` when the file exists and parses cleanly,
   `{:error, :enoent}` when the file is missing, or `{:error, posix}`
   for other read errors.
+
+  ## Examples
+
+      AWS.Credentials.INI.read("/Users/you/.aws/config")
+      #=> %{
+      #=>   "default" => %{"region" => "us-east-1"},
+      #=>   "profile dev" => %{"role_arn" => "arn:aws:iam::123456789012:role/dev"}
+      #=> }
+
+      AWS.Credentials.INI.read("/no/such/file")
+      #=> %{}
+
+  A missing or unreadable file yields an empty map rather than raising, so a
+  machine with no `~/.aws` still resolves credentials from other sources.
   """
   @spec read(Path.t()) :: {:ok, sections} | {:error, File.posix()}
   def read(path) do
@@ -26,6 +40,23 @@ defmodule AWS.Credentials.INI do
 
   @doc """
   Parses a full INI document into a `%{section => %{key => value}}` map.
+
+  ## Examples
+
+      AWS.Credentials.INI.parse("[default]\nregion = us-east-1\n\n[profile dev]\nrole_arn = arn:aws:iam::123456789012:role/dev\n")
+      #=> %{
+      #=>   "default" => %{"region" => "us-east-1"},
+      #=>   "profile dev" => %{"role_arn" => "arn:aws:iam::123456789012:role/dev"}
+      #=> }
+
+  Section names are kept verbatim, so a config-file profile stays
+  `"profile dev"` rather than being rewritten to `"dev"`.
+
+  A `#` only starts a comment at the beginning of a line or after
+  whitespace, so values may contain one:
+
+      AWS.Credentials.INI.parse("[p]\nsecret = abc#def\n")
+      #=> %{"p" => %{"secret" => "abc#def"}}
   """
   @spec parse(String.t()) :: sections
   def parse(contents) when is_binary(contents) do

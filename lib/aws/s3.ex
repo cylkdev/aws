@@ -164,8 +164,8 @@ defmodule AWS.S3 do
       #=>      ]
       #=>    },
       #=>    owner: %{id: "abc123...", display_name: "example"},
-      #=>    continuation_token: nil,
-      #=>    prefix: nil
+      #=>    continuation_token: "",
+      #=>    prefix: ""
       #=>  }}
 
   `<Buckets>` is a wrapper element holding repeated `<Bucket>` entries, so

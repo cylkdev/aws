@@ -64,6 +64,20 @@ defmodule AWS.HTTP do
       Forwarded to Finch as `:receive_timeout`.
     * `:connect_timeout` — accepted for API compatibility and ignored here;
       connect timeouts live on the Finch pool configured in `AWS.HTTP.FinchPool`.
+
+  ## Examples
+
+      AWS.HTTP.request(:get, "https://example.com/health", "", [{"accept", "text/plain"}])
+      #=> {:ok, %{status: 200, body: "ok", headers: [{"content-type", "text/plain"}]}}
+
+      AWS.HTTP.request(:get, "https://example.com/missing", "", [])
+      #=> {:ok, %{status: 404, body: "not found", headers: [...]}}
+
+      AWS.HTTP.request(:get, "https://unreachable.invalid", "", [], receive_timeout: 1_000)
+      #=> {:error, %Mint.TransportError{reason: :nxdomain}}
+
+  A non-2xx response is still `{:ok, _}` -- status branching happens in
+  `AWS.Client`, not here. Only transport failures return `{:error, _}`.
   """
   @spec request(method, String.t(), iodata, [header], keyword) ::
           {:ok, response} | {:error, %{reason: term}}
@@ -106,6 +120,22 @@ defmodule AWS.HTTP do
   requires it for SigV4 unsigned-payload streaming. `content-type` and
   other S3 headers should be included in `headers` so they are part of
   the signature computed upstream.
+
+  ## Examples
+
+      body = File.stream!("/tmp/big.bin", [], 5_242_880)
+
+      AWS.HTTP.stream_upload(
+        :put,
+        "https://uploads.s3.us-east-1.amazonaws.com/big.bin",
+        body,
+        [{"content-length", "12000000"}]
+      )
+      #=> {:ok, %{status: 200, body: "", headers: [{"etag", "\"9a03\""}]}}
+
+  The stream is sent chunk by chunk, so the file is never held in memory in
+  full. S3 needs an accurate `content-length`, since it does not accept
+  chunked transfer encoding for this.
   """
   @spec stream_upload(method, String.t(), Enumerable.t(), [header], keyword) ::
           {:ok, response} | {:error, %{reason: term}}
@@ -123,6 +153,17 @@ defmodule AWS.HTTP do
   Issues a GET request and returns a `Stream` over the response body
   chunks. The stream must be consumed in the calling process because
   Finch routes response messages to that process.
+
+  ## Examples
+
+      AWS.HTTP.stream_download("https://uploads.s3.us-east-1.amazonaws.com/big.bin")
+      #=> {:ok, %{status: 200, headers: [...], stream: #Function<...>}}
+
+      # Write to disk without buffering the object in memory.
+      {:ok, %{stream: chunks}} = AWS.HTTP.stream_download(url)
+      Stream.into(chunks, File.stream!("/tmp/big.bin")) |> Stream.run()
+
+  Backs `AWS.S3.get_object/3` when `:stream_to` is given.
   """
   @spec stream_download(String.t(), [header], keyword) ::
           {:ok, stream_response} | {:error, %{reason: term}}

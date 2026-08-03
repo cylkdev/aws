@@ -47,6 +47,35 @@ defmodule AWS.Signer do
   Pass `:payload_hash` in `creds` to override the computed body hash.
   Use `"UNSIGNED-PAYLOAD"` for streaming uploads where the body hash
   isn't available up front.
+
+  ## Examples
+
+      AWS.Signer.sign(
+        :put,
+        "https://uploads.s3.us-east-1.amazonaws.com/key.txt",
+        [{"content-type", "text/plain"}],
+        "hello",
+        %{
+          access_key_id: "AKIA1EXAMPLE",
+          secret_access_key: "SK",
+          region: "us-east-1",
+          service: "s3",
+          now: DateTime.utc_now()
+        }
+      )
+      #=> [
+      #=>   {"content-type", "text/plain"},
+      #=>   {"host", "uploads.s3.us-east-1.amazonaws.com"},
+      #=>   {"x-amz-date", "20260101T000000Z"},
+      #=>   {"x-amz-content-sha256", "2cf24dba5fb0a30e..."},
+      #=>   {"authorization",
+      #=>    "AWS4-HMAC-SHA256 Credential=AKIA1EXAMPLE/20260101/us-east-1/s3/aws4_request, " <>
+      #=>      "SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date, Signature=8d1f..."}
+      #=> ]
+
+  Returns the full header list to send. A caller-supplied `host` or
+  `x-amz-date` is used as-is rather than duplicated, so the signature keeps
+  matching the request actually put on the wire.
   """
   @spec sign(atom | String.t(), String.t(), [{String.t(), String.t()}], binary, creds) ::
           [{String.t(), String.t()}]
@@ -131,6 +160,32 @@ defmodule AWS.Signer do
 
   The payload hash is always `UNSIGNED-PAYLOAD` — the signer cannot
   see the body that a browser or curl will send later.
+
+  ## Examples
+
+      AWS.Signer.sign_query(
+        :get,
+        "https://uploads.s3.us-east-1.amazonaws.com/key.txt",
+        [],
+        900,
+        %{
+          access_key_id: "AKIA1EXAMPLE",
+          secret_access_key: "SK",
+          region: "us-east-1",
+          service: "s3",
+          now: DateTime.utc_now()
+        }
+      )
+      #=> "https://uploads.s3.us-east-1.amazonaws.com/key.txt" <>
+      #=>   "?X-Amz-Algorithm=AWS4-HMAC-SHA256" <>
+      #=>   "&X-Amz-Credential=AKIA1EXAMPLE%2F20260101%2Fus-east-1%2Fs3%2Faws4_request" <>
+      #=>   "&X-Amz-Date=20260101T000000Z" <>
+      #=>   "&X-Amz-Expires=900" <>
+      #=>   "&X-Amz-SignedHeaders=host" <>
+      #=>   "&X-Amz-Signature=8d1f..."
+
+  The credentials ride in the query string instead of a header, which is
+  what makes the URL usable by a browser. Backs `AWS.S3.presign/4`.
   """
   @spec sign_query(
           atom | String.t(),
@@ -214,6 +269,31 @@ defmodule AWS.Signer do
   `x-amz-date`, and `x-amz-signature` entries (plus
   `x-amz-security-token` when a session token is present). Callers
   merge these into an HTML form.
+
+  ## Examples
+
+      AWS.Signer.presign_post_policy(
+        "https://uploads.s3.us-east-1.amazonaws.com",
+        [%{"bucket" => "uploads"}, ["starts-with", "$key", "incoming/"]],
+        3600,
+        %{
+          access_key_id: "AKIA1EXAMPLE",
+          secret_access_key: "SK",
+          region: "us-east-1",
+          service: "s3",
+          now: DateTime.utc_now()
+        }
+      )
+      #=> %{
+      #=>   "policy" => "eyJleHBpcmF0aW9uIjoi...",
+      #=>   "x-amz-algorithm" => "AWS4-HMAC-SHA256",
+      #=>   "x-amz-credential" => "AKIA1EXAMPLE/20260101/us-east-1/s3/aws4_request",
+      #=>   "x-amz-date" => "20260101T000000Z",
+      #=>   "x-amz-signature" => "8d1f..."
+      #=> }
+
+  Field names are literal AWS wire names (lowercase binaries), because they
+  go straight into an HTML form. Backs `AWS.S3.presign_post/3`.
   """
   @spec presign_post_policy(
           String.t(),

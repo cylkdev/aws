@@ -19,6 +19,23 @@ defmodule AWS.Query do
   `nil` and `[]` are dropped. Atom keys are PascalCased; binary keys are
   passed through untouched, which is how callers spell names Recase would
   get wrong (`DNSName`).
+
+  ## Examples
+
+      AWS.Query.encode(%{name: "web", filters: [%{name: "vpc-id", values: ["vpc-1"]}]}, :query)
+      #=> %{
+      #=>   "Name" => "web",
+      #=>   "Filters.member.1.Name" => "vpc-id",
+      #=>   "Filters.member.1.Values.member.1" => "vpc-1"
+      #=> }
+
+  EC2 indexes lists without the `member` segment:
+
+      AWS.Query.encode(%{instance_id: ["i-1", "i-2"]}, :ec2)
+      #=> %{"InstanceId.1" => "i-1", "InstanceId.2" => "i-2"}
+
+  Atom keys are PascalCased; binary keys pass through untouched. `nil` and
+  `[]` values are dropped rather than sent as empty parameters.
   """
 
   @type style :: :query | :ec2
