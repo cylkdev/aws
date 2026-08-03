@@ -459,10 +459,9 @@ defmodule AWS.Organizations do
   @doc """
   Lists all roots in the current organization.
 
-  Returns `{:ok, %{roots: [map()]}}` where each root has `:id`, `:arn`, `:name`.
+  Returns AWS's `ListRoots` response unchanged: `:roots` plus `:next_token`.
   """
-  @spec list_roots(opts :: keyword()) ::
-          {:ok, %{roots: list(map())}} | {:error, term()}
+  @spec list_roots(opts :: keyword()) :: {:ok, map()} | {:error, term()}
   def list_roots(opts \\ []) do
     if sandbox?(opts) do
       sandbox_list_roots_response(opts)
@@ -484,8 +483,7 @@ defmodule AWS.Organizations do
     "ListRoots"
     |> perform(data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{roots: result[:roots] || [], next_token: result[:next_token]}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -501,10 +499,11 @@ defmodule AWS.Organizations do
     * `parent_id` - The ID of the root or parent OU (e.g. `"r-xxxx"` or `"ou-xxxx-yyyyyyyy"`).
     * `opts` - Options including `:next_token`, `:max_results`, plus shared options.
 
-  Returns `{:ok, %{organizational_units: [map()]}}` where each OU has `:id`, `:arn`, `:name`.
+  Returns AWS's `ListOrganizationalUnitsForParent` response unchanged:
+  `:organizational_units` plus `:next_token`.
   """
   @spec list_organizational_units_for_parent(parent_id :: String.t(), opts :: keyword()) ::
-          {:ok, %{organizational_units: list(map())}} | {:error, term()}
+          {:ok, map()} | {:error, term()}
   def list_organizational_units_for_parent(parent_id, opts \\ []) when is_binary(parent_id) do
     if sandbox?(opts) do
       sandbox_list_organizational_units_for_parent_response(parent_id, opts)
@@ -522,8 +521,7 @@ defmodule AWS.Organizations do
     "ListOrganizationalUnitsForParent"
     |> perform(data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{organizational_units: result[:organizational_units] || []}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -556,8 +554,7 @@ defmodule AWS.Organizations do
     "ListAccounts"
     |> perform(data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{accounts: result[:accounts] || [], next_token: result[:next_token]}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -597,8 +594,7 @@ defmodule AWS.Organizations do
     "ListDelegatedAdministrators"
     |> perform(data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{delegated_administrators: result[:delegated_administrators] || []}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -634,13 +630,7 @@ defmodule AWS.Organizations do
     "ListAWSServiceAccessForOrganization"
     |> perform(data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-
-      {:ok,
-       %{
-         enabled_service_principals: result[:enabled_service_principals] || [],
-         next_token: result[:next_token]
-       }}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -674,8 +664,7 @@ defmodule AWS.Organizations do
     "ListParents"
     |> perform(data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{parents: result[:parents] || [], next_token: result[:next_token]}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -708,8 +697,7 @@ defmodule AWS.Organizations do
     "DescribeAccount"
     |> perform(%{"AccountId" => account_id}, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{account: result[:account]}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -738,8 +726,7 @@ defmodule AWS.Organizations do
     "DescribeOrganizationalUnit"
     |> perform(%{"OrganizationalUnitId" => ou_id}, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{organizational_unit: result[:organizational_unit]}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -770,8 +757,7 @@ defmodule AWS.Organizations do
     "UpdateOrganizationalUnit"
     |> perform(%{"OrganizationalUnitId" => ou_id, "Name" => name}, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{organizational_unit: result[:organizational_unit]}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -797,7 +783,9 @@ defmodule AWS.Organizations do
   defp do_disable_aws_service_access(service_principal, opts) do
     "DisableAWSServiceAccess"
     |> perform(%{"ServicePrincipal" => service_principal}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -829,7 +817,9 @@ defmodule AWS.Organizations do
       %{"AccountId" => account_id, "ServicePrincipal" => service_principal},
       opts
     )
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -867,8 +857,7 @@ defmodule AWS.Organizations do
     "ListChildren"
     |> perform(data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{children: result[:children] || [], next_token: result[:next_token]}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 

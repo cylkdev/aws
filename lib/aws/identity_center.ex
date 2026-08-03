@@ -81,8 +81,7 @@ defmodule AWS.IdentityCenter do
 
   Returns instance ARNs and identity store IDs needed for other operations.
   """
-  @spec list_instances(opts :: keyword()) ::
-          {:ok, %{instances: list(map())}} | {:error, term()}
+  @spec list_instances(opts :: keyword()) :: {:ok, map()} | {:error, term()}
   def list_instances(opts \\ []) do
     if sandbox?(opts) do
       sandbox_list_instances_response(opts)
@@ -94,8 +93,7 @@ defmodule AWS.IdentityCenter do
   defp do_list_instances(opts) do
     perform(:sso, "ListInstances", %{}, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{instances: result[:instances] || [], next_token: result[:next_token]}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -133,8 +131,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "CreatePermissionSet", data, opts)
     |> deserialize_response(opts, fn body ->
-      %{permission_set: ps} = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, ps}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -152,7 +149,7 @@ defmodule AWS.IdentityCenter do
           permission_set_arn :: String.t(),
           opts :: keyword()
         ) ::
-          {:ok, %{}} | {:error, term()}
+          {:ok, map()} | {:error, term()}
   def delete_permission_set(instance_arn, permission_set_arn, opts \\ [])
       when is_binary(instance_arn) and is_binary(permission_set_arn) do
     if sandbox?(opts) do
@@ -172,7 +169,9 @@ defmodule AWS.IdentityCenter do
       },
       opts
     )
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -184,8 +183,7 @@ defmodule AWS.IdentityCenter do
     * `opts` - Options including `:max_results`, `:next_token`, plus shared options.
   """
   @spec list_permission_sets(instance_arn :: String.t(), opts :: keyword()) ::
-          {:ok, %{permission_sets: list(String.t()), next_token: String.t() | nil}}
-          | {:error, term()}
+          {:ok, map()} | {:error, term()}
   def list_permission_sets(instance_arn, opts \\ []) when is_binary(instance_arn) do
     if sandbox?(opts) do
       sandbox_list_permission_sets_response(instance_arn, opts)
@@ -202,13 +200,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "ListPermissionSets", data, opts)
     |> deserialize_response(opts, fn body ->
-      deserialized = Serializer.deserialize(body, deserialize_opts(opts))
-
-      {:ok,
-       %{
-         permission_sets: deserialized[:permission_sets] || [],
-         next_token: deserialized[:next_token]
-       }}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -264,7 +256,9 @@ defmodule AWS.IdentityCenter do
       },
       opts
     )
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -280,7 +274,7 @@ defmodule AWS.IdentityCenter do
           instance_arn :: String.t(),
           permission_set_arn :: String.t(),
           opts :: keyword()
-        ) :: {:ok, %{permission_set: map()}} | {:error, term()}
+        ) :: {:ok, map()} | {:error, term()}
   def describe_permission_set(instance_arn, permission_set_arn, opts \\ [])
       when is_binary(instance_arn) and is_binary(permission_set_arn) do
     if sandbox?(opts) do
@@ -301,8 +295,7 @@ defmodule AWS.IdentityCenter do
       opts
     )
     |> deserialize_response(opts, fn body ->
-      %{permission_set: ps} = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{permission_set: ps}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -315,8 +308,9 @@ defmodule AWS.IdentityCenter do
     * `permission_set_arn` - The ARN of the permission set.
     * `opts` - Shared options.
 
-  Returns `{:ok, %{inline_policy: map() | nil}}`. The policy is decoded from
-  the JSON string AWS returns. `nil` when no inline policy is attached.
+  Returns AWS's `GetInlinePolicyForPermissionSet` response, with
+  `:inline_policy` decoded from the JSON string AWS sends it as. `nil` when
+  no inline policy is attached.
   """
   @spec get_inline_policy_for_permission_set(
           instance_arn :: String.t(),
@@ -349,6 +343,9 @@ defmodule AWS.IdentityCenter do
     |> deserialize_response(opts, fn body ->
       result = Serializer.deserialize(body, deserialize_opts(opts))
 
+      # Decoding the policy is leaf-value decoding, not reshaping: AWS sends
+      # the document as a JSON string inside a JSON response. Every other key
+      # in the response is left alone.
       decoded =
         case result[:inline_policy] do
           nil -> nil
@@ -356,7 +353,7 @@ defmodule AWS.IdentityCenter do
           json when is_binary(json) -> :json.decode(json)
         end
 
-      {:ok, %{inline_policy: decoded}}
+      {:ok, Map.put(result, :inline_policy, decoded)}
     end)
   end
 
@@ -369,7 +366,8 @@ defmodule AWS.IdentityCenter do
     * `permission_set_arn` - The ARN of the permission set.
     * `opts` - Options including `:max_results`, `:next_token`, plus shared options.
 
-  Returns `{:ok, %{attached_managed_policies: [map()]}}` where each entry has
+  Returns AWS's response unchanged: `:attached_managed_policies` plus
+  `:next_token`, where each attached policy has
   `:arn` and `:name`.
   """
   @spec list_managed_policies_in_permission_set(
@@ -398,13 +396,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "ListManagedPoliciesInPermissionSet", data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-
-      {:ok,
-       %{
-         attached_managed_policies: result[:attached_managed_policies] || [],
-         next_token: result[:next_token]
-       }}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -419,7 +411,8 @@ defmodule AWS.IdentityCenter do
     * `permission_set_arn` - The ARN of the permission set.
     * `opts` - Options including `:max_results`, `:next_token`, plus shared options.
 
-  Returns `{:ok, %{account_assignments: [map()]}}` where each entry has
+  Returns AWS's response unchanged: `:account_assignments` plus
+  `:next_token`, where each assignment has
   `:account_id`, `:permission_set_arn`, `:principal_id`, `:principal_type`.
   """
   @spec list_account_assignments(
@@ -454,13 +447,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "ListAccountAssignments", data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-
-      {:ok,
-       %{
-         account_assignments: result[:account_assignments] || [],
-         next_token: result[:next_token]
-       }}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -499,8 +486,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "ListAccountsForProvisionedPermissionSet", data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{account_ids: result[:account_ids] || [], next_token: result[:next_token]}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -602,7 +588,9 @@ defmodule AWS.IdentityCenter do
       },
       opts
     )
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   # ---------------------------------------------------------------------------
@@ -651,10 +639,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "CreateAccountAssignment", data, opts)
     |> deserialize_response(opts, fn body ->
-      %{account_assignment_creation_status: status} =
-        Serializer.deserialize(body, deserialize_opts(opts))
-
-      {:ok, status}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -694,10 +679,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "DeleteAccountAssignment", data, opts)
     |> deserialize_response(opts, fn body ->
-      %{account_assignment_deletion_status: status} =
-        Serializer.deserialize(body, deserialize_opts(opts))
-
-      {:ok, status}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -713,8 +695,8 @@ defmodule AWS.IdentityCenter do
       to provision a single account) and `:target_id` (required when
       `:target_type` is `"AWS_ACCOUNT"`), plus shared options.
 
-  Returns `{:ok, status}` where `status` is the
-  `PermissionSetProvisioningStatus` map describing the async job.
+  Returns AWS's `ProvisionPermissionSet` response unchanged, i.e.
+  `%{permission_set_provisioning_status: map()}` describing the async job.
   """
   @spec provision_permission_set(
           instance_arn :: String.t(),
@@ -744,10 +726,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:sso, "ProvisionPermissionSet", data, opts)
     |> deserialize_response(opts, fn body ->
-      %{permission_set_provisioning_status: status} =
-        Serializer.deserialize(body, deserialize_opts(opts))
-
-      {:ok, status}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -790,8 +769,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:identitystore, "CreateUser", data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{user_id: result[:user_id], identity_store_id: result[:identity_store_id]}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -809,7 +787,7 @@ defmodule AWS.IdentityCenter do
           user_id :: String.t(),
           opts :: keyword()
         ) ::
-          {:ok, %{}} | {:error, term()}
+          {:ok, map()} | {:error, term()}
   def delete_identity_store_user(identity_store_id, user_id, opts \\ [])
       when is_binary(identity_store_id) and is_binary(user_id) do
     if sandbox?(opts) do
@@ -829,7 +807,9 @@ defmodule AWS.IdentityCenter do
       },
       opts
     )
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -881,14 +861,14 @@ defmodule AWS.IdentityCenter do
       provided are sent as `Operations` entries. Shared options are also
       accepted.
 
-  Returns `{:ok, %{}}` on success.
+  Returns AWS's response body, which is empty for this operation.
   """
   @spec update_identity_store_user(
           identity_store_id :: String.t(),
           user_id :: String.t(),
           opts :: keyword()
         ) ::
-          {:ok, %{}} | {:error, term()}
+          {:ok, map()} | {:error, term()}
   def update_identity_store_user(identity_store_id, user_id, opts \\ [])
       when is_binary(identity_store_id) and is_binary(user_id) do
     if sandbox?(opts) do
@@ -914,7 +894,9 @@ defmodule AWS.IdentityCenter do
     }
 
     perform(:identitystore, "UpdateUser", data, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -944,8 +926,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:identitystore, "ListUsers", data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{users: result[:users] || [], next_token: result[:next_token]}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -987,8 +968,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:identitystore, "CreateGroup", data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{group_id: result[:group_id], identity_store_id: result[:identity_store_id]}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -1006,7 +986,7 @@ defmodule AWS.IdentityCenter do
           group_id :: String.t(),
           opts :: keyword()
         ) ::
-          {:ok, %{}} | {:error, term()}
+          {:ok, map()} | {:error, term()}
   def delete_identity_store_group(identity_store_id, group_id, opts \\ [])
       when is_binary(identity_store_id) and is_binary(group_id) do
     if sandbox?(opts) do
@@ -1026,7 +1006,9 @@ defmodule AWS.IdentityCenter do
       },
       opts
     )
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   @doc """
@@ -1093,8 +1075,7 @@ defmodule AWS.IdentityCenter do
 
     perform(:identitystore, "ListGroups", data, opts)
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-      {:ok, %{groups: result[:groups] || [], next_token: result[:next_token]}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -1135,10 +1116,7 @@ defmodule AWS.IdentityCenter do
       opts
     )
     |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
-
-      {:ok,
-       %{membership_id: result[:membership_id], identity_store_id: result[:identity_store_id]}}
+      Serializer.deserialize(body, deserialize_opts(opts))
     end)
   end
 
@@ -1156,7 +1134,7 @@ defmodule AWS.IdentityCenter do
           membership_id :: String.t(),
           opts :: keyword()
         ) ::
-          {:ok, %{}} | {:error, term()}
+          {:ok, map()} | {:error, term()}
   def delete_group_membership(identity_store_id, membership_id, opts \\ [])
       when is_binary(identity_store_id) and is_binary(membership_id) do
     if sandbox?(opts) do
@@ -1176,7 +1154,9 @@ defmodule AWS.IdentityCenter do
       },
       opts
     )
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    |> deserialize_response(opts, fn body ->
+      Serializer.deserialize(body, deserialize_opts(opts))
+    end)
   end
 
   # ---------------------------------------------------------------------------
