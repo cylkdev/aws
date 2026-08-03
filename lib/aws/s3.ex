@@ -147,6 +147,29 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.list_buckets()
       {:ok, [%{name: "my-bucket", creation_date: "2024-01-01T00:00:00.000Z"}]}
+
+  ## Examples
+
+      AWS.S3.list_buckets()
+      #=> {:ok,
+      #=>  %{
+      #=>    buckets: %{
+      #=>      bucket: [
+      #=>        %{
+      #=>          name: "uploads-bucket",
+      #=>          creation_date: "2026-01-01T00:00:00.000Z",
+      #=>          bucket_region: "us-east-1",
+      #=>          bucket_arn: ""
+      #=>        }
+      #=>      ]
+      #=>    },
+      #=>    owner: %{id: "abc123...", display_name: "example"},
+      #=>    continuation_token: nil,
+      #=>    prefix: nil
+      #=>  }}
+
+  `<Buckets>` is a wrapper element holding repeated `<Bucket>` entries, so
+  the list sits under `buckets.bucket`.
   """
   @spec list_buckets(opts :: keyword()) :: {:ok, list()} | {:error, term()}
   def list_buckets(opts \\ []) do
@@ -179,6 +202,15 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.create_bucket("my-bucket")
       {:ok, %{location: "...", x_amz_request_id: "...", date: "..."}}
+
+  ## Examples
+
+      AWS.S3.create_bucket("uploads-bucket")
+      #=> {:ok, %{}}
+
+      # Outside us-east-1 the region must be declared in the body.
+      AWS.S3.create_bucket("uploads-bucket", region: "eu-west-1")
+      #=> {:ok, %{}}
   """
   @spec create_bucket(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -209,6 +241,13 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.delete_bucket("my-bucket")
       {:ok, %{x_amz_request_id: "...", date: "..."}}
+
+  ## Examples
+
+      AWS.S3.delete_bucket("uploads-bucket")
+      #=> {:ok, %{}}
+
+  The bucket must be empty.
   """
   @spec delete_bucket(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -247,6 +286,16 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.head_bucket("my-bucket")
       {:ok, %{x_amz_bucket_region: "us-east-1", x_amz_request_id: "...", date: "..."}}
+
+  ## Examples
+
+      AWS.S3.head_bucket("uploads-bucket")
+      #=> {:ok, %{}}
+
+      AWS.S3.head_bucket("does-not-exist")
+      #=> {:error, %ErrorMessage{code: :not_found, message: "resource not found."}}
+
+  HEAD carries no body, so existence is signalled by the tuple alone.
   """
   @spec head_bucket(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -296,6 +345,23 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.put_object("my-bucket", "existing-key", "hello", if_none_match: true)
       {:error, %ErrorMessage{code: :conflict, message: "object already exists", ...}}
+
+  ## Examples
+
+      AWS.S3.put_object("uploads-bucket", "reports/jan.csv", "id,total\n1,42\n",
+        content_type: "text/csv"
+      )
+      #=> {:ok, %{}}
+
+      # Server-side encryption with a KMS key.
+      AWS.S3.put_object("uploads-bucket", "secret.txt", "...",
+        server_side_encryption: "aws:kms",
+        ssekms_key_id: "arn:aws:kms:us-east-1:123456789012:key/abc"
+      )
+      #=> {:ok, %{}}
+
+  S3 returns the ETag in a header rather than a body, so the result map is
+  empty on success.
   """
   @spec put_object(
           bucket :: binary(),
@@ -335,6 +401,22 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.head_object("my-bucket", "my-key")
       {:ok, %{content_length: "1234", content_type: "application/json", ...}}
+
+  ## Examples
+
+      AWS.S3.head_object("uploads-bucket", "reports/jan.csv")
+      #=> {:ok,
+      #=>  %{
+      #=>    headers: [
+      #=>      {"content-length", "18"},
+      #=>      {"content-type", "text/csv"},
+      #=>      {"etag", "\"9a0364b9e99bb480dd25e1f0284c8555\""},
+      #=>      {"last-modified", "Thu, 01 Jan 2026 00:00:00 GMT"}
+      #=>    ]
+      #=>  }}
+
+  Metadata only -- HEAD never returns the body. Use this to check existence
+  or size without transferring the object.
   """
   @spec head_object(bucket :: binary(), key :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -369,6 +451,13 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.delete_object("my-bucket", "my-key")
       {:ok, ""}
+
+  ## Examples
+
+      AWS.S3.delete_object("uploads-bucket", "reports/jan.csv")
+      #=> {:ok, %{}}
+
+  Deleting a key that does not exist also succeeds; S3 treats it as a no-op.
   """
   @spec delete_object(bucket :: binary(), key :: binary(), opts :: keyword()) ::
           {:ok, term()} | {:error, term()}
@@ -403,6 +492,19 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.get_object("my-bucket", "my-key")
       {:ok, <<binary_content>>}
+
+  ## Examples
+
+      AWS.S3.get_object("uploads-bucket", "reports/jan.csv")
+      #=> {:ok, %{body: "id,total\n1,42\n", headers: [{"content-type", "text/csv"}]}}
+
+      # Fetch a byte range.
+      AWS.S3.get_object("uploads-bucket", "big.bin", range: "bytes=0-1023")
+      #=> {:ok, %{body: <<...1024 bytes...>>, headers: [...]}}
+
+      # Stream to disk instead of buffering in memory.
+      AWS.S3.get_object("uploads-bucket", "big.bin", stream_to: "/tmp/big.bin")
+      #=> {:ok, %{path: "/tmp/big.bin", headers: [...]}}
   """
   @spec get_object(bucket :: binary(), key :: binary(), opts :: keyword()) ::
           {:ok, binary()} | {:error, term()}
@@ -444,6 +546,37 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.list_objects("my-bucket")
       {:ok, [%{key: "my-key", size: "1234", ...}]}
+
+  ## Examples
+
+      AWS.S3.list_objects("uploads-bucket", prefix: "reports/", delimiter: "/")
+      #=> {:ok,
+      #=>  %{
+      #=>    name: "uploads-bucket",
+      #=>    prefix: "reports/",
+      #=>    delimiter: "/",
+      #=>    key_count: 1,
+      #=>    max_keys: 1000,
+      #=>    is_truncated: false,
+      #=>    continuation_token: nil,
+      #=>    next_continuation_token: nil,
+      #=>    contents: [
+      #=>      %{
+      #=>        key: "reports/jan.csv",
+      #=>        last_modified: "2026-01-01T00:00:00.000Z",
+      #=>        etag: "\"9a0364b9e99bb480dd25e1f0284c8555\"",
+      #=>        size: 18,
+      #=>        storage_class: "STANDARD",
+      #=>        owner: nil,
+      #=>        restore_status: nil
+      #=>      }
+      #=>    ],
+      #=>    common_prefixes: [%{prefix: "reports/2025/"}]
+      #=>  }}
+
+  Each `:common_prefixes` entry is a `CommonPrefix` structure with a
+  `:prefix` member, not a bare string. When `:is_truncated` is true, pass
+  `:next_continuation_token` back as `:continuation_token`.
   """
   @spec list_objects(bucket :: binary(), opts :: keyword()) ::
           {:ok, list()} | {:error, term()}
@@ -481,6 +614,23 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.copy_object("dest-bucket", "dest-key", "src-bucket", "src-key")
       {:ok, %{etag: "...", last_modified: "..."}}
+
+  ## Examples
+
+      AWS.S3.copy_object("archive-bucket", "2026/jan.csv", "uploads-bucket", "reports/jan.csv")
+      #=> {:ok,
+      #=>  %{
+      #=>    etag: "\"9a0364b9e99bb480dd25e1f0284c8555\"",
+      #=>    last_modified: "2026-02-01T00:00:00.000Z",
+      #=>    checksum_crc32: nil,
+      #=>    checksum_sha256: nil
+      #=>  }}
+
+  Arguments are destination first, then source. Single-request copy is
+  limited to 5 GB; use `copy_object_multipart/5` above that.
+
+  S3 can return a 200 whose body is an `<Error>`; that is surfaced as
+  `{:error, %ErrorMessage{}}` rather than being reported as success.
   """
   @spec copy_object(
           dest_bucket :: binary(),
@@ -531,6 +681,24 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.presign("my-bucket", :get, "my-key")
       %{key: "my-key", url: "https://...", expires_in: 60, expires_at: ~U[...]}
+
+  ## Examples
+
+      AWS.S3.presign(:get, "uploads-bucket", "reports/jan.csv", expires_in: 900)
+      #=> {:ok,
+      #=>  "https://uploads-bucket.s3.us-east-1.amazonaws.com/reports/jan.csv" <>
+      #=>    "?X-Amz-Algorithm=AWS4-HMAC-SHA256" <>
+      #=>    "&X-Amz-Credential=AKIA1EXAMPLE%2F20260101%2Fus-east-1%2Fs3%2Faws4_request" <>
+      #=>    "&X-Amz-Date=20260101T000000Z&X-Amz-Expires=900" <>
+      #=>    "&X-Amz-SignedHeaders=host&X-Amz-Signature=8d1f..."}
+
+      # A presigned upload URL.
+      AWS.S3.presign(:put, "uploads-bucket", "incoming/photo.jpg", expires_in: 300)
+      #=> {:ok, "https://uploads-bucket.s3.us-east-1.amazonaws.com/incoming/photo.jpg?..."}
+
+  Signing is local -- no request is made. The URL grants exactly the method
+  it was signed for, and expires after `:expires_in` seconds (default 3600,
+  maximum 604800).
   """
   @spec presign(bucket :: binary(), http_method :: atom(), key :: binary(), opts :: keyword()) ::
           map()
@@ -573,6 +741,29 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.presign_post("my-bucket", "my-key")
       {:ok, %{fields: %{...}, url: "https://...", expires_in: 60, expires_at: ~U[...]}}
+
+  ## Examples
+
+      AWS.S3.presign_post("uploads-bucket", "incoming/photo.jpg",
+        expires_in: 3600,
+        conditions: [["content-length-range", 0, 10_485_760]]
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    url: "https://uploads-bucket.s3.us-east-1.amazonaws.com",
+      #=>    fields: %{
+      #=>      "key" => "incoming/photo.jpg",
+      #=>      "policy" => "eyJleHBpcmF0aW9uIjoi...",
+      #=>      "x-amz-algorithm" => "AWS4-HMAC-SHA256",
+      #=>      "x-amz-credential" => "AKIA1EXAMPLE/20260101/us-east-1/s3/aws4_request",
+      #=>      "x-amz-date" => "20260101T000000Z",
+      #=>      "x-amz-signature" => "8d1f..."
+      #=>    }
+      #=>  }}
+
+  For browser uploads: POST a multipart form to `:url` with every entry of
+  `:fields` plus a trailing `file` part. The field names are literal AWS
+  wire names (lowercase strings), not atoms.
   """
   @spec presign_post(bucket :: binary(), key :: binary(), opts :: keyword()) ::
           {:ok, map()}
@@ -612,6 +803,18 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.presign_part("my-bucket", "my-key", "upload-id", 1)
       %{key: "my-key", url: "https://...", expires_in: 60, expires_at: ~U[...]}
+
+  ## Examples
+
+      {:ok, %{upload_id: upload_id}} =
+        AWS.S3.create_multipart_upload("uploads-bucket", "big.bin")
+
+      AWS.S3.presign_part("uploads-bucket", "big.bin", upload_id, 1, expires_in: 3600)
+      #=> {:ok,
+      #=>  "https://uploads-bucket.s3.us-east-1.amazonaws.com/big.bin" <>
+      #=>    "?partNumber=1&uploadId=" <> upload_id <> "&X-Amz-Algorithm=..."}
+
+  Lets a client upload one part directly. Part numbers run from 1 to 10000.
   """
   @spec presign_part(
           bucket :: binary(),
@@ -654,6 +857,21 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.create_multipart_upload("my-bucket", "my-key")
       {:ok, %{upload_id: "...", bucket: "my-bucket", key: "my-key"}}
+
+  ## Examples
+
+      AWS.S3.create_multipart_upload("uploads-bucket", "big.bin",
+        content_type: "application/octet-stream"
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    bucket: "uploads-bucket",
+      #=>    key: "big.bin",
+      #=>    upload_id: "2~kTXQPYyIB8aQ0uQ8sYqLpXQ0nD8fEXAMPLE"
+      #=>  }}
+
+  An upload holds storage until completed or aborted; pair this with
+  `abort_multipart_upload/4` on the failure path.
   """
   @spec create_multipart_upload(bucket :: binary(), key :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -692,6 +910,13 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.abort_multipart_upload("my-bucket", "my-key", "upload-id")
       {:ok, %{}}
+
+  ## Examples
+
+      AWS.S3.abort_multipart_upload("uploads-bucket", "big.bin", upload_id)
+      #=> {:ok, %{}}
+
+  Frees the parts already uploaded. Safe to call after a partial failure.
   """
   @spec abort_multipart_upload(
           bucket :: binary(),
@@ -733,6 +958,14 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.upload_part("my-bucket", "my-key", "upload-id", 1, "part-data")
       {:ok, %{etag: "...", ...}}
+
+  ## Examples
+
+      AWS.S3.upload_part("uploads-bucket", "big.bin", upload_id, 1, part_body)
+      #=> {:ok, %{etag: "\"9a0364b9e99bb480dd25e1f0284c8555\"", part_number: 1}}
+
+  Keep every `:etag` -- `complete_multipart_upload/4` needs the full list.
+  Each part must be at least 5 MB except the last.
   """
   @spec upload_part(
           bucket :: binary(),
@@ -775,6 +1008,34 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.list_parts("my-bucket", "my-key", "upload-id")
       {:ok, %{parts: [%{part_number: "1", size: "5242880", etag: "..."}], ...}}
+
+  ## Examples
+
+      AWS.S3.list_parts("uploads-bucket", "big.bin", upload_id)
+      #=> {:ok,
+      #=>  %{
+      #=>    bucket: "uploads-bucket",
+      #=>    key: "big.bin",
+      #=>    upload_id: "2~kTXQPYyIB8aQ0uQ8sYqLpXQ0nD8fEXAMPLE",
+      #=>    max_parts: 1000,
+      #=>    is_truncated: false,
+      #=>    part_number_marker: nil,
+      #=>    next_part_number_marker: nil,
+      #=>    storage_class: "STANDARD",
+      #=>    initiator: %{id: "abc123...", display_name: "example"},
+      #=>    owner: %{id: "abc123...", display_name: "example"},
+      #=>    parts: [
+      #=>      %{
+      #=>        part_number: 1,
+      #=>        size: 5_242_880,
+      #=>        etag: "\"9a0364b9e99bb480dd25e1f0284c8555\"",
+      #=>        last_modified: "2026-01-01T00:00:00.000Z"
+      #=>      }
+      #=>    ]
+      #=>  }}
+
+  Useful for resuming: fetch the parts already stored, then upload only the
+  ones missing.
   """
   @spec list_parts(
           bucket :: binary(),
@@ -820,6 +1081,26 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.copy_part("dest-bucket", "dest-key", "src-bucket", "src-key", "upload-id", 1, 0..1048575)
       {:ok, %{etag: "...", last_modified: "..."}}
+
+  ## Examples
+
+      AWS.S3.copy_part(
+        "archive-bucket",
+        "2026/big.bin",
+        upload_id,
+        1,
+        "uploads-bucket",
+        "big.bin",
+        range: "bytes=0-5242879"
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    etag: "\"9a0364b9e99bb480dd25e1f0284c8555\"",
+      #=>    last_modified: "2026-02-01T00:00:00.000Z"
+      #=>  }}
+
+  Copies a byte range server-side, so the data never passes through this
+  process.
   """
   @spec copy_part(
           dest_bucket :: binary(),
@@ -905,6 +1186,25 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.copy_parts("dest-bucket", "dest-key", "src-bucket", "src-key", "upload-id", 67_108_864)
       {:ok, [{1, "etag1"}, {2, "etag2"}]}
+
+  ## Examples
+
+      AWS.S3.copy_parts(
+        "archive-bucket",
+        "2026/big.bin",
+        upload_id,
+        "uploads-bucket",
+        "big.bin",
+        104_857_600
+      )
+      #=> {:ok,
+      #=>  [
+      #=>    %{part_number: 1, etag: "\"9a0364...\""},
+      #=>    %{part_number: 2, etag: "\"b1c2d3...\""}
+      #=>  ]}
+
+  Splits the source by the given byte size and copies each range. Feed the
+  result straight to `complete_multipart_upload/4`.
   """
   @spec copy_parts(
           dest_bucket :: binary(),
@@ -979,6 +1279,21 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.copy_object_multipart("dest-bucket", "dest-key", "src-bucket", "src-key")
       {:ok, %{location: "...", bucket: "dest-bucket", key: "dest-key", etag: "..."}}
+
+  ## Examples
+
+      AWS.S3.copy_object_multipart("archive-bucket", "2026/big.bin", "uploads-bucket", "big.bin")
+      #=> {:ok,
+      #=>  %{
+      #=>    location: "https://archive-bucket.s3.us-east-1.amazonaws.com/2026/big.bin",
+      #=>    bucket: "archive-bucket",
+      #=>    key: "2026/big.bin",
+      #=>    etag: "\"9a0364b9e99bb480dd25e1f0284c8555-2\""
+      #=>  }}
+
+  Runs the whole create/copy-parts/complete cycle, aborting the upload if
+  any part fails. Use this for objects over 5 GB, which `copy_object/5`
+  cannot handle. The trailing `-2` on the ETag is the part count.
   """
   @spec copy_object_multipart(
           dest_bucket :: binary(),
@@ -1035,6 +1350,24 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.complete_multipart_upload("my-bucket", "my-key", "upload-id", [{1, "etag1"}, {2, "etag2"}])
       {:ok, %{location: "...", bucket: "my-bucket", key: "my-key", etag: "..."}}
+
+  ## Examples
+
+      AWS.S3.complete_multipart_upload("uploads-bucket", "big.bin", upload_id, [
+        %{part_number: 1, etag: "\"9a0364...\""},
+        %{part_number: 2, etag: "\"b1c2d3...\""}
+      ])
+      #=> {:ok,
+      #=>  %{
+      #=>    location: "https://uploads-bucket.s3.us-east-1.amazonaws.com/big.bin",
+      #=>    bucket: "uploads-bucket",
+      #=>    key: "big.bin",
+      #=>    etag: "\"9a0364b9e99bb480dd25e1f0284c8555-2\""
+      #=>  }}
+
+  Parts must be listed in ascending `:part_number` order. This operation can
+  return a 200 whose body is an `<Error>`; that is surfaced as
+  `{:error, %ErrorMessage{}}` rather than being reported as success.
   """
   @spec complete_multipart_upload(
           bucket :: binary(),
@@ -1061,6 +1394,17 @@ defmodule AWS.S3 do
   (SNS, SQS, Lambda) are preserved.
 
   Idempotent — returns `{:ok, %{}}` if EventBridge is already enabled.
+
+  ## Examples
+
+      AWS.S3.enable_event_bridge("uploads-bucket")
+      #=> {:ok, %{}}
+
+  Required before an EventBridge rule built with
+  `AWS.EventBridge.s3_object_created_pattern/1` will match anything.
+
+  This replaces the bucket's entire notification configuration, so any
+  existing topic, queue or Lambda notifications are dropped.
   """
   @spec enable_event_bridge(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -1078,6 +1422,14 @@ defmodule AWS.S3 do
   Other notification configurations (SNS, SQS, Lambda) are preserved.
 
   Idempotent — returns `{:ok, %{}}` if EventBridge is not currently enabled.
+
+  ## Examples
+
+      AWS.S3.disable_event_bridge("uploads-bucket")
+      #=> {:ok, %{}}
+
+  Writes an empty configuration, so this also clears any topic, queue or
+  Lambda notifications on the bucket.
   """
   @spec disable_event_bridge(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -1097,6 +1449,30 @@ defmodule AWS.S3 do
   `:event_bridge_configuration`, which is `%{}` when EventBridge is enabled
   and `nil` when it is not (the element carries no members, so its presence
   is the entire signal).
+
+  ## Examples
+
+      AWS.S3.get_notification_configuration("uploads-bucket")
+      #=> {:ok,
+      #=>  %{
+      #=>    event_bridge_configuration: %{},
+      #=>    topic_configuration: [],
+      #=>    queue_configuration: [
+      #=>      %{
+      #=>        id: "uploads-to-sqs",
+      #=>        queue: "arn:aws:sqs:us-east-1:123456789012:uploads",
+      #=>        event: ["s3:ObjectCreated:*"],
+      #=>        filter: %{
+      #=>          s3_key: %{filter_rule: [%{name: "prefix", value: "incoming/"}]}
+      #=>        }
+      #=>      }
+      #=>    ],
+      #=>    cloud_function_configuration: []
+      #=>  }}
+
+  `:event_bridge_configuration` is `%{}` when EventBridge is enabled and
+  `nil` when it is not -- the element carries no members, so its presence is
+  the entire signal.
   """
   @spec get_notification_configuration(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -1146,6 +1522,19 @@ defmodule AWS.S3 do
 
       iex> AWS.S3.put_public_access_block("my-bucket", block_public_acls: false)
       {:ok, %{x_amz_request_id: "...", date: "..."}}
+
+  ## Examples
+
+      AWS.S3.put_public_access_block("uploads-bucket",
+        block_public_acls: true,
+        ignore_public_acls: true,
+        block_public_policy: true,
+        restrict_public_buckets: true
+      )
+      #=> {:ok, %{}}
+
+  Only the flags you pass are sent; omitted flags are left at their current
+  value rather than being reset to false.
   """
   @spec put_public_access_block(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -1192,6 +1581,20 @@ defmodule AWS.S3 do
       ...>   bucket_key_enabled: true
       ...> )
       {:ok, %{x_amz_request_id: "...", date: "..."}}
+
+  ## Examples
+
+      AWS.S3.put_bucket_encryption("uploads-bucket")
+      #=> {:ok, %{}}
+
+      AWS.S3.put_bucket_encryption("uploads-bucket",
+        sse_algorithm: "aws:kms",
+        kms_master_key_id: "arn:aws:kms:us-east-1:123456789012:key/abc",
+        bucket_key_enabled: true
+      )
+      #=> {:ok, %{}}
+
+  Defaults to `"AES256"` when no algorithm is given.
   """
   @spec put_bucket_encryption(bucket :: binary(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -1248,6 +1651,26 @@ defmodule AWS.S3 do
       ...>   %{id: "expire-logs", filter: %{prefix: "logs/"}, expiration: %{days: 30}}
       ...> ])
       {:ok, %{x_amz_request_id: "...", date: "..."}}
+
+  ## Examples
+
+      AWS.S3.put_bucket_lifecycle_configuration("uploads-bucket", [
+        %{
+          id: "expire-incoming",
+          status: "Enabled",
+          filter: %{prefix: "incoming/"},
+          expiration: %{days: 30}
+        },
+        %{
+          id: "archive-reports",
+          filter: %{prefix: "reports/"},
+          transitions: [%{days: 90, storage_class: "GLACIER"}]
+        }
+      ])
+      #=> {:ok, %{}}
+
+  Replaces the whole configuration. A rule with no `:status` defaults to
+  `"Enabled"`.
   """
   @spec put_bucket_lifecycle_configuration(
           bucket :: binary(),
