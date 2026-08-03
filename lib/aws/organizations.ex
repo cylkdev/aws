@@ -84,6 +84,22 @@ defmodule AWS.Organizations do
   ## Options
 
     * `:feature_set` - `"ALL"` (default) or `"CONSOLIDATED_BILLING"`.
+
+  ## Examples
+
+      AWS.Organizations.create_organization(feature_set: "ALL")
+      #=> {:ok,
+      #=>  %{
+      #=>    organization: %{
+      #=>      id: "o-exampleorgid",
+      #=>      arn: "arn:aws:organizations::123456789012:organization/o-exampleorgid",
+      #=>      feature_set: "ALL",
+      #=>      master_account_arn: "arn:aws:organizations::123456789012:account/o-exampleorgid/123456789012",
+      #=>      master_account_id: "123456789012",
+      #=>      master_account_email: "root@example.com",
+      #=>      available_policy_types: [%{type: "SERVICE_CONTROL_POLICY", status: "ENABLED"}]
+      #=>    }
+      #=>  }}
   """
   @spec create_organization(opts :: keyword()) :: {:ok, %{organization: map()}} | {:error, term()}
   def create_organization(opts \\ []) do
@@ -119,6 +135,18 @@ defmodule AWS.Organizations do
     * `opts` - Shared options.
 
   Returns `{:ok, %{organizational_unit: %{id, arn, name}}}`.
+
+  ## Examples
+
+      AWS.Organizations.create_organizational_unit("r-exam", "Workloads")
+      #=> {:ok,
+      #=>  %{
+      #=>    organizational_unit: %{
+      #=>      id: "ou-exam-awsccdev",
+      #=>      arn: "arn:aws:organizations::123456789012:ou/o-exampleorgid/ou-exam-awsccdev",
+      #=>      name: "Workloads"
+      #=>    }
+      #=>  }}
   """
   @spec create_organizational_unit(parent_id :: String.t(), name :: String.t(), opts :: keyword()) ::
           {:ok, %{organizational_unit: map()}} | {:error, term()}
@@ -155,6 +183,22 @@ defmodule AWS.Organizations do
     * `opts` - Options including `:iam_user_access_to_billing` (`"ALLOW"` | `"DENY"`).
 
   Returns `{:ok, %{create_account_status: %{id, state, account_name, ...}}}`.
+
+  ## Examples
+
+      AWS.Organizations.create_account("tools", "aws+tools@example.com")
+      #=> {:ok,
+      #=>  %{
+      #=>    create_account_status: %{
+      #=>      id: "car-exampleaccountcreationrequestid",
+      #=>      account_name: "tools",
+      #=>      state: "IN_PROGRESS",
+      #=>      requested_timestamp: 1.7e9
+      #=>    }
+      #=>  }}
+
+  Creation is asynchronous. Poll `describe_create_account_status/2` with the
+  returned `:id` until `:state` is `"SUCCEEDED"` or `"FAILED"`.
   """
   @spec create_account(name :: String.t(), email :: String.t(), opts :: keyword()) ::
           {:ok, %{create_account_status: map()}} | {:error, term()}
@@ -193,6 +237,30 @@ defmodule AWS.Organizations do
 
     * `request_id` - The `id` from the `create_account_status` returned by `create_account/3`.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.Organizations.describe_create_account_status("car-exampleaccountcreationrequestid")
+      #=> {:ok,
+      #=>  %{
+      #=>    create_account_status: %{
+      #=>      id: "car-exampleaccountcreationrequestid",
+      #=>      account_name: "tools",
+      #=>      state: "SUCCEEDED",
+      #=>      account_id: "333333333333",
+      #=>      requested_timestamp: 1.7e9,
+      #=>      completed_timestamp: 1.7e9
+      #=>    }
+      #=>  }}
+
+      # On failure, :failure_reason replaces :account_id.
+      #=> {:ok,
+      #=>  %{
+      #=>    create_account_status: %{
+      #=>      state: "FAILED",
+      #=>      failure_reason: "EMAIL_ALREADY_EXISTS"
+      #=>    }
+      #=>  }}
   """
   @spec describe_create_account_status(request_id :: String.t(), opts :: keyword()) ::
           {:ok, %{create_account_status: map()}} | {:error, term()}
@@ -226,6 +294,11 @@ defmodule AWS.Organizations do
     * `source_parent_id` - The current parent ID (root or OU).
     * `destination_parent_id` - The target parent ID (root or OU).
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.Organizations.move_account("333333333333", "r-exam", "ou-exam-awsccdev")
+      #=> {:ok, %{}}
   """
   @spec move_account(
           account_id :: String.t(),
@@ -265,6 +338,13 @@ defmodule AWS.Organizations do
   ## Arguments
 
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.Organizations.delete_organization()
+      #=> {:ok, %{}}
+
+  Every member account must be removed first.
   """
   @spec delete_organization(opts :: keyword()) :: {:ok, %{}} | {:error, term()}
   def delete_organization(opts \\ []) do
@@ -291,6 +371,13 @@ defmodule AWS.Organizations do
 
     * `ou_id` - The ID of the OU to delete (`"ou-xxxx-yyyyyyyy"`).
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.Organizations.delete_organizational_unit("ou-exam-awsccdev")
+      #=> {:ok, %{}}
+
+  The OU must contain no accounts or child OUs.
   """
   @spec delete_organizational_unit(ou_id :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -322,6 +409,13 @@ defmodule AWS.Organizations do
 
     * `account_id` - The 12-digit ID of the account to close.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.Organizations.close_account("333333333333")
+      #=> {:ok, %{}}
+
+  Closure is asynchronous and not reversible through this API.
   """
   @spec close_account(account_id :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -358,6 +452,14 @@ defmodule AWS.Organizations do
     * `account_id` - The 12-digit ID of the account to register.
     * `service_principal` - The AWS service principal to delegate (e.g. `"billing.amazonaws.com"`).
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.Organizations.register_delegated_administrator(
+        "333333333333",
+        "sso.amazonaws.com"
+      )
+      #=> {:ok, %{}}
   """
   @spec register_delegated_administrator(
           account_id :: String.t(),
@@ -396,6 +498,11 @@ defmodule AWS.Organizations do
 
     * `service_principal` - The AWS service principal to enable (e.g. `"sso.amazonaws.com"`).
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.Organizations.enable_aws_service_access("sso.amazonaws.com")
+      #=> {:ok, %{}}
   """
   @spec enable_aws_service_access(service_principal :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -421,6 +528,22 @@ defmodule AWS.Organizations do
 
   Returns `{:ok, %{organization: map()}}`. The `organization` map includes
   `:id`, `:arn`, `:feature_set` (`"ALL"` or `"CONSOLIDATED_BILLING"`), and more.
+
+  ## Examples
+
+      AWS.Organizations.describe_organization()
+      #=> {:ok,
+      #=>  %{
+      #=>    organization: %{
+      #=>      id: "o-exampleorgid",
+      #=>      arn: "arn:aws:organizations::123456789012:organization/o-exampleorgid",
+      #=>      feature_set: "ALL",
+      #=>      master_account_arn: "arn:aws:organizations::123456789012:account/o-exampleorgid/123456789012",
+      #=>      master_account_id: "123456789012",
+      #=>      master_account_email: "root@example.com",
+      #=>      available_policy_types: [%{type: "SERVICE_CONTROL_POLICY", status: "ENABLED"}]
+      #=>    }
+      #=>  }}
   """
   @spec describe_organization(opts :: keyword()) ::
           {:ok, %{organization: map()}} | {:error, term()}
@@ -448,6 +571,20 @@ defmodule AWS.Organizations do
   Returns the primary root in the current organization.
 
   Returns `{:ok, root}` where root is the first root in the list, or `{:error, term()}` on failure.
+
+  ## Examples
+
+      AWS.Organizations.get_root()
+      #=> {:ok,
+      #=>  %{
+      #=>    id: "r-exam",
+      #=>    arn: "arn:aws:organizations::123456789012:root/o-exampleorgid/r-exam",
+      #=>    name: "Root",
+      #=>    policy_types: [%{type: "SERVICE_CONTROL_POLICY", status: "ENABLED"}]
+      #=>  }}
+
+  A convenience wrapper returning the first element of `list_roots/1`; an
+  organization has exactly one root today.
   """
   def get_root(opts \\ []) do
     case list_roots(opts) do
@@ -460,6 +597,22 @@ defmodule AWS.Organizations do
   Lists all roots in the current organization.
 
   Returns AWS's `ListRoots` response unchanged: `:roots` plus `:next_token`.
+
+  ## Examples
+
+      AWS.Organizations.list_roots()
+      #=> {:ok,
+      #=>  %{
+      #=>    roots: [
+      #=>      %{
+      #=>        id: "r-exam",
+      #=>        arn: "arn:aws:organizations::123456789012:root/o-exampleorgid/r-exam",
+      #=>        name: "Root",
+      #=>        policy_types: [%{type: "SERVICE_CONTROL_POLICY", status: "ENABLED"}]
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
   """
   @spec list_roots(opts :: keyword()) :: {:ok, map()} | {:error, term()}
   def list_roots(opts \\ []) do
@@ -501,6 +654,23 @@ defmodule AWS.Organizations do
 
   Returns AWS's `ListOrganizationalUnitsForParent` response unchanged:
   `:organizational_units` plus `:next_token`.
+
+  ## Examples
+
+      AWS.Organizations.list_organizational_units_for_parent("r-exam")
+      #=> {:ok,
+      #=>  %{
+      #=>    organizational_units: [
+      #=>      %{
+      #=>        id: "ou-exam-awsccdev",
+      #=>        arn: "arn:aws:organizations::123456789012:ou/o-exampleorgid/ou-exam-awsccdev",
+      #=>        name: "Workloads"
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  Direct children only -- nested OUs need a call per level.
   """
   @spec list_organizational_units_for_parent(parent_id :: String.t(), opts :: keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -534,6 +704,28 @@ defmodule AWS.Organizations do
 
   Returns `{:ok, %{accounts: [map()]}}` where each account has `:id`, `:arn`,
   `:name`, `:email`, `:status`.
+
+  ## Examples
+
+      AWS.Organizations.list_accounts()
+      #=> {:ok,
+      #=>  %{
+      #=>    accounts: [
+      #=>      %{
+      #=>        id: "333333333333",
+      #=>        arn: "arn:aws:organizations::123456789012:account/o-exampleorgid/333333333333",
+      #=>        name: "tools",
+      #=>        email: "aws+tools@example.com",
+      #=>        status: "ACTIVE",
+      #=>        joined_method: "CREATED",
+      #=>        joined_timestamp: 1.7e9
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  Every account in the organization, regardless of OU. Use `list_children/2`
+  to scope to one parent.
   """
   @spec list_accounts(opts :: keyword()) ::
           {:ok, %{accounts: list(map()), next_token: String.t() | nil}} | {:error, term()}
@@ -573,6 +765,24 @@ defmodule AWS.Organizations do
 
   Returns `{:ok, %{delegated_administrators: [map()]}}` where each entry has
   `:id`, `:arn`, `:name`, `:email`, `:status`, `:delegation_enabled_date`.
+
+  ## Examples
+
+      AWS.Organizations.list_delegated_administrators(service_principal: "sso.amazonaws.com")
+      #=> {:ok,
+      #=>  %{
+      #=>    delegated_administrators: [
+      #=>      %{
+      #=>        id: "333333333333",
+      #=>        arn: "arn:aws:organizations::123456789012:account/o-exampleorgid/333333333333",
+      #=>        name: "tools",
+      #=>        email: "aws+tools@example.com",
+      #=>        status: "ACTIVE",
+      #=>        delegation_enabled_date: 1.7e9
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
   """
   @spec list_delegated_administrators(opts :: keyword()) ::
           {:ok, %{delegated_administrators: list(map())}} | {:error, term()}
@@ -609,6 +819,17 @@ defmodule AWS.Organizations do
   where each entry has `:service_principal` (e.g. `"sso.amazonaws.com"`) and
   `:date_enabled`. Pass the returned `:next_token` back via `opts[:next_token]`
   to fetch subsequent pages.
+
+  ## Examples
+
+      AWS.Organizations.list_aws_service_access_for_organization()
+      #=> {:ok,
+      #=>  %{
+      #=>    enabled_service_principals: [
+      #=>      %{service_principal: "sso.amazonaws.com", date_enabled: 1.7e9}
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
   """
   @spec list_aws_service_access_for_organization(opts :: keyword()) ::
           {:ok, %{enabled_service_principals: list(map()), next_token: String.t() | nil}}
@@ -644,6 +865,17 @@ defmodule AWS.Organizations do
 
   Returns `{:ok, %{parents: [map()], next_token: String.t() | nil}}` where each
   parent has `:id` and `:type` (`"ROOT"` or `"ORGANIZATIONAL_UNIT"`).
+
+  ## Examples
+
+      AWS.Organizations.list_parents("333333333333")
+      #=> {:ok,
+      #=>  %{
+      #=>    parents: [%{id: "ou-exam-awsccdev", type: "ORGANIZATIONAL_UNIT"}],
+      #=>    next_token: nil
+      #=>  }}
+
+  Always zero or one parent; `:type` is `"ROOT"` or `"ORGANIZATIONAL_UNIT"`.
   """
   @spec list_parents(child_id :: String.t(), opts :: keyword()) ::
           {:ok, %{parents: list(map()), next_token: String.t() | nil}} | {:error, term()}
@@ -682,6 +914,22 @@ defmodule AWS.Organizations do
 
   Returns `{:ok, %{account: map()}}` where the account map has `:id`, `:arn`,
   `:name`, `:email`, `:status`, `:joined_method`, `:joined_timestamp`.
+
+  ## Examples
+
+      AWS.Organizations.describe_account("333333333333")
+      #=> {:ok,
+      #=>  %{
+      #=>    account: %{
+      #=>      id: "333333333333",
+      #=>      arn: "arn:aws:organizations::123456789012:account/o-exampleorgid/333333333333",
+      #=>      name: "tools",
+      #=>      email: "aws+tools@example.com",
+      #=>      status: "ACTIVE",
+      #=>      joined_method: "CREATED",
+      #=>      joined_timestamp: 1.7e9
+      #=>    }
+      #=>  }}
   """
   @spec describe_account(account_id :: String.t(), opts :: keyword()) ::
           {:ok, %{account: map()}} | {:error, term()}
@@ -711,6 +959,18 @@ defmodule AWS.Organizations do
 
   Returns `{:ok, %{organizational_unit: map()}}` where the OU map has `:id`,
   `:arn`, `:name`.
+
+  ## Examples
+
+      AWS.Organizations.describe_organizational_unit("ou-exam-awsccdev")
+      #=> {:ok,
+      #=>  %{
+      #=>    organizational_unit: %{
+      #=>      id: "ou-exam-awsccdev",
+      #=>      arn: "arn:aws:organizations::123456789012:ou/o-exampleorgid/ou-exam-awsccdev",
+      #=>      name: "Workloads"
+      #=>    }
+      #=>  }}
   """
   @spec describe_organizational_unit(ou_id :: String.t(), opts :: keyword()) ::
           {:ok, %{organizational_unit: map()}} | {:error, term()}
@@ -738,6 +998,18 @@ defmodule AWS.Organizations do
     * `ou_id` - The OU ID.
     * `name` - The new name.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.Organizations.update_organizational_unit("ou-exam-awsccdev", "Production")
+      #=> {:ok,
+      #=>  %{
+      #=>    organizational_unit: %{
+      #=>      id: "ou-exam-awsccdev",
+      #=>      arn: "arn:aws:organizations::123456789012:ou/o-exampleorgid/ou-exam-awsccdev",
+      #=>      name: "Production"
+      #=>    }
+      #=>  }}
   """
   @spec update_organizational_unit(
           ou_id :: String.t(),
@@ -768,6 +1040,11 @@ defmodule AWS.Organizations do
 
     * `service_principal` - The AWS service principal to disable (e.g. `"sso.amazonaws.com"`).
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.Organizations.disable_aws_service_access("sso.amazonaws.com")
+      #=> {:ok, %{}}
   """
   @spec disable_aws_service_access(service_principal :: String.t(), opts :: keyword()) ::
           {:ok, %{}} | {:error, term()}
@@ -796,6 +1073,14 @@ defmodule AWS.Organizations do
     * `account_id` - The 12-digit account ID to deregister.
     * `service_principal` - The AWS service principal.
     * `opts` - Shared options.
+
+  ## Examples
+
+      AWS.Organizations.deregister_delegated_administrator(
+        "333333333333",
+        "sso.amazonaws.com"
+      )
+      #=> {:ok, %{}}
   """
   @spec deregister_delegated_administrator(
           account_id :: String.t(),
@@ -833,6 +1118,24 @@ defmodule AWS.Organizations do
 
   Returns `{:ok, %{children: [map()], next_token: String.t() | nil}}` where
   each child has `:id` and `:type`.
+
+  ## Examples
+
+      AWS.Organizations.list_children("r-exam", "ORGANIZATIONAL_UNIT")
+      #=> {:ok,
+      #=>  %{
+      #=>    children: [%{id: "ou-exam-awsccdev", type: "ORGANIZATIONAL_UNIT"}],
+      #=>    next_token: nil
+      #=>  }}
+
+      AWS.Organizations.list_children("ou-exam-awsccdev", "ACCOUNT")
+      #=> {:ok,
+      #=>  %{
+      #=>    children: [%{id: "333333333333", type: "ACCOUNT"}],
+      #=>    next_token: nil
+      #=>  }}
+
+  IDs and types only; call `describe_account/2` for an account's details.
   """
   @spec list_children(
           parent_id :: String.t(),
