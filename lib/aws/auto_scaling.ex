@@ -79,6 +79,74 @@ defmodule AWS.AutoScaling do
     - `:include_instances` - boolean
 
   See `AWS.AutoScaling` shared options for credentials / region / endpoint.
+
+  ## Examples
+
+      AWS.AutoScaling.describe_auto_scaling_groups(names: ["web-asg"])
+      #=> {:ok,
+      #=>  %{
+      #=>    auto_scaling_groups: [
+      #=>      %{
+      #=>        auto_scaling_group_name: "web-asg",
+      #=>        auto_scaling_group_arn: "arn:aws:autoscaling:us-east-1:123456789012:autoScalingGroup:uuid:autoScalingGroupName/web-asg",
+      #=>        min_size: 1,
+      #=>        max_size: 6,
+      #=>        desired_capacity: 3,
+      #=>        default_cooldown: 300,
+      #=>        health_check_type: "ELB",
+      #=>        health_check_grace_period: 300,
+      #=>        created_time: "2026-01-01T00:00:00.000Z",
+      #=>        new_instances_protected_from_scale_in: false,
+      #=>        availability_zones: ["us-east-1a", "us-east-1b"],
+      #=>        target_group_arns: ["arn:aws:elasticloadbalancing:...:targetgroup/web/abc"],
+      #=>        launch_template: %{
+      #=>          launch_template_id: "lt-0a1b2c3d4e5f6789a",
+      #=>          launch_template_name: "web",
+      #=>          version: "$Latest"
+      #=>        },
+      #=>        mixed_instances_policy: %{
+      #=>          instances_distribution: %{
+      #=>            on_demand_base_capacity: 1,
+      #=>            on_demand_percentage_above_base_capacity: 0,
+      #=>            spot_allocation_strategy: "capacity-optimized",
+      #=>            spot_max_price: ""
+      #=>          },
+      #=>          launch_template: %{
+      #=>            launch_template_specification: %{
+      #=>              launch_template_id: "lt-0a1b2c3d4e5f6789a",
+      #=>              launch_template_name: "web",
+      #=>              version: "$Latest"
+      #=>            },
+      #=>            overrides: [
+      #=>              %{instance_type: "t3.small", weighted_capacity: "2"}
+      #=>            ]
+      #=>          }
+      #=>        },
+      #=>        instances: [
+      #=>          %{
+      #=>            instance_id: "i-1234567890abcdef0",
+      #=>            instance_type: "t3.small",
+      #=>            availability_zone: "us-east-1a",
+      #=>            lifecycle_state: "InService",
+      #=>            health_status: "Healthy",
+      #=>            protected_from_scale_in: false,
+      #=>            launch_template: %{
+      #=>              launch_template_id: "lt-0a1b2c3d4e5f6789a",
+      #=>              version: "3"
+      #=>            }
+      #=>          }
+      #=>        ],
+      #=>        tags: [
+      #=>          %{key: "Name", value: "web", propagate_at_launch: "true"}
+      #=>        ]
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  `:mixed_instances_policy` keeps AWS's two levels: `:instances_distribution`
+  and `:launch_template` (which itself holds a
+  `:launch_template_specification` and `:overrides`).
   """
   @spec describe_auto_scaling_groups(keyword) :: {:ok, map} | {:error, term}
   def describe_auto_scaling_groups(opts \\ []) do
@@ -114,6 +182,30 @@ defmodule AWS.AutoScaling do
     - `:instance_ids` - list of instance IDs
     - `:max_records` - integer
     - `:next_token` - pagination token
+
+  ## Examples
+
+      AWS.AutoScaling.describe_auto_scaling_instances(instance_ids: ["i-1234567890abcdef0"])
+      #=> {:ok,
+      #=>  %{
+      #=>    auto_scaling_instances: [
+      #=>      %{
+      #=>        instance_id: "i-1234567890abcdef0",
+      #=>        auto_scaling_group_name: "web-asg",
+      #=>        availability_zone: "us-east-1a",
+      #=>        lifecycle_state: "InService",
+      #=>        health_status: "HEALTHY",
+      #=>        instance_type: "t3.small",
+      #=>        protected_from_scale_in: false,
+      #=>        launch_template: %{
+      #=>          launch_template_id: "lt-0a1b2c3d4e5f6789a",
+      #=>          launch_template_name: "web",
+      #=>          version: "3"
+      #=>        }
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
   """
   @spec describe_auto_scaling_instances(keyword) :: {:ok, map} | {:error, term}
   def describe_auto_scaling_instances(opts \\ []) do
@@ -147,6 +239,46 @@ defmodule AWS.AutoScaling do
     - `:instance_refresh_ids` - list of refresh IDs
     - `:max_records` - integer
     - `:next_token` - pagination token
+
+  ## Examples
+
+      AWS.AutoScaling.describe_instance_refreshes("web-asg")
+      #=> {:ok,
+      #=>  %{
+      #=>    instance_refreshes: [
+      #=>      %{
+      #=>        instance_refresh_id: "08b91cf7-8ec8-4d1b-9f0b-EXAMPLE",
+      #=>        auto_scaling_group_name: "web-asg",
+      #=>        status: "InProgress",
+      #=>        status_reason: "Waiting for instances to warm up",
+      #=>        start_time: "2026-01-01T00:00:00Z",
+      #=>        end_time: "",
+      #=>        percentage_complete: 33,
+      #=>        instances_to_update: 2,
+      #=>        strategy: "Rolling",
+      #=>        preferences: %{
+      #=>          min_healthy_percentage: 90,
+      #=>          instance_warmup: 300,
+      #=>          skip_matching: "false",
+      #=>          checkpoint_percentages: [],
+      #=>          alarm_specification: nil
+      #=>        },
+      #=>        progress_details: %{
+      #=>          live_pool_progress: %{instances_to_update: 2, percentage_complete: 33},
+      #=>          warm_pool_progress: nil
+      #=>        },
+      #=>        rollback_details: nil,
+      #=>        desired_configuration: %{
+      #=>          launch_template: %{
+      #=>            launch_template_id: "lt-0a1b2c3d4e5f6789a",
+      #=>            version: "4"
+      #=>          },
+      #=>          mixed_instances_policy: nil
+      #=>        }
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
   """
   @spec describe_instance_refreshes(String.t(), keyword) :: {:ok, map} | {:error, term}
   def describe_instance_refreshes(auto_scaling_group_name, opts \\ [])
@@ -184,6 +316,13 @@ defmodule AWS.AutoScaling do
       AWS accepts; flattened by the generic Query encoder)
     - `:desired_configuration` - map passed verbatim to AWS
       `DesiredConfiguration`
+
+  ## Examples
+
+      AWS.AutoScaling.start_instance_refresh("web-asg",
+        preferences: %{min_healthy_percentage: 90, instance_warmup: 300}
+      )
+      #=> {:ok, %{instance_refresh_id: "08b91cf7-8ec8-4d1b-9f0b-EXAMPLE"}}
   """
   @spec start_instance_refresh(String.t(), keyword) :: {:ok, map} | {:error, term}
   def start_instance_refresh(auto_scaling_group_name, opts \\ [])
@@ -213,6 +352,11 @@ defmodule AWS.AutoScaling do
   Cancels an in-progress instance refresh.
 
   Maps to AWS `CancelInstanceRefresh`. `auto_scaling_group_name` is required.
+
+  ## Examples
+
+      AWS.AutoScaling.cancel_instance_refresh("web-asg")
+      #=> {:ok, %{instance_refresh_id: "08b91cf7-8ec8-4d1b-9f0b-EXAMPLE"}}
   """
   @spec cancel_instance_refresh(String.t(), keyword) :: {:ok, map} | {:error, term}
   def cancel_instance_refresh(auto_scaling_group_name, opts \\ [])
@@ -236,6 +380,11 @@ defmodule AWS.AutoScaling do
   Rolls back an in-progress or recent instance refresh.
 
   Maps to AWS `RollbackInstanceRefresh`. `auto_scaling_group_name` is required.
+
+  ## Examples
+
+      AWS.AutoScaling.rollback_instance_refresh("web-asg")
+      #=> {:ok, %{instance_refresh_id: "08b91cf7-8ec8-4d1b-9f0b-EXAMPLE"}}
   """
   @spec rollback_instance_refresh(String.t(), keyword) :: {:ok, map} | {:error, term}
   def rollback_instance_refresh(auto_scaling_group_name, opts \\ [])
@@ -271,6 +420,18 @@ defmodule AWS.AutoScaling do
 
     - `:lifecycle_action_token`
     - `:instance_id`
+
+  ## Examples
+
+      AWS.AutoScaling.complete_lifecycle_action(
+        "web-asg-launch-hook",
+        "web-asg",
+        "CONTINUE",
+        instance_id: "i-1234567890abcdef0"
+      )
+      #=> {:ok, %{}}
+
+  AWS returns an empty result for this operation.
   """
   @spec complete_lifecycle_action(
           lifecycle_hook_name :: String.t(),
@@ -338,6 +499,15 @@ defmodule AWS.AutoScaling do
 
     - `:lifecycle_action_token`
     - `:instance_id`
+
+  ## Examples
+
+      AWS.AutoScaling.record_lifecycle_action_heartbeat(
+        "web-asg-launch-hook",
+        "web-asg",
+        instance_id: "i-1234567890abcdef0"
+      )
+      #=> {:ok, %{}}
   """
   @spec record_lifecycle_action_heartbeat(
           lifecycle_hook_name :: String.t(),
@@ -383,6 +553,17 @@ defmodule AWS.AutoScaling do
   ## Options
 
     - `:should_respect_grace_period` - boolean
+
+  ## Examples
+
+      AWS.AutoScaling.set_instance_health("i-1234567890abcdef0", "Unhealthy")
+      #=> {:ok, %{}}
+
+      # Keep the group's grace period from masking the change.
+      AWS.AutoScaling.set_instance_health("i-1234567890abcdef0", "Unhealthy",
+        should_respect_grace_period: false
+      )
+      #=> {:ok, %{}}
   """
   @spec set_instance_health(String.t(), String.t(), keyword) :: {:ok, map} | {:error, term}
   def set_instance_health(instance_id, health_status, opts \\ [])
@@ -414,6 +595,30 @@ defmodule AWS.AutoScaling do
   `should_decrement_desired_capacity` is required and must be a boolean.
 
   Returns the resulting `Activity` from AWS as a map under `:activity`.
+
+  ## Examples
+
+      AWS.AutoScaling.terminate_instance_in_auto_scaling_group(
+        "i-1234567890abcdef0",
+        true
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    activity: %{
+      #=>      activity_id: "e54ff599-bf05-4076-8b95-EXAMPLE",
+      #=>      auto_scaling_group_name: "web-asg",
+      #=>      cause: "At 2026-01-01T00:00:00Z an instance was taken out of service in response to a user request, shrinking the capacity from 3 to 2.",
+      #=>      description: "Terminating EC2 instance: i-1234567890abcdef0",
+      #=>      details: "{\"Subnet ID\":\"subnet-9d4a7b6c\",\"Availability Zone\":\"us-east-1a\"}",
+      #=>      status_code: "InProgress",
+      #=>      start_time: "2026-01-01T00:00:00.000Z",
+      #=>      end_time: "",
+      #=>      progress: 0
+      #=>    }
+      #=>  }}
+
+  The second argument decides whether the group's desired capacity shrinks
+  with the termination.
   """
   @spec terminate_instance_in_auto_scaling_group(String.t(), boolean, keyword) ::
           {:ok, map} | {:error, term}
@@ -462,6 +667,15 @@ defmodule AWS.AutoScaling do
   ## Options
 
     - `:honor_cooldown` - boolean
+
+  ## Examples
+
+      AWS.AutoScaling.set_desired_capacity("web-asg", 5)
+      #=> {:ok, %{}}
+
+      # Let the group's cooldown gate the change.
+      AWS.AutoScaling.set_desired_capacity("web-asg", 5, honor_cooldown: true)
+      #=> {:ok, %{}}
   """
   @spec set_desired_capacity(String.t(), integer, keyword) :: {:ok, map} | {:error, term}
   def set_desired_capacity(auto_scaling_group_name, desired_capacity, opts \\ [])

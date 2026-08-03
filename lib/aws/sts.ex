@@ -86,6 +86,16 @@ defmodule AWS.STS do
 
   Returns `{:ok, %{account: String.t(), arn: String.t(), user_id: String.t()}}`
   on success.
+
+  ## Examples
+
+      AWS.STS.get_caller_identity()
+      #=> {:ok,
+      #=>  %{
+      #=>    account: "123456789012",
+      #=>    arn: "arn:aws:sts::123456789012:assumed-role/deploy/session",
+      #=>    user_id: "AROA1EXAMPLE:session"
+      #=>  }}
   """
   @spec get_caller_identity(opts :: keyword()) ::
           {:ok, %{account: String.t(), arn: String.t(), user_id: String.t()}}
