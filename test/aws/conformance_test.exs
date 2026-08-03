@@ -338,6 +338,61 @@ defmodule AWS.ConformanceTest do
     assert fun.cloud_function == "arn:aws:lambda:us-east-1:1:function:f"
   end
 
+  test "a MixedInstancesPolicy keeps both of the levels it used to collapse" do
+    xml = """
+    <DescribeAutoScalingGroupsResponse><DescribeAutoScalingGroupsResult><AutoScalingGroups>
+    <member><AutoScalingGroupName>asg</AutoScalingGroupName><MinSize>1</MinSize><MaxSize>3</MaxSize>
+    <DesiredCapacity>2</DesiredCapacity><DefaultCooldown>300</DefaultCooldown>
+    <HealthCheckType>EC2</HealthCheckType><CreatedTime>2026-01-01T00:00:00Z</CreatedTime>
+    <NewInstancesProtectedFromScaleIn>false</NewInstancesProtectedFromScaleIn>
+    <MixedInstancesPolicy>
+    <InstancesDistribution><OnDemandBaseCapacity>1</OnDemandBaseCapacity>
+    <SpotAllocationStrategy>capacity-optimized</SpotAllocationStrategy>
+    <SpotMaxPrice>0.05</SpotMaxPrice></InstancesDistribution>
+    <LaunchTemplate>
+    <LaunchTemplateSpecification><LaunchTemplateId>lt-1</LaunchTemplateId><Version>$Latest</Version>
+    </LaunchTemplateSpecification>
+    <Overrides><member><InstanceType>t3.small</InstanceType><WeightedCapacity>2</WeightedCapacity>
+    </member></Overrides>
+    </LaunchTemplate>
+    </MixedInstancesPolicy>
+    <Instances><member><InstanceId>i-1</InstanceId><InstanceType>t3.small</InstanceType>
+    <AvailabilityZone>us-east-1a</AvailabilityZone><LifecycleState>InService</LifecycleState>
+    <HealthStatus>Healthy</HealthStatus><LaunchConfigurationName />
+    <ProtectedFromScaleIn>false</ProtectedFromScaleIn>
+    <LaunchTemplate><LaunchTemplateId>lt-1</LaunchTemplateId><Version>3</Version></LaunchTemplate>
+    </member></Instances>
+    </member></AutoScalingGroups></DescribeAutoScalingGroupsResult></DescribeAutoScalingGroupsResponse>
+    """
+
+    %{auto_scaling_groups: [group]} =
+      AWS.AutoScaling.parse_describe_auto_scaling_groups_for_test(xml)
+
+    policy = group.mixed_instances_policy
+
+    # InstancesDistribution and LaunchTemplate/LaunchTemplateSpecification are
+    # two separate levels; both used to be collapsed onto the policy.
+    assert policy.instances_distribution.on_demand_base_capacity == 1
+    assert policy.instances_distribution.spot_max_price == "0.05"
+    assert policy.launch_template.launch_template_specification.launch_template_id == "lt-1"
+    assert policy.launch_template.launch_template_specification.version == "$Latest"
+
+    assert [%{instance_type: "t3.small", weighted_capacity: "2"}] =
+             policy.launch_template.overrides
+
+    refute Map.has_key?(policy, :launch_template_id)
+
+    # An instance's LaunchTemplate is a LaunchTemplateSpecification, the same
+    # shape the group-level :launch_template already kept nested.
+    assert [instance] = group.instances
+
+    assert instance.launch_template == %{
+             launch_template_id: "lt-1",
+             launch_template_name: "",
+             version: "3"
+           }
+  end
+
   test "DescribeInstances mirrors AWS's nesting instead of flattening it" do
     xml = """
     <DescribeInstancesResponse><reservationSet><item>

@@ -544,6 +544,10 @@ defmodule AWS.AutoScaling do
   # XML parsers
   # ---------------------------------------------------------------------------
 
+  @doc false
+  def parse_describe_auto_scaling_groups_for_test(xml),
+    do: parse_describe_auto_scaling_groups(xml)
+
   defp parse_describe_auto_scaling_groups(body) do
     result =
       xpath(body, ~x"//DescribeAutoScalingGroupsResult"e,
@@ -624,11 +628,13 @@ defmodule AWS.AutoScaling do
           capacity_reservation_specification: [
             ~x"./CapacityReservationSpecification"o,
             capacity_reservation_preference: ~x"./CapacityReservationPreference/text()"os,
-            capacity_reservation_ids:
-              ~x"./CapacityReservationTarget/CapacityReservationIds/member/text()"sl,
-            # `Arns` here is mixed case, unlike TargetGroupARNs above.
-            capacity_reservation_resource_group_arns:
-              ~x"./CapacityReservationTarget/CapacityReservationResourceGroupArns/member/text()"sl
+            capacity_reservation_target: [
+              ~x"./CapacityReservationTarget"o,
+              capacity_reservation_ids: ~x"./CapacityReservationIds/member/text()"sl,
+              # `Arns` here is mixed case, unlike TargetGroupARNs above.
+              capacity_reservation_resource_group_arns:
+                ~x"./CapacityReservationResourceGroupArns/member/text()"sl
+            ]
           ],
           warm_pool_configuration: [
             ~x"./WarmPoolConfiguration"o,
@@ -636,34 +642,45 @@ defmodule AWS.AutoScaling do
             min_size: ~x"./MinSize/text()"oi,
             pool_state: ~x"./PoolState/text()"os,
             status: ~x"./Status/text()"os,
-            reuse_on_scale_in: ~x"./InstanceReusePolicy/ReuseOnScaleIn/text()"os
+            instance_reuse_policy: [
+              ~x"./InstanceReusePolicy"o,
+              reuse_on_scale_in: ~x"./ReuseOnScaleIn/text()"os
+            ]
           ],
           mixed_instances_policy: [
             ~x"./MixedInstancesPolicy"o,
-            on_demand_allocation_strategy:
-              ~x"./InstancesDistribution/OnDemandAllocationStrategy/text()"os,
-            on_demand_base_capacity: ~x"./InstancesDistribution/OnDemandBaseCapacity/text()"oi,
-            on_demand_percentage_above_base_capacity:
-              ~x"./InstancesDistribution/OnDemandPercentageAboveBaseCapacity/text()"oi,
-            spot_allocation_strategy: ~x"./InstancesDistribution/SpotAllocationStrategy/text()"os,
-            spot_instance_pools: ~x"./InstancesDistribution/SpotInstancePools/text()"oi,
-            # SpotMaxPrice is a String in the model despite looking numeric.
-            spot_max_price: ~x"./InstancesDistribution/SpotMaxPrice/text()"os,
-            launch_template_id:
-              ~x"./LaunchTemplate/LaunchTemplateSpecification/LaunchTemplateId/text()"os,
-            launch_template_name:
-              ~x"./LaunchTemplate/LaunchTemplateSpecification/LaunchTemplateName/text()"os,
-            launch_template_version:
-              ~x"./LaunchTemplate/LaunchTemplateSpecification/Version/text()"os,
-            overrides: [
-              ~x"./LaunchTemplate/Overrides/member"l,
-              instance_type: ~x"./InstanceType/text()"os,
-              image_id: ~x"./ImageId/text()"os,
-              # String in the model, not an integer.
-              weighted_capacity: ~x"./WeightedCapacity/text()"os,
-              launch_template_id: ~x"./LaunchTemplateSpecification/LaunchTemplateId/text()"os,
-              launch_template_name: ~x"./LaunchTemplateSpecification/LaunchTemplateName/text()"os,
-              launch_template_version: ~x"./LaunchTemplateSpecification/Version/text()"os
+            instances_distribution: [
+              ~x"./InstancesDistribution"o,
+              on_demand_allocation_strategy: ~x"./OnDemandAllocationStrategy/text()"os,
+              on_demand_base_capacity: ~x"./OnDemandBaseCapacity/text()"oi,
+              on_demand_percentage_above_base_capacity:
+                ~x"./OnDemandPercentageAboveBaseCapacity/text()"oi,
+              spot_allocation_strategy: ~x"./SpotAllocationStrategy/text()"os,
+              spot_instance_pools: ~x"./SpotInstancePools/text()"oi,
+              # SpotMaxPrice is a String in the model despite looking numeric.
+              spot_max_price: ~x"./SpotMaxPrice/text()"os
+            ],
+            launch_template: [
+              ~x"./LaunchTemplate"o,
+              launch_template_specification: [
+                ~x"./LaunchTemplateSpecification"o,
+                launch_template_id: ~x"./LaunchTemplateId/text()"os,
+                launch_template_name: ~x"./LaunchTemplateName/text()"os,
+                version: ~x"./Version/text()"os
+              ],
+              overrides: [
+                ~x"./Overrides/member"l,
+                instance_type: ~x"./InstanceType/text()"os,
+                image_id: ~x"./ImageId/text()"os,
+                # String in the model, not an integer.
+                weighted_capacity: ~x"./WeightedCapacity/text()"os,
+                launch_template_specification: [
+                  ~x"./LaunchTemplateSpecification"o,
+                  launch_template_id: ~x"./LaunchTemplateId/text()"os,
+                  launch_template_name: ~x"./LaunchTemplateName/text()"os,
+                  version: ~x"./Version/text()"os
+                ]
+              ]
             ]
           ],
           instances: [
@@ -678,9 +695,12 @@ defmodule AWS.AutoScaling do
             health_status: ~x"./HealthStatus/text()"s,
             launch_configuration_name: ~x"./LaunchConfigurationName/text()"s,
             protected_from_scale_in: ~x"./ProtectedFromScaleIn/text()"s,
-            launch_template_id: ~x"./LaunchTemplate/LaunchTemplateId/text()"os,
-            launch_template_name: ~x"./LaunchTemplate/LaunchTemplateName/text()"os,
-            launch_template_version: ~x"./LaunchTemplate/Version/text()"os
+            launch_template: [
+              ~x"./LaunchTemplate"o,
+              launch_template_id: ~x"./LaunchTemplateId/text()"os,
+              launch_template_name: ~x"./LaunchTemplateName/text()"os,
+              version: ~x"./Version/text()"os
+            ]
           ]
         ],
         next_token: ~x"./NextToken/text()"s
@@ -722,9 +742,12 @@ defmodule AWS.AutoScaling do
           image_id: ~x"./ImageId/text()"os,
           # String in the model, not an integer.
           weighted_capacity: ~x"./WeightedCapacity/text()"os,
-          launch_template_id: ~x"./LaunchTemplate/LaunchTemplateId/text()"os,
-          launch_template_name: ~x"./LaunchTemplate/LaunchTemplateName/text()"os,
-          launch_template_version: ~x"./LaunchTemplate/Version/text()"os
+          launch_template: [
+            ~x"./LaunchTemplate"o,
+            launch_template_id: ~x"./LaunchTemplateId/text()"os,
+            launch_template_name: ~x"./LaunchTemplateName/text()"os,
+            version: ~x"./Version/text()"os
+          ]
         ],
         next_token: ~x"./NextToken/text()"s
       )
@@ -765,15 +788,24 @@ defmodule AWS.AutoScaling do
             standby_instances: ~x"./StandbyInstances/text()"os,
             bake_time: ~x"./BakeTime/text()"oi,
             checkpoint_percentages: ~x"./CheckpointPercentages/member/text()"sl,
-            alarms: ~x"./AlarmSpecification/Alarms/member/text()"sl
+            alarm_specification: [
+              ~x"./AlarmSpecification"o,
+              alarms: ~x"./Alarms/member/text()"sl
+            ]
           ],
           strategy: ~x"./Strategy/text()"os,
           progress_details: [
             ~x"./ProgressDetails"o,
-            live_pool_instances_to_update: ~x"./LivePoolProgress/InstancesToUpdate/text()"oi,
-            live_pool_percentage_complete: ~x"./LivePoolProgress/PercentageComplete/text()"oi,
-            warm_pool_instances_to_update: ~x"./WarmPoolProgress/InstancesToUpdate/text()"oi,
-            warm_pool_percentage_complete: ~x"./WarmPoolProgress/PercentageComplete/text()"oi
+            live_pool_progress: [
+              ~x"./LivePoolProgress"o,
+              instances_to_update: ~x"./InstancesToUpdate/text()"oi,
+              percentage_complete: ~x"./PercentageComplete/text()"oi
+            ],
+            warm_pool_progress: [
+              ~x"./WarmPoolProgress"o,
+              instances_to_update: ~x"./InstancesToUpdate/text()"oi,
+              percentage_complete: ~x"./PercentageComplete/text()"oi
+            ]
           ],
           rollback_details: [
             ~x"./RollbackDetails"o,
@@ -784,9 +816,46 @@ defmodule AWS.AutoScaling do
           ],
           desired_configuration: [
             ~x"./DesiredConfiguration"o,
-            launch_template_id: ~x"./LaunchTemplate/LaunchTemplateId/text()"os,
-            launch_template_name: ~x"./LaunchTemplate/LaunchTemplateName/text()"os,
-            launch_template_version: ~x"./LaunchTemplate/Version/text()"os
+            launch_template: [
+              ~x"./LaunchTemplate"o,
+              launch_template_id: ~x"./LaunchTemplateId/text()"os,
+              launch_template_name: ~x"./LaunchTemplateName/text()"os,
+              version: ~x"./Version/text()"os
+            ],
+            mixed_instances_policy: [
+              ~x"./MixedInstancesPolicy"o,
+              instances_distribution: [
+                ~x"./InstancesDistribution"o,
+                on_demand_allocation_strategy: ~x"./OnDemandAllocationStrategy/text()"os,
+                on_demand_base_capacity: ~x"./OnDemandBaseCapacity/text()"oi,
+                on_demand_percentage_above_base_capacity:
+                  ~x"./OnDemandPercentageAboveBaseCapacity/text()"oi,
+                spot_allocation_strategy: ~x"./SpotAllocationStrategy/text()"os,
+                spot_instance_pools: ~x"./SpotInstancePools/text()"oi,
+                spot_max_price: ~x"./SpotMaxPrice/text()"os
+              ],
+              launch_template: [
+                ~x"./LaunchTemplate"o,
+                launch_template_specification: [
+                  ~x"./LaunchTemplateSpecification"o,
+                  launch_template_id: ~x"./LaunchTemplateId/text()"os,
+                  launch_template_name: ~x"./LaunchTemplateName/text()"os,
+                  version: ~x"./Version/text()"os
+                ],
+                overrides: [
+                  ~x"./Overrides/member"l,
+                  instance_type: ~x"./InstanceType/text()"os,
+                  image_id: ~x"./ImageId/text()"os,
+                  weighted_capacity: ~x"./WeightedCapacity/text()"os,
+                  launch_template_specification: [
+                    ~x"./LaunchTemplateSpecification"o,
+                    launch_template_id: ~x"./LaunchTemplateId/text()"os,
+                    launch_template_name: ~x"./LaunchTemplateName/text()"os,
+                    version: ~x"./Version/text()"os
+                  ]
+                ]
+              ]
+            ]
           ]
         ],
         next_token: ~x"./NextToken/text()"s
