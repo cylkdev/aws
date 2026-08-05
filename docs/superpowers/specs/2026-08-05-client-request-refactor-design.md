@@ -20,12 +20,15 @@ operations are written in the new style once, never migrated.
 
 ```elixir
 @spec request(struct) :: {:ok, map} | {:error, ErrorMessage.t()}
-# Success passes execute/1's response map through untouched (body +
-# headers today; the plan pins the exact keys after reading dispatch/7).
+# Success passes execute/1's response map (:status_code, :headers,
+# :body, and the streaming variants) through untouched.
 def request(%_{} = op) do
   case execute(op) do
     {:ok, response} ->
       {:ok, response}
+
+    {:error, {:http_error, status, response}} when status in 300..399 ->
+      {:error, ErrorMessage.bad_request("redirect not followed.", %{response: response})}
 
     {:error, {:http_error, status, response}} when status in 400..499 ->
       {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
@@ -73,7 +76,7 @@ defp do_get_parameter(name, opts) do
 
   with {:ok, op} <- build_operation("GetParameter", data, opts),
        {:ok, %{body: body}} <- Client.request(op) do
-    Serializer.deserialize(decode_body(body), deserialize_opts(opts))
+    {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
   end
 end
 ```
@@ -134,16 +137,17 @@ alone.
 
 - The existing suite is the regression guard; it must stay green after
   every module's migration.
-- New: direct unit tests for `Client.request/1`'s three error mappings
-  and success passthrough (the contract now has one home, so it gets one
-  test file: `test/aws_sdk/client_test.exs`, extended or created).
+- No dedicated test seam for `Client.request/1` — the mapping is a
+  verbatim move of clauses the module suites already exercise, and it is
+  a single `case` with no test-only hooks. The migrated modules' suites
+  are its coverage.
 - Any existing per-module test that asserted `deserialize_response`
   behavior through a public function keeps passing unchanged — that is
   the point of the verbatim move.
 
 ## Migration order (one commit per module, suite green at each)
 
-1. `AwsSdk.Client.request/1` + its tests (additive, nothing calls it yet)
+1. `AwsSdk.Client.request/1` (additive, nothing calls it yet)
 2. SSM (smallest JSON module — proves the JSON shape)
 3. EventBridge, Logs, IdentityCenter, Organizations (same JSON shape)
 4. EC2 (largest Query/XML)

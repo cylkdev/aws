@@ -72,62 +72,14 @@ and confirm zero remain before compiling.
 
 **Files:**
 - Modify: `lib/aws_sdk/client.ex` (new public function after `execute/1`)
-- Create: `test/aws_sdk/client_test.exs`
 
 **Interfaces:**
 - Consumes: existing `AwsSdk.Client.execute/1` (returns `{:ok, %{status_code:, headers:, body: ...}}` from `translate_buffered/1` | `{:error, {:http_error, status, body}}` | `{:error, reason}`).
-- Produces: `AwsSdk.Client.request(op :: struct) :: {:ok, map} | {:error, ErrorMessage.t()}` — the seam every migration task (2–12) rewrites onto. Also `AwsSdk.Client.map_response_for_test/1` (`@doc false`, the codebase's existing `*_for_test` convention) so the mapping is testable without HTTP.
+- Produces: `AwsSdk.Client.request(op :: struct) :: {:ok, map} | {:error, ErrorMessage.t()}` — the seam every migration task (2–12) rewrites onto.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Implement**
 
-```elixir
-defmodule AwsSdk.ClientTest do
-  use ExUnit.Case, async: true
-
-  alias AwsSdk.Client
-
-  describe "request/1 response mapping" do
-    test "success passes the response map through untouched" do
-      response = %{status_code: 200, headers: [{"etag", "x"}], body: "<ok/>"}
-
-      assert Client.map_response_for_test({:ok, response}) == {:ok, response}
-    end
-
-    test "3xx maps to bad_request" do
-      assert Client.map_response_for_test({:error, {:http_error, 301, "moved"}}) ==
-               {:error, ErrorMessage.bad_request("redirect not followed.", %{response: "moved"})}
-    end
-
-    test "4xx maps to not_found" do
-      assert Client.map_response_for_test({:error, {:http_error, 404, "nope"}}) ==
-               {:error, ErrorMessage.not_found("resource not found.", %{response: "nope"})}
-    end
-
-    test "5xx maps to service_unavailable" do
-      assert Client.map_response_for_test({:error, {:http_error, 503, "down"}}) ==
-               {:error,
-                ErrorMessage.service_unavailable("service temporarily unavailable", %{
-                  response: "down"
-                })}
-    end
-
-    test "transport errors map to internal_server_error" do
-      assert Client.map_response_for_test({:error, :timeout}) ==
-               {:error,
-                ErrorMessage.internal_server_error("internal server error", %{reason: :timeout})}
-    end
-  end
-end
-```
-
-- [ ] **Step 2: Run to verify failure**
-
-Run: `mix test test/aws_sdk/client_test.exs`
-Expected: FAIL — `map_response_for_test/1` undefined.
-
-- [ ] **Step 3: Implement**
-
-In `lib/aws_sdk/client.ex`, directly after `execute/1`:
+In `lib/aws_sdk/client.ex`, directly after `execute/1` — one function, one `case`:
 
 ```elixir
 @doc """
@@ -142,47 +94,37 @@ streaming variants) through untouched.
 """
 @spec request(struct) :: {:ok, map} | {:error, ErrorMessage.t()}
 def request(%_{} = op) do
-  op
-  |> execute()
-  |> map_response()
-end
+  case execute(op) do
+    {:ok, response} ->
+      {:ok, response}
 
-@doc false
-def map_response_for_test(result), do: map_response(result)
+    {:error, {:http_error, status_code, response}} when status_code in 300..399 ->
+      {:error, ErrorMessage.bad_request("redirect not followed.", %{response: response})}
 
-defp map_response({:ok, response}), do: {:ok, response}
+    {:error, {:http_error, status_code, response}} when status_code in 400..499 ->
+      {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
 
-defp map_response({:error, {:http_error, status_code, response}})
-     when status_code in 300..399 do
-  {:error, ErrorMessage.bad_request("redirect not followed.", %{response: response})}
-end
+    {:error, {:http_error, status_code, response}} when status_code >= 500 ->
+      {:error,
+       ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
 
-defp map_response({:error, {:http_error, status_code, response}})
-     when status_code in 400..499 do
-  {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-end
-
-defp map_response({:error, {:http_error, status_code, response}}) when status_code >= 500 do
-  {:error,
-   ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-end
-
-defp map_response({:error, reason}) do
-  {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
+    {:error, reason} ->
+      {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
+  end
 end
 ```
 
-The message strings and detail maps are byte-for-byte the ones in the existing `deserialize_response` clauses (e.g. `lib/aws_sdk/ssm.ex:637-650`, `lib/aws_sdk/s3.ex:3385-3403`) — do not "improve" them; equality-based tests and callers depend on them.
+The message strings and detail maps are byte-for-byte the ones in the existing `deserialize_response` clauses (e.g. `lib/aws_sdk/ssm.ex:637-650`, `lib/aws_sdk/s3.ex:3385-3403`) — do not "improve" them. No helper functions, no test-only hooks: the mapping is exercised through every module's existing suite as Tasks 2–12 migrate onto it.
 
-- [ ] **Step 4: Run to verify pass**
+- [ ] **Step 2: Verify**
 
-Run: `mix compile && mix test test/aws_sdk/client_test.exs && mix test`
-Expected: all PASS (nothing calls `request/1` yet — additive).
+Run: `mix compile && mix test && mix format`
+Expected: clean compile, full suite green (nothing calls `request/1` yet — additive).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add lib/aws_sdk/client.ex test/aws_sdk/client_test.exs
+git add lib/aws_sdk/client.ex
 git commit -m "feat: add Client.request/1 - the single HTTP-status-to-error contract"
 ```
 
