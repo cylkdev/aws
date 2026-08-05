@@ -4,7 +4,7 @@
 
 **Goal:** Implement every operation in NEXT.md (the deployd backlog) across the existing SSM, EC2, AutoScaling, ElasticLoadBalancingV2, IAM, and S3 modules, per the approved spec `docs/superpowers/specs/2026-08-05-nextmd-operations-design.md`.
 
-**Architecture:** Each operation is one public function added to an existing service module following the `e44e734` pattern: public fn with `sandbox?/1` branch, `do_*` private impl (params → `perform` → parse), full-fidelity response parsing, `defdelegate sandbox_<op>_response`, and the `<op>_response`/`set_<op>_responses` pair in the service's Sandbox module. No new modules except one new function in `AwsSdk.S3.XMLBuilder`.
+**Architecture:** Each operation is one public function added to an existing service module following the `e44e734` pattern: public fn with `sandbox?/1` branch, `do_*` private impl (params → explicit `build_operation` + `Client.request` `with` pipeline → parse), full-fidelity response parsing, `defdelegate sandbox_<op>_response`, and the `<op>_response`/`set_<op>_responses` pair in the service's Sandbox module. No new modules except one new function in `AwsSdk.S3.XMLBuilder`.
 
 **Tech Stack:** Elixir, SweetXml (XML parsing), Erlang `:json` (JSON 1.1 protocol), SandboxRegistry (test sandbox), ExUnit.
 
@@ -38,10 +38,10 @@ end
 defp do_<op>(<positional args>, opts) do
   data = <task-specified data map, built with maybe_put/3>
 
-  perform("<Action>", data, opts)
-  |> deserialize_response(opts, fn body ->
-    Serializer.deserialize(body, deserialize_opts(opts))
-  end)
+  with {:ok, op} <- build_operation("<Action>", data, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+  end
 end
 ```
 
@@ -81,7 +81,7 @@ end
 
 ### Standard wiring recipe B — EC2 (Query/XML) op
 
-Used by Tasks 4–14. Same shape as recipe A with these differences: the `do_` impl builds `params` with `maybe_put/3`, `put_member_list/3`, `put_filters/2` (all already exist in `lib/aws_sdk/ec2.ex`), calls `"<Action>" |> perform(params, opts) |> deserialize_response(opts, fn body -> {:ok, parse_<op>(body)} end)`, and each op adds:
+Used by Tasks 4–14. Same shape as recipe A with these differences: the `do_` impl builds `params` with `maybe_put/3`, `put_member_list/3`, `put_filters/2` (all already exist in `lib/aws_sdk/ec2.ex`), ends in `with {:ok, op} <- build_operation("<Action>", params, opts), {:ok, %{body: body}} <- Client.request(op) do {:ok, parse_<op>(body)} end`, and each op adds:
 
 ```elixir
 @doc false
@@ -106,7 +106,7 @@ AutoScaling (Task 15), ELBv2 (Task 16), and IAM (Task 17) follow the same recipe
 - Test: `test/aws_sdk/ssm/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: existing `perform/3`, `maybe_put/3`, `deserialize_response/3`, `sandbox?/1` in `ssm.ex`; `AwsSdk.Sandbox` helpers.
+- Consumes: existing `build_operation/3`, `Client.request/1`, `decode_body/1`, `deserialize_opts/1`, `maybe_put/3`, `sandbox?/1` in `ssm.ex`; `AwsSdk.Sandbox` helpers.
 - Produces: `AwsSdk.SSM.send_command(instance_ids :: [String.t()], document_name :: String.t(), opts :: keyword()) :: {:ok, %{command: map()}} | {:error, term()}`; `AwsSdk.SSM.send_command_by_targets(targets :: [map()], document_name :: String.t(), opts :: keyword())` with the same return; `AwsSdk.SSM.Sandbox.set_send_command_responses/1` and `set_send_command_by_targets_responses/1` (bare-`fn` tuples, key `"*"`).
 
 - [ ] **Step 1: Write the failing sandbox tests**
@@ -245,10 +245,10 @@ defp do_send_command(instance_ids, document_name, opts) do
     |> maybe_put("ServiceRoleArn", opts[:service_role_arn])
     |> maybe_put("NotificationConfig", opts[:notification_config])
 
-  perform("SendCommand", data, opts)
-  |> deserialize_response(opts, fn body ->
-    Serializer.deserialize(body, deserialize_opts(opts))
-  end)
+  with {:ok, op} <- build_operation("SendCommand", data, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+  end
 end
 
 @doc """
@@ -302,10 +302,10 @@ defp do_send_command_by_targets(targets, document_name, opts) do
     |> maybe_put("ServiceRoleArn", opts[:service_role_arn])
     |> maybe_put("NotificationConfig", opts[:notification_config])
 
-  perform("SendCommand", data, opts)
-  |> deserialize_response(opts, fn body ->
-    Serializer.deserialize(body, deserialize_opts(opts))
-  end)
+  with {:ok, op} <- build_operation("SendCommand", data, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+  end
 end
 ```
 
@@ -390,7 +390,7 @@ git commit -m "feat: SSM SendCommand by instance ids and by targets"
 - Test: `test/aws_sdk/ssm/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: `perform/3`, `maybe_put/3`, `deserialize_response/3`, `sandbox?/1`.
+- Consumes: `build_operation/3`, `Client.request/1`, `decode_body/1`, `deserialize_opts/1`, `maybe_put/3`, `sandbox?/1`.
 - Produces: `AwsSdk.SSM.get_command_invocation(command_id :: String.t(), instance_id :: String.t(), opts :: keyword()) :: {:ok, map()} | {:error, term()}`; `AwsSdk.SSM.Sandbox.set_get_command_invocation_responses/1` taking `{command_id_or_regex, fun}` tuples.
 
 - [ ] **Step 1: Write the failing sandbox test**
@@ -485,10 +485,10 @@ defp do_get_command_invocation(command_id, instance_id, opts) do
     %{"CommandId" => command_id, "InstanceId" => instance_id}
     |> maybe_put("PluginName", opts[:plugin_name])
 
-  perform("GetCommandInvocation", data, opts)
-  |> deserialize_response(opts, fn body ->
-    Serializer.deserialize(body, deserialize_opts(opts))
-  end)
+  with {:ok, op} <- build_operation("GetCommandInvocation", data, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+  end
 end
 ```
 
@@ -624,10 +624,10 @@ defp do_list_command_invocations(opts) do
     |> maybe_put("MaxResults", opts[:max_results])
     |> maybe_put("NextToken", opts[:next_token])
 
-  perform("ListCommandInvocations", data, opts)
-  |> deserialize_response(opts, fn body ->
-    Serializer.deserialize(body, deserialize_opts(opts))
-  end)
+  with {:ok, op} <- build_operation("ListCommandInvocations", data, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+  end
 end
 ```
 
@@ -673,7 +673,7 @@ git commit -m "feat: SSM ListCommandInvocations"
 - Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/ec2/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: `perform/3`, `put_member_list/3`, `maybe_put/3`, `deserialize_response/3` in `ec2.ex`.
+- Consumes: `build_operation/3`, `Client.request/1`, `put_member_list/3`, `maybe_put/3` in `ec2.ex`.
 - Produces: `AwsSdk.EC2.terminate_instances(instance_ids :: [String.t()], opts :: keyword()) :: {:ok, %{instances_set: [map()]}} | {:error, term()}`; `AwsSdk.EC2.parse_terminate_instances_for_test/1`; `AwsSdk.EC2.Sandbox.set_terminate_instances_responses/1` (bare `fn`s, key `"*"`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -771,9 +771,10 @@ end
 defp do_terminate_instances(instance_ids, opts) do
   params = put_member_list(%{}, "InstanceId", instance_ids)
 
-  "TerminateInstances"
-  |> perform(params, opts)
-  |> deserialize_response(opts, fn body -> {:ok, parse_terminate_instances(body)} end)
+  with {:ok, op} <- build_operation("TerminateInstances", params, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, parse_terminate_instances(body)}
+  end
 end
 
 @doc false
@@ -838,7 +839,7 @@ git commit -m "feat: EC2 TerminateInstances"
 - Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/ec2/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: `perform/3`, `maybe_put/3`, `deserialize_response/3`.
+- Consumes: `build_operation/3`, `Client.request/1`, `maybe_put/3`.
 - Produces: `AwsSdk.EC2.get_console_output(instance_id :: String.t(), opts :: keyword()) :: {:ok, %{instance_id: String.t(), timestamp: String.t() | nil, output: String.t() | nil}} | {:error, term()}`; `parse_get_console_output_for_test/1`; `Sandbox.set_get_console_output_responses/1` keyed off `instance_id`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -935,9 +936,10 @@ defp do_get_console_output(instance_id, opts) do
     %{"InstanceId" => instance_id}
     |> maybe_put("Latest", opts[:latest])
 
-  "GetConsoleOutput"
-  |> perform(params, opts)
-  |> deserialize_response(opts, fn body -> {:ok, parse_get_console_output(body)} end)
+  with {:ok, op} <- build_operation("GetConsoleOutput", params, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, parse_get_console_output(body)}
+  end
 end
 
 @doc false
@@ -1004,7 +1006,7 @@ git commit -m "feat: EC2 GetConsoleOutput with base64 decoding"
 - Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/ec2/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: `perform/3`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`.
+- Consumes: `build_operation/3`, `Client.request/1`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`.
 - Produces: `AwsSdk.EC2.describe_network_acls(opts :: keyword()) :: {:ok, %{network_acl_set: [map()], next_token: String.t() | nil}} | {:error, term()}`; `parse_describe_network_acls_for_test/1`; `Sandbox.set_describe_network_acls_responses/1` (bare `fn`s, key `"*"`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -1135,9 +1137,10 @@ defp do_describe_network_acls(opts) do
     |> maybe_put("NextToken", opts[:next_token])
     |> maybe_put("MaxResults", opts[:max_results])
 
-  "DescribeNetworkAcls"
-  |> perform(params, opts)
-  |> deserialize_response(opts, fn body -> {:ok, parse_describe_network_acls(body)} end)
+  with {:ok, op} <- build_operation("DescribeNetworkAcls", params, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, parse_describe_network_acls(body)}
+  end
 end
 
 @doc false
@@ -1340,9 +1343,10 @@ defp do_describe_route_tables(opts) do
     |> maybe_put("NextToken", opts[:next_token])
     |> maybe_put("MaxResults", opts[:max_results])
 
-  "DescribeRouteTables"
-  |> perform(params, opts)
-  |> deserialize_response(opts, fn body -> {:ok, parse_describe_route_tables(body)} end)
+  with {:ok, op} <- build_operation("DescribeRouteTables", params, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, parse_describe_route_tables(body)}
+  end
 end
 
 @doc false
@@ -1424,7 +1428,7 @@ git commit -m "feat: EC2 DescribeRouteTables"
 - Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/ec2/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: `perform/3`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`, existing `parse_return/1` (returns `%{return: boolean}`).
+- Consumes: `build_operation/3`, `Client.request/1`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`, existing `parse_return/1` (returns `%{return: boolean}`).
 - Produces: `AwsSdk.EC2.describe_key_pairs(opts) :: {:ok, %{key_set: [map()]}} | {:error, term()}`; `AwsSdk.EC2.delete_key_pair(key_name :: String.t(), opts) :: {:ok, %{return: boolean(), key_pair_id: String.t() | nil}} | {:error, term()}`; `parse_describe_key_pairs_for_test/1`, `parse_delete_key_pair_for_test/1`; `Sandbox.set_describe_key_pairs_responses/1` (key `"*"`), `Sandbox.set_delete_key_pair_responses/1` (keyed off `key_name`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -1541,9 +1545,10 @@ defp do_describe_key_pairs(opts) do
     |> put_filters(opts[:filters] || [])
     |> maybe_put("IncludePublicKey", opts[:include_public_key])
 
-  "DescribeKeyPairs"
-  |> perform(params, opts)
-  |> deserialize_response(opts, fn body -> {:ok, parse_describe_key_pairs(body)} end)
+  with {:ok, op} <- build_operation("DescribeKeyPairs", params, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, parse_describe_key_pairs(body)}
+  end
 end
 
 @doc false
@@ -1583,9 +1588,10 @@ def delete_key_pair(key_name, opts \\ []) when is_binary(key_name) do
 end
 
 defp do_delete_key_pair(key_name, opts) do
-  "DeleteKeyPair"
-  |> perform(%{"KeyName" => key_name}, opts)
-  |> deserialize_response(opts, fn body -> {:ok, parse_delete_key_pair(body)} end)
+  with {:ok, op} <- build_operation("DeleteKeyPair", %{"KeyName" => key_name}, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, parse_delete_key_pair(body)}
+  end
 end
 
 @doc false
@@ -1619,7 +1625,7 @@ git commit -m "feat: EC2 DescribeKeyPairs and DeleteKeyPair"
 - Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/ec2/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: `perform/3`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`.
+- Consumes: `build_operation/3`, `Client.request/1`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`.
 - Produces: `AwsSdk.EC2.describe_security_group_rules(opts) :: {:ok, %{security_group_rule_set: [map()], next_token: String.t() | nil}} | {:error, term()}`; `parse_describe_security_group_rules_for_test/1`; `Sandbox.set_describe_security_group_rules_responses/1` (key `"*"`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -1740,9 +1746,10 @@ defp do_describe_security_group_rules(opts) do
     |> maybe_put("NextToken", opts[:next_token])
     |> maybe_put("MaxResults", opts[:max_results])
 
-  "DescribeSecurityGroupRules"
-  |> perform(params, opts)
-  |> deserialize_response(opts, fn body -> {:ok, parse_describe_security_group_rules(body)} end)
+  with {:ok, op} <- build_operation("DescribeSecurityGroupRules", params, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, parse_describe_security_group_rules(body)}
+  end
 end
 
 @doc false
@@ -1806,7 +1813,7 @@ git commit -m "feat: EC2 DescribeSecurityGroupRules"
 - Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/ec2/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: `perform/3`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`.
+- Consumes: `build_operation/3`, `Client.request/1`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`.
 - Produces: `AwsSdk.EC2.describe_snapshots(opts) :: {:ok, %{snapshot_set: [map()], next_token: String.t() | nil}} | {:error, term()}`; `parse_describe_snapshots_for_test/1`; `Sandbox.set_describe_snapshots_responses/1` (key `"*"`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -1924,9 +1931,10 @@ defp do_describe_snapshots(opts) do
     |> maybe_put("NextToken", opts[:next_token])
     |> maybe_put("MaxResults", opts[:max_results])
 
-  "DescribeSnapshots"
-  |> perform(params, opts)
-  |> deserialize_response(opts, fn body -> {:ok, parse_describe_snapshots(body)} end)
+  with {:ok, op} <- build_operation("DescribeSnapshots", params, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, parse_describe_snapshots(body)}
+  end
 end
 
 @doc false
@@ -1984,7 +1992,7 @@ git commit -m "feat: EC2 DescribeSnapshots"
 - Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/ec2/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: `perform/3`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`.
+- Consumes: `build_operation/3`, `Client.request/1`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`.
 - Produces: `AwsSdk.EC2.describe_network_interfaces(opts) :: {:ok, %{network_interface_set: [map()], next_token: String.t() | nil}} | {:error, term()}`; `parse_describe_network_interfaces_for_test/1`; `Sandbox.set_describe_network_interfaces_responses/1` (key `"*"`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -2139,9 +2147,10 @@ defp do_describe_network_interfaces(opts) do
     |> maybe_put("NextToken", opts[:next_token])
     |> maybe_put("MaxResults", opts[:max_results])
 
-  "DescribeNetworkInterfaces"
-  |> perform(params, opts)
-  |> deserialize_response(opts, fn body -> {:ok, parse_describe_network_interfaces(body)} end)
+  with {:ok, op} <- build_operation("DescribeNetworkInterfaces", params, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, parse_describe_network_interfaces(body)}
+  end
 end
 
 @doc false
@@ -2242,7 +2251,7 @@ git commit -m "feat: EC2 DescribeNetworkInterfaces"
 - Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/ec2/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: `perform/3`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`.
+- Consumes: `build_operation/3`, `Client.request/1`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`.
 - Produces: `AwsSdk.EC2.describe_instance_status(opts) :: {:ok, %{instance_status_set: [map()], next_token: String.t() | nil}} | {:error, term()}`; `parse_describe_instance_status_for_test/1`; `Sandbox.set_describe_instance_status_responses/1` (key `"*"`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -2370,9 +2379,10 @@ defp do_describe_instance_status(opts) do
     |> maybe_put("NextToken", opts[:next_token])
     |> maybe_put("MaxResults", opts[:max_results])
 
-  "DescribeInstanceStatus"
-  |> perform(params, opts)
-  |> deserialize_response(opts, fn body -> {:ok, parse_describe_instance_status(body)} end)
+  with {:ok, op} <- build_operation("DescribeInstanceStatus", params, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, parse_describe_instance_status(body)}
+  end
 end
 
 @doc false
@@ -2447,7 +2457,7 @@ git commit -m "feat: EC2 DescribeInstanceStatus"
 - Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/ec2/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: `perform/3`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`.
+- Consumes: `build_operation/3`, `Client.request/1`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`.
 - Produces: `AwsSdk.EC2.describe_iam_instance_profile_associations(opts) :: {:ok, %{iam_instance_profile_association_set: [map()], next_token: String.t() | nil}} | {:error, term()}`; `parse_describe_iam_instance_profile_associations_for_test/1`; `Sandbox.set_describe_iam_instance_profile_associations_responses/1` (key `"*"`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -2553,11 +2563,10 @@ defp do_describe_iam_instance_profile_associations(opts) do
     |> maybe_put("NextToken", opts[:next_token])
     |> maybe_put("MaxResults", opts[:max_results])
 
-  "DescribeIamInstanceProfileAssociations"
-  |> perform(params, opts)
-  |> deserialize_response(opts, fn body ->
+  with {:ok, op} <- build_operation("DescribeIamInstanceProfileAssociations", params, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
     {:ok, parse_describe_iam_instance_profile_associations(body)}
-  end)
+  end
 end
 
 @doc false
@@ -2608,7 +2617,7 @@ git commit -m "feat: EC2 DescribeIamInstanceProfileAssociations"
 - Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/ec2/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: `perform/3`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`.
+- Consumes: `build_operation/3`, `Client.request/1`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`.
 - Produces:
   - `AwsSdk.EC2.create_network_insights_path(source :: String.t(), destination :: String.t(), protocol :: String.t(), opts) :: {:ok, %{network_insights_path: map()}} | {:error, term()}`
   - `AwsSdk.EC2.start_network_insights_analysis(path_id :: String.t(), opts) :: {:ok, %{network_insights_analysis: map()}} | {:error, term()}`
@@ -2863,9 +2872,10 @@ defp do_create_network_insights_path(source, destination, protocol, opts) do
     |> maybe_put("SourceIp", opts[:source_ip])
     |> maybe_put("DestinationIp", opts[:destination_ip])
 
-  "CreateNetworkInsightsPath"
-  |> perform(params, opts)
-  |> deserialize_response(opts, fn body -> {:ok, parse_create_network_insights_path(body)} end)
+  with {:ok, op} <- build_operation("CreateNetworkInsightsPath", params, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, parse_create_network_insights_path(body)}
+  end
 end
 
 @doc false
@@ -2931,11 +2941,10 @@ end
 defp do_start_network_insights_analysis(path_id, opts) do
   params = %{"NetworkInsightsPathId" => path_id, "ClientToken" => client_token(opts)}
 
-  "StartNetworkInsightsAnalysis"
-  |> perform(params, opts)
-  |> deserialize_response(opts, fn body ->
+  with {:ok, op} <- build_operation("StartNetworkInsightsAnalysis", params, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
     {:ok, parse_start_network_insights_analysis(body)}
-  end)
+  end
 end
 
 @doc false
@@ -3019,11 +3028,10 @@ defp do_describe_network_insights_analyses(opts) do
     |> maybe_put("NextToken", opts[:next_token])
     |> maybe_put("MaxResults", opts[:max_results])
 
-  "DescribeNetworkInsightsAnalyses"
-  |> perform(params, opts)
-  |> deserialize_response(opts, fn body ->
+  with {:ok, op} <- build_operation("DescribeNetworkInsightsAnalyses", params, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
     {:ok, parse_describe_network_insights_analyses(body)}
-  end)
+  end
 end
 
 @doc false
@@ -3064,9 +3072,10 @@ def delete_network_insights_path(path_id, opts \\ []) when is_binary(path_id) do
 end
 
 defp do_delete_network_insights_path(path_id, opts) do
-  "DeleteNetworkInsightsPath"
-  |> perform(%{"NetworkInsightsPathId" => path_id}, opts)
-  |> deserialize_response(opts, fn body -> {:ok, parse_delete_network_insights_path(body)} end)
+  with {:ok, op} <- build_operation("DeleteNetworkInsightsPath", %{"NetworkInsightsPathId" => path_id}, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, parse_delete_network_insights_path(body)}
+  end
 end
 
 @doc false
@@ -3333,7 +3342,7 @@ git commit -m "feat: EC2 Reachability Analyzer path/analysis lifecycle"
 - Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/auto_scaling/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: `flatten_query/1`, `perform/2..3`, `deserialize_response/3`, `nilify/1` in `auto_scaling.ex`.
+- Consumes: `build_operation/3`, `Client.request/1`, `flatten_query/1`, `nilify/1` in `auto_scaling.ex`.
 - Produces: `AwsSdk.AutoScaling.describe_scaling_activities(auto_scaling_group_name :: String.t(), opts) :: {:ok, %{activities: [map()], next_token: String.t() | nil}} | {:error, term()}`; `parse_describe_scaling_activities_for_test/1`; `Sandbox.set_describe_scaling_activities_responses/1` keyed off the group name.
 
 - [ ] **Step 1: Write the failing tests**
@@ -3460,9 +3469,10 @@ defp do_describe_scaling_activities(auto_scaling_group_name, opts) do
       "NextToken" => opts[:next_token]
     })
 
-  "DescribeScalingActivities"
-  |> perform(params, opts)
-  |> deserialize_response(opts, &parse_describe_scaling_activities/1)
+  with {:ok, op} <- build_operation("DescribeScalingActivities", params, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, parse_describe_scaling_activities(body)}
+  end
 end
 ```
 
@@ -3517,7 +3527,7 @@ git commit -m "feat: AutoScaling DescribeScalingActivities"
 - Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/elastic_load_balancing_v2/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: `flatten_query/1`, `perform/3`, `deserialize_response/3`, `nilify/1`, the existing listener xpath keyword list inside `parse_describe_listeners/1`.
+- Consumes: `build_operation/3`, `Client.request/1`, `flatten_query/1`, `nilify/1`, the existing listener xpath keyword list inside `parse_describe_listeners/1`.
 - Produces: `AwsSdk.ElasticLoadBalancingV2.modify_listener(listener_arn :: String.t(), default_actions :: [map()], opts) :: {:ok, %{listeners: [map()]}} | {:error, term()}`; `parse_modify_listener/1` (`@doc false` public, like the module's other `parse_*`); `Sandbox.set_modify_listener_responses/1` keyed off `listener_arn`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -3650,9 +3660,10 @@ defp do_modify_listener(listener_arn, default_actions, opts) do
       "Certificates" => opts[:certificates]
     })
 
-  "ModifyListener"
-  |> perform(params, opts)
-  |> deserialize_response(opts, &parse_modify_listener/1)
+  with {:ok, op} <- build_operation("ModifyListener", params, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, parse_modify_listener(body)}
+  end
 end
 ```
 
@@ -3705,7 +3716,7 @@ git commit -m "feat: ELBv2 ModifyListener"
 - Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/iam/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: IAM's `perform`/`build_operation` pipeline (mirror `do_get_role/2`'s structure exactly — open it first), the existing `parse_role/2` (called as `parse_role(body, selector)`).
+- Consumes: IAM's `build_operation/3` + `Client.request/1` pipeline (mirror `do_get_role/2`'s structure exactly — open it first), the existing `parse_role/2` (called as `parse_role(body, selector)`).
 - Produces: `AwsSdk.IAM.get_instance_profile(instance_profile_name :: String.t(), opts) :: {:ok, %{instance_profile: map()}} | {:error, term()}`; `parse_instance_profile_for_test/1`; `Sandbox.set_get_instance_profile_responses/1` keyed off the profile name.
 
 - [ ] **Step 1: Write the failing tests**
@@ -3761,7 +3772,7 @@ end
 
 - [ ] **Step 3: Implement**
 
-Public function (mirror the request-building of `do_get_role/2` in the same file — same `perform`/params/`deserialize_response` calls, only the action name, param key, and parse function differ):
+Public function (mirror the request-building of `do_get_role/2` in the same file — same `build_operation` + `Client.request` `with` pipeline, only the action name, param key, and parse function differ):
 
 ```elixir
 @doc """
@@ -3798,7 +3809,7 @@ def get_instance_profile(instance_profile_name, opts \\ [])
 end
 ```
 
-`do_get_instance_profile/2` sends `%{"InstanceProfileName" => instance_profile_name}` with action `"GetInstanceProfile"` through the exact same pipeline `do_get_role/2` uses (copy its body, changing only action, params, and the parse callback to `fn body -> {:ok, parse_instance_profile(body)} end`).
+`do_get_instance_profile/2` sends `%{"InstanceProfileName" => instance_profile_name}` with action `"GetInstanceProfile"` through the exact same `with` pipeline `do_get_role/2` uses (copy its body, changing only the action, params, and the success expression to `{:ok, parse_instance_profile(body)}`).
 
 Parser — reuse `parse_role/2` for the nested roles:
 
@@ -3845,7 +3856,7 @@ git commit -m "feat: IAM GetInstanceProfile"
 - Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/s3/sandbox_test.exs`, `test/aws_sdk/s3/xml_builder_test.exs` (if this file exists — check; otherwise put the builder assertions in the conformance test)
 
 **Interfaces:**
-- Consumes: `s3_request/4`, `put_opts/2`, `xml_body_headers/1`, `deserialize_response/3` in `s3.ex`; SweetXml (already imported or aliased in `s3.ex` — check how `XMLParser` is used and follow; the parse function may live in `AwsSdk.S3.XMLParser` if that is where the module keeps body parsers — mirror `parse_complete_multipart`'s home).
+- Consumes: `build_operation/4`, `Client.request/1`, `put_opts/2`, `xml_body_headers/1` in `s3.ex`; SweetXml (already imported or aliased in `s3.ex` — check how `XMLParser` is used and follow; the parse function may live in `AwsSdk.S3.XMLParser` if that is where the module keeps body parsers — mirror `parse_complete_multipart`'s home).
 - Produces: `AwsSdk.S3.delete_objects(bucket :: String.t(), objects :: [String.t() | map()], opts) :: {:ok, %{deleted: [map()], error: [map()]}} | {:error, term()}`; `AwsSdk.S3.XMLBuilder.build_delete(objects, quiet :: boolean())`; `AwsSdk.S3.XMLParser.parse_delete_result/1`; `Sandbox.set_delete_objects_responses/1` keyed off `bucket` (exact string or regex, like the other S3 setters).
 
 - [ ] **Step 1: Write the failing tests**
@@ -4029,11 +4040,10 @@ defp do_delete_objects(bucket, objects, opts) do
   headers = xml_body_headers(xml)
   request_opts = put_opts(opts, query: %{"delete" => ""}, body: xml, headers: headers)
 
-  :post
-  |> s3_request(bucket, nil, request_opts)
-  |> deserialize_response(opts, fn %{body: body} ->
+  with {:ok, op} <- build_operation(:post, bucket, nil, request_opts),
+       {:ok, %{body: body}} <- Client.request(op) do
     {:ok, XMLParser.parse_delete_result(body)}
-  end)
+  end
 end
 ```
 

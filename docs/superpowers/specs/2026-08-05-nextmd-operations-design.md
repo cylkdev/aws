@@ -14,7 +14,8 @@ All are functions added to existing service modules — no new modules. Commit
 
 - Public function with a `sandbox?/1` branch delegating to the service's
   `Sandbox` module; otherwise a `do_*` private impl: params →
-  `Client.perform` → parse.
+  `with {:ok, op} <- build_operation(...), {:ok, %{body: body}} <- Client.request(op)`
+  → parse (the explicit pipeline from the Client.request refactor).
 - Response parsed to the **full documented AWS shape** per the response
   fidelity rules in `CLAUDE.md`: nesting preserved, member names preserved
   (`snake_case` of the AWS name), `*Set/item` lists preserved, nothing

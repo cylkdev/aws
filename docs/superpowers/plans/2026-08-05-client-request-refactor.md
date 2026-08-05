@@ -550,15 +550,14 @@ git commit -m "refactor: S3 ops call Client.request through explicit with-pipeli
 
 ---
 
-### Task 13: Update CLAUDE.md and the NEXT.md operations plan
+### Task 13: Update CLAUDE.md
 
 **Files:**
 - Modify: `CLAUDE.md` (architecture bullet + error-handling section)
-- Modify: `docs/superpowers/plans/2026-08-05-nextmd-operations.md` (every task's implementation tail)
 
 **Interfaces:**
 - Consumes: the migrated codebase from Tasks 1–12.
-- Produces: documentation that matches the code, and a NEXT.md backlog plan whose code is written in the new style.
+- Produces: documentation that matches the code. (The NEXT.md backlog plan was already rewritten to the new style — `grep -c "perform\|deserialize_response" docs/superpowers/plans/2026-08-05-nextmd-operations.md` is 0.)
 
 - [ ] **Step 1: Update CLAUDE.md**
 
@@ -576,20 +575,11 @@ In the error-handling section, replace the sentence describing where mapping hap
 
 (Keep the `ErrorMessage`/adapter sentences as they are.)
 
-- [ ] **Step 2: Revise the NEXT.md operations plan**
+- [ ] **Step 2: Verify** — `mix compile && mix test` (docs only — still green).
 
-In `docs/superpowers/plans/2026-08-05-nextmd-operations.md`, rewrite every implementation tail from the old style to the new one — mechanical, same substitution as the migrations:
-
-- JSON (SSM tasks): `perform("<Action>", data, opts) |> deserialize_response(opts, fn body -> Serializer.deserialize(body, deserialize_opts(opts)) end)` → `with {:ok, op} <- build_operation("<Action>", data, opts), {:ok, %{body: body}} <- Client.request(op) do {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))} end` (with each task's real action string).
-- Query/XML (EC2/AutoScaling/ELBv2/IAM tasks): `"<Action>" |> perform(params, opts) |> deserialize_response(opts, fn body -> {:ok, parse_x(body)} end)` → `with {:ok, op} <- build_operation("<Action>", params, opts), {:ok, %{body: body}} <- Client.request(op) do {:ok, parse_x(body)} end`.
-- S3 task 18: the `s3_request`/`deserialize_response` tail → the Task 12 shape (`build_operation(:post, bucket, nil, request_opts)` + `Client.request` + `{:ok, XMLParser.parse_delete_result(body)}`).
-- Also update the two "Standard wiring recipe" sections' pipeline code to the new shape, and Task 15/16's `deserialize_response(opts, &parse_x/1)` tails per the Task 10 example.
-
-- [ ] **Step 3: Verify** — `mix compile && mix test` (still green — docs only), and `grep -n "deserialize_response\|perform(" docs/superpowers/plans/2026-08-05-nextmd-operations.md` returns nothing.
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add CLAUDE.md docs/superpowers/plans/2026-08-05-nextmd-operations.md
-git commit -m "docs: architecture and backlog plan reflect Client.request pipelines"
+git add CLAUDE.md
+git commit -m "docs: architecture reflects Client.request pipelines"
 ```
