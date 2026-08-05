@@ -52,7 +52,7 @@ existing EC2 describe.
 |---|---|---|
 | `terminate_instances` | `(instance_ids, opts)` | Parses `instancesSet` → `[%{instance_id, current_state, previous_state}]` with state `code` as integer. |
 | `get_console_output` | `(instance_id, opts)` | `:latest` in opts. `output` Base64-decoded (per NEXT.md); `timestamp` kept as the ISO8601 string. |
-| `describe_network_acls` | `(opts)` | Full shape: `entrySet` (icmp type/code, port range), `associationSet`, `tagSet`, `is_default`, `vpc_id`, `owner_id`, `next_token`. |
+| `describe_network_acls` | `(opts)` | Full shape: `entrySet` (icmp type/code, port range), `associationSet`, `tagSet`, `default`, `vpc_id`, `owner_id`, `next_token`. |
 | `describe_route_tables` | `(opts)` | `routeSet`, `associationSet` (incl. `associationState`), `propagatingVgwSet`, `tagSet`, `next_token`. |
 | `describe_key_pairs` | `(opts)` | `keySet` with fingerprint, type, create time, tags. |
 | `delete_key_pair` | `(key_name, opts)` | Returns `return`/`key_pair_id` per the documented response. |
@@ -61,7 +61,7 @@ existing EC2 describe.
 | `describe_network_interfaces` | `(opts)` | `attachment`, `association`, `groupSet`, `privateIpAddressesSet`, `tagSet`, `next_token`. |
 | `describe_instance_status` | `(opts)` | `:instance_ids`, `:include_all_instances`. `systemStatus`/`instanceStatus` with `details` lists, `eventsSet`. |
 | `describe_iam_instance_profile_associations` | `(opts)` | Association id, instance id, `iamInstanceProfile`, state, timestamp. |
-| `create_network_insights_path` | `(source, destination, protocol, opts)` | `destination` positional (NEXT.md specifies it; deployd always passes it) even though AWS marks it optional. `:destination_port` in opts. Auto-generated `ClientToken` UUID. Returns the full `NetworkInsightsPath`. |
+| `create_network_insights_path` | `(source, destination, protocol, opts)` | `destination` positional (NEXT.md specifies it; deployd always passes it) even though AWS marks it optional. `:destination_port` in opts. Auto-generated `ClientToken` idempotency token. Returns the full `NetworkInsightsPath`. |
 | `start_network_insights_analysis` | `(path_id, opts)` | Auto `ClientToken`. Returns the full `NetworkInsightsAnalysis` (initial state). |
 | `describe_network_insights_analyses` | `(opts)` | `:analysis_ids`, `:path_id`, filters, pagination. Full documented shape including `status`, `network_path_found`, `explanations`, `forward_path_components`/`return_path_components` — parsed per the documented members, not truncated. Deployd polls `status == "succeeded"`. |
 | `delete_network_insights_path` | `(path_id, opts)` | Returns the deleted path id. |
@@ -88,15 +88,16 @@ existing EC2 describe.
 
 | Function | Signature | Notes |
 |---|---|---|
-| `delete_objects` | `(bucket, objects, opts)` | POST `?delete` with XML body from a new `S3.XMLBuilder.build_delete/1`; `Content-MD5` header (S3 requires it for this operation). `objects`: list of keys (binaries) or `%{key: _, version_id: _}` maps. `:quiet` in opts. Parses `DeleteResult` into `deleted: [...]` and `error: [...]` lists with anchored selectors (S3 can return `<Error>` on a 200). |
+| `delete_objects` | `(bucket, objects, opts)` | POST `?delete` with XML body from a new `S3.XMLBuilder.build_delete/2` (objects, quiet); `Content-MD5` header (S3 requires it for this operation). `objects`: list of keys (binaries) or `%{key: _, version_id: _}` maps. `:quiet` in opts. Parses `DeleteResult` into `deleted: [...]` and `error: [...]` lists with anchored selectors (S3 can return `<Error>` on a 200). |
 
 ## Testing
 
 - Conformance: one fixture-backed parse case per new parser in
   `test/aws_sdk/conformance_test.exs` — this is where response fidelity is
-  enforced.
-- Sandbox: per-operation tests asserting delegation, keying, and
-  `AwsSdk.Counter` behavior, in each service's sandbox test file.
+  enforced. XML services only: SSM's responses go through the generic JSON
+  deserializer, so there is no per-operation parser to conform.
+- Sandbox: per-operation tests asserting delegation and keying, in each
+  service's sandbox test file.
 - `mix compile` (warnings-as-errors), `mix test`, `mix format` clean at
   every commit.
 
@@ -125,6 +126,7 @@ conformance + sandbox tests together), matching `e44e734`:
 16. ElasticLoadBalancingV2 `modify_listener`
 17. IAM `get_instance_profile`
 18. S3 `delete_objects`
+19. retire `NEXT.md` (standalone chore commit)
 
 `NEXT.md` is deleted in the final commit once everything on it is
 implemented.

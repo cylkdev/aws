@@ -4,17 +4,19 @@
 
 **Goal:** Implement every operation in NEXT.md (the deployd backlog) across the existing SSM, EC2, AutoScaling, ElasticLoadBalancingV2, IAM, and S3 modules, per the approved spec `docs/superpowers/specs/2026-08-05-nextmd-operations-design.md`.
 
-**Architecture:** Each operation is one public function added to an existing service module following the `e44e734` pattern: public fn with `sandbox?/1` branch, `do_*` private impl (params → explicit `build_operation` + `Client.request` `with` pipeline → parse), full-fidelity response parsing, `defdelegate sandbox_<op>_response`, and the `<op>_response`/`set_<op>_responses` pair in the service's Sandbox module. No new modules except one new function in `AwsSdk.S3.XMLBuilder`.
+**Architecture:** Each operation is one public function added to an existing service module following the `e44e734` pattern: public fn with `sandbox?/1` branch, `do_*` private impl (params → explicit `build_operation` + `Client.request` `with` pipeline → parse), full-fidelity response parsing, `defdelegate sandbox_<op>_response`, and the `<op>_response`/`set_<op>_responses` pair in the service's Sandbox module. No new modules; new code lands in existing modules (including `AwsSdk.S3.XMLBuilder.build_delete/2` and `AwsSdk.S3.XMLParser.parse_delete_result/1`).
 
 **Tech Stack:** Elixir, SweetXml (XML parsing), Erlang `:json` (JSON 1.1 protocol), SandboxRegistry (test sandbox), ExUnit.
 
 ## Global Constraints
 
+- **Prerequisite:** this plan assumes `docs/superpowers/plans/2026-08-05-client-request-refactor.md` is fully merged — `AwsSdk.Client.request/1` exists and no service module retains `perform`/`deserialize_response`. Do not start Task 1 before that.
 - `mix compile` is warnings-as-errors outside test. Run `mix compile`, `mix test`, and `mix format` before every commit; all must be clean.
 - **Response fidelity (from CLAUDE.md, non-negotiable):** parsers extract fields, never redesign. Nesting preserved (`<placement><groupName>` → `placement: %{group_name: ...}`); member names preserved as snake_case of the AWS name (no renaming, no synthesized keys); `<xxxSet><item>` → `xxx_set: [%{...}]` (the `Set` suffix stays); nothing dropped including `next_token`; only the outer `<XxxResponse>`/`<XxxResult>` envelope and RequestId metadata are omitted.
-- **Timestamps stay ISO8601 strings** in the XML services. This matches the codebase (`e44e734` keeps `createTime` as `os`; AutoScaling keeps `StartTime` as `s`; IAM keeps `create_date` as a string). The spec's mention of `DateTime` coercion is overridden by the module-convention rule — do NOT parse timestamps into `DateTime` structs.
-- **Booleans:** read as `os` strings in the xpath keyword list, then coerce afterwards using each module's own existing pattern and nothing else — EC2: a named `coerce_<field>/1` defp applied with `Enum.map(items, &coerce_<field>/1)`, body `%{item | field: value === "true"}` (mirror `coerce_is_default/1`); S3's `XMLParser`: the existing `to_bool/1`; ELBv2: the existing `boolish/1`. Do not introduce new coercion helpers where one exists, and do not coerce inline in the keyword list.
-- XML selectors are always anchored to their result element (`~x"//DescribeSnapshotsResponse/snapshotSet/item"l` style — never a bare `~x"//item"l`). Nested singletons use an optional anchor (`~x"./ebs"o`) so absent structures parse to `nil`.
+- **Timestamps stay ISO8601 strings** in the XML services. This matches the codebase (`e44e734` keeps `createTime` as `os`; AutoScaling keeps `StartTime` as `s`; IAM keeps `create_date` as a string). CLAUDE.md's general leaf-coercion note notwithstanding, do NOT parse timestamps into `DateTime` structs — the module convention wins.
+- **Booleans:** each task's coercer names exactly the boolean members it coerces; every other boolean member stays a wire string, matching `e44e734`'s `launchTemplateData` (which leaves nested booleans as strings). Coerced members AWS always returns are read `s` and coerced `=== "true"` (mirror `coerce_is_default/1`, `ec2.ex:643`, which also reads `s`); genuinely optional ones (`networkPathFound`) are read `os` with a nil-preserving coercer clause. EC2 coercers are named `coerce_<field>/1` for a single field or `coerce_<entity>/1` when one item needs several fields coerced, applied with `Enum.map`; S3's `XMLParser` uses the existing `to_bool/1`. The one precedented inline coercion is `parse_return/1`'s `== "true"` on a bare `<return>` scalar — `parse_delete_key_pair/1` mirrors it. Do not introduce new coercion helpers where one exists.
+- XML list selectors anchor at the set element, exactly as EC2 already does (`~x"//snapshotSet/item"l`, matching `~x"//vpcSet/item"l` at `ec2.ex:596` and `~x"//launchTemplates/item"l` at `ec2.ex:1448`) — never a bare `~x"//item"l`. Scalars like `next_token` stay response-anchored (`~x"//DescribeSnapshotsResponse/nextToken/text()"os`, per the `e44e734` precedent). AutoScaling/ELBv2/IAM anchor at their `<XxxResult>` element with `e`, as their existing parsers do. Nested singletons use an optional anchor (`~x"./ebs"o`) so absent structures parse to `nil`.
+- **Model drift:** before committing each EC2 describe, diff the parser's keyword list against the current botocore model for that response shape and add any documented member this plan missed — the fidelity rule binds to the live model, not to this document.
 - Sandbox registry key = the operation's first positional argument. When the first positional argument is a list, or the op has only `opts`, the key is `"*"` and `set_*_responses` accepts bare `fn`s (mirrors `AwsSdk.SSM.Sandbox.get_parameters_response/2`).
 - Commit messages: conventional (`feat: ...`), body explains what/why, ending with `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 - SSM (JSON 1.1) responses are deserialized generically by `ExUtils.Serializer` — SSM ops have **no hand-written parser and no conformance test**; they get sandbox tests only. XML ops (EC2, AutoScaling, ELBv2, IAM, S3) each get a fixture-backed conformance test in `test/aws_sdk/conformance_test.exs` plus sandbox tests.
@@ -22,7 +24,7 @@
 
 ### Standard wiring recipe A — SSM (JSON 1.1) op
 
-Used by Tasks 1–3. For an op named `<op>` (AWS action `<Action>`), the pieces are, with only the marked parts varying per task:
+Used by Tasks 1–3; its sandbox half is reused by Tasks 15–18 with each module's own naming (noted per task — e.g. AutoScaling abbreviates the group-name argument as `asg`). For an op named `<op>` (AWS action `<Action>`), the pieces are, with only the marked parts varying per task:
 
 In `lib/aws_sdk/ssm.ex`, in the section indicated by the task — public fn + `do_` impl (task supplies signature, guard, and data map):
 
@@ -60,6 +62,8 @@ And in the `else` branch, matching arity:
 defp sandbox_<op>_response(<underscored args>, _), do: raise("sandbox not available")
 ```
 
+That one-line raise is SSM/EC2's stub style. AutoScaling raises its `@sandbox_unavailable` module attribute with `(_a, _o)`-style args, and S3's stubs are full functions raising a heredoc — Tasks 15 and 18 show their modules' exact forms.
+
 In `lib/aws_sdk/ssm/sandbox.ex` (task supplies the key expression — the first positional arg, or `"*"` when that arg is a list):
 
 ```elixir
@@ -92,9 +96,9 @@ defp parse_<op>(body) do
 end
 ```
 
-Sandbox delegates live in `lib/aws_sdk/ec2.ex`'s `if Code.ensure_loaded?(SandboxRegistry)` block (with matching `else` stubs), and the response/set pair in `lib/aws_sdk/ec2/sandbox.ex`, exactly as in recipe A. `import SweetXml, only: [xpath: 2, xpath: 3]` and the `~x` sigil are already available in `ec2.ex`.
+Sandbox delegates live in `lib/aws_sdk/ec2.ex`'s `if Code.ensure_loaded?(SandboxRegistry)` block (with matching `else` stubs), and the response/set pair in `lib/aws_sdk/ec2/sandbox.ex`, exactly as in recipe A. `ec2.ex` already has `import SweetXml, only: [xpath: 2, xpath: 3, sigil_x: 2]`.
 
-AutoScaling (Task 15), ELBv2 (Task 16), and IAM (Task 17) follow the same recipe with their modules' own helpers: AutoScaling/ELBv2 build params with `flatten_query/1` and use extracted `parse_*/1` functions; IAM builds a params map merged with `Action`/`Version` by its own `build_operation`.
+AutoScaling (Task 15), ELBv2 (Task 16), and IAM (Task 17) follow the same recipe with their modules' own helpers: AutoScaling/ELBv2 build params with `flatten_query/1` and use extracted `parse_*/1` functions; IAM builds a params map merged with `Action`/`Version` by its own `build_operation`. S3 (Task 18) differs only in `build_operation(method, bucket, key, opts)` — its operation identity is the HTTP method + URL, not an `Action` param.
 
 ---
 
@@ -677,7 +681,7 @@ git commit -m "feat: SSM ListCommandInvocations"
 - Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/ec2/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: `build_operation/3`, `Client.request/1`, `put_member_list/3`, `maybe_put/3` in `ec2.ex`.
+- Consumes: `build_operation/3`, `Client.request/1`, `put_member_list/3` in `ec2.ex`.
 - Produces: `AwsSdk.EC2.terminate_instances(instance_ids :: [String.t()], opts :: keyword()) :: {:ok, %{instances_set: [map()]}} | {:error, term()}`; `AwsSdk.EC2.parse_terminate_instances_for_test/1`; `AwsSdk.EC2.Sandbox.set_terminate_instances_responses/1` (bare `fn`s, key `"*"`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -787,7 +791,7 @@ def parse_terminate_instances_for_test(xml), do: parse_terminate_instances(xml)
 defp parse_terminate_instances(body) do
   %{
     instances_set:
-      xpath(body, ~x"//TerminateInstancesResponse/instancesSet/item"l,
+      xpath(body, ~x"//instancesSet/item"l,
         instance_id: ~x"./instanceId/text()"s,
         current_state: [
           ~x"./currentState"o,
@@ -1152,10 +1156,10 @@ def parse_describe_network_acls_for_test(xml), do: parse_describe_network_acls(x
 
 defp parse_describe_network_acls(body) do
   acls =
-    xpath(body, ~x"//DescribeNetworkAclsResponse/networkAclSet/item"l,
+    xpath(body, ~x"//networkAclSet/item"l,
       network_acl_id: ~x"./networkAclId/text()"s,
       vpc_id: ~x"./vpcId/text()"os,
-      default: ~x"./default/text()"os,
+      default: ~x"./default/text()"s,
       owner_id: ~x"./ownerId/text()"os,
       entry_set: [
         ~x"./entrySet/item"l,
@@ -1163,7 +1167,7 @@ defp parse_describe_network_acls(body) do
         # protocol is "-1" or an IANA number; AWS types it as a string.
         protocol: ~x"./protocol/text()"os,
         rule_action: ~x"./ruleAction/text()"os,
-        egress: ~x"./egress/text()"os,
+        egress: ~x"./egress/text()"s,
         cidr_block: ~x"./cidrBlock/text()"os,
         ipv6_cidr_block: ~x"./ipv6CidrBlock/text()"os,
         icmp_type_code: [
@@ -1358,7 +1362,7 @@ def parse_describe_route_tables_for_test(xml), do: parse_describe_route_tables(x
 
 defp parse_describe_route_tables(body) do
   tables =
-    xpath(body, ~x"//DescribeRouteTablesResponse/routeTableSet/item"l,
+    xpath(body, ~x"//routeTableSet/item"l,
       route_table_id: ~x"./routeTableId/text()"s,
       vpc_id: ~x"./vpcId/text()"os,
       owner_id: ~x"./ownerId/text()"os,
@@ -1367,6 +1371,7 @@ defp parse_describe_route_tables(body) do
         destination_cidr_block: ~x"./destinationCidrBlock/text()"os,
         destination_ipv6_cidr_block: ~x"./destinationIpv6CidrBlock/text()"os,
         destination_prefix_list_id: ~x"./destinationPrefixListId/text()"os,
+        egress_only_internet_gateway_id: ~x"./egressOnlyInternetGatewayId/text()"os,
         gateway_id: ~x"./gatewayId/text()"os,
         instance_id: ~x"./instanceId/text()"os,
         instance_owner_id: ~x"./instanceOwnerId/text()"os,
@@ -1386,7 +1391,7 @@ defp parse_describe_route_tables(body) do
         route_table_id: ~x"./routeTableId/text()"os,
         subnet_id: ~x"./subnetId/text()"os,
         gateway_id: ~x"./gatewayId/text()"os,
-        main: ~x"./main/text()"os,
+        main: ~x"./main/text()"s,
         association_state: [
           ~x"./associationState"o,
           state: ~x"./state/text()"os,
@@ -1432,7 +1437,7 @@ git commit -m "feat: EC2 DescribeRouteTables"
 - Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/ec2/sandbox_test.exs`
 
 **Interfaces:**
-- Consumes: `build_operation/3`, `Client.request/1`, `put_member_list/3`, `put_filters/2`, `maybe_put/3`, existing `parse_return/1` (returns `%{return: boolean}`).
+- Consumes: `build_operation/3`, `Client.request/1`, `put_member_list/3`, `put_filters/2`, `maybe_put/3` in `ec2.ex`.
 - Produces: `AwsSdk.EC2.describe_key_pairs(opts) :: {:ok, %{key_set: [map()]}} | {:error, term()}`; `AwsSdk.EC2.delete_key_pair(key_name :: String.t(), opts) :: {:ok, %{return: boolean(), key_pair_id: String.t() | nil}} | {:error, term()}`; `parse_describe_key_pairs_for_test/1`, `parse_delete_key_pair_for_test/1`; `Sandbox.set_describe_key_pairs_responses/1` (key `"*"`), `Sandbox.set_delete_key_pair_responses/1` (keyed off `key_name`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -1561,7 +1566,7 @@ def parse_describe_key_pairs_for_test(xml), do: parse_describe_key_pairs(xml)
 defp parse_describe_key_pairs(body) do
   %{
     key_set:
-      xpath(body, ~x"//DescribeKeyPairsResponse/keySet/item"l,
+      xpath(body, ~x"//keySet/item"l,
         key_pair_id: ~x"./keyPairId/text()"os,
         key_name: ~x"./keyName/text()"s,
         key_fingerprint: ~x"./keyFingerprint/text()"os,
@@ -1603,7 +1608,7 @@ def parse_delete_key_pair_for_test(xml), do: parse_delete_key_pair(xml)
 
 defp parse_delete_key_pair(body) do
   %{
-    return: xpath(body, ~x"//DeleteKeyPairResponse/return/text()"os) === "true",
+    return: xpath(body, ~x"//DeleteKeyPairResponse/return/text()"os) == "true",
     key_pair_id: xpath(body, ~x"//DeleteKeyPairResponse/keyPairId/text()"os)
   }
 end
@@ -1762,11 +1767,11 @@ def parse_describe_security_group_rules_for_test(xml),
 
 defp parse_describe_security_group_rules(body) do
   rules =
-    xpath(body, ~x"//DescribeSecurityGroupRulesResponse/securityGroupRuleSet/item"l,
+    xpath(body, ~x"//securityGroupRuleSet/item"l,
       security_group_rule_id: ~x"./securityGroupRuleId/text()"s,
       group_id: ~x"./groupId/text()"os,
       group_owner_id: ~x"./groupOwnerId/text()"os,
-      is_egress: ~x"./isEgress/text()"os,
+      is_egress: ~x"./isEgress/text()"s,
       ip_protocol: ~x"./ipProtocol/text()"os,
       from_port: ~x"./fromPort/text()"oi,
       to_port: ~x"./toPort/text()"oi,
@@ -1946,7 +1951,7 @@ def parse_describe_snapshots_for_test(xml), do: parse_describe_snapshots(xml)
 
 defp parse_describe_snapshots(body) do
   snapshots =
-    xpath(body, ~x"//DescribeSnapshotsResponse/snapshotSet/item"l,
+    xpath(body, ~x"//snapshotSet/item"l,
       snapshot_id: ~x"./snapshotId/text()"s,
       volume_id: ~x"./volumeId/text()"os,
       status: ~x"./status/text()"os,
@@ -1957,11 +1962,18 @@ defp parse_describe_snapshots(body) do
       owner_alias: ~x"./ownerAlias/text()"os,
       volume_size: ~x"./volumeSize/text()"oi,
       description: ~x"./description/text()"os,
-      encrypted: ~x"./encrypted/text()"os,
+      encrypted: ~x"./encrypted/text()"s,
       kms_key_id: ~x"./kmsKeyId/text()"os,
+      data_encryption_key_id: ~x"./dataEncryptionKeyId/text()"os,
       outpost_arn: ~x"./outpostArn/text()"os,
       storage_tier: ~x"./storageTier/text()"os,
       restore_expiry_time: ~x"./restoreExpiryTime/text()"os,
+      sse_type: ~x"./sseType/text()"os,
+      availability_zone: ~x"./availabilityZone/text()"os,
+      transfer_type: ~x"./transferType/text()"os,
+      completion_duration_minutes: ~x"./completionDurationMinutes/text()"oi,
+      completion_time: ~x"./completionTime/text()"os,
+      full_snapshot_size_in_bytes: ~x"./fullSnapshotSizeInBytes/text()"oi,
       tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
     )
 
@@ -2162,7 +2174,7 @@ def parse_describe_network_interfaces_for_test(xml), do: parse_describe_network_
 
 defp parse_describe_network_interfaces(body) do
   enis =
-    xpath(body, ~x"//DescribeNetworkInterfacesResponse/networkInterfaceSet/item"l,
+    xpath(body, ~x"//networkInterfaceSet/item"l,
       network_interface_id: ~x"./networkInterfaceId/text()"s,
       subnet_id: ~x"./subnetId/text()"os,
       vpc_id: ~x"./vpcId/text()"os,
@@ -2170,14 +2182,30 @@ defp parse_describe_network_interfaces(body) do
       description: ~x"./description/text()"os,
       owner_id: ~x"./ownerId/text()"os,
       requester_id: ~x"./requesterId/text()"os,
-      requester_managed: ~x"./requesterManaged/text()"os,
+      requester_managed: ~x"./requesterManaged/text()"s,
       status: ~x"./status/text()"os,
       mac_address: ~x"./macAddress/text()"os,
       private_ip_address: ~x"./privateIpAddress/text()"os,
       private_dns_name: ~x"./privateDnsName/text()"os,
-      source_dest_check: ~x"./sourceDestCheck/text()"os,
+      source_dest_check: ~x"./sourceDestCheck/text()"s,
       interface_type: ~x"./interfaceType/text()"os,
       outpost_arn: ~x"./outpostArn/text()"os,
+      deny_all_igw_traffic: ~x"./denyAllIgwTraffic/text()"os,
+      ipv6_native: ~x"./ipv6Native/text()"os,
+      ipv6_address: ~x"./ipv6Address/text()"os,
+      operator: [
+        ~x"./operator"o,
+        managed: ~x"./managed/text()"os,
+        principal: ~x"./principal/text()"os
+      ],
+      connection_tracking_configuration: [
+        ~x"./connectionTrackingConfiguration"o,
+        tcp_established_timeout: ~x"./tcpEstablishedTimeout/text()"oi,
+        udp_stream_timeout: ~x"./udpStreamTimeout/text()"oi,
+        udp_timeout: ~x"./udpTimeout/text()"oi
+      ],
+      ipv4_prefix_set: [~x"./ipv4PrefixSet/item"l, ipv4_prefix: ~x"./ipv4Prefix/text()"os],
+      ipv6_prefix_set: [~x"./ipv6PrefixSet/item"l, ipv6_prefix: ~x"./ipv6Prefix/text()"os],
       group_set: [
         ~x"./groupSet/item"l,
         group_id: ~x"./groupId/text()"os,
@@ -2395,9 +2423,10 @@ def parse_describe_instance_status_for_test(xml), do: parse_describe_instance_st
 defp parse_describe_instance_status(body) do
   %{
     instance_status_set:
-      xpath(body, ~x"//DescribeInstanceStatusResponse/instanceStatusSet/item"l,
+      xpath(body, ~x"//instanceStatusSet/item"l,
         instance_id: ~x"./instanceId/text()"s,
         availability_zone: ~x"./availabilityZone/text()"os,
+        availability_zone_id: ~x"./availabilityZoneId/text()"os,
         outpost_arn: ~x"./outpostArn/text()"os,
         operator: [
           ~x"./operator"o,
@@ -2582,7 +2611,7 @@ defp parse_describe_iam_instance_profile_associations(body) do
     iam_instance_profile_association_set:
       xpath(
         body,
-        ~x"//DescribeIamInstanceProfileAssociationsResponse/iamInstanceProfileAssociationSet/item"l,
+        ~x"//iamInstanceProfileAssociationSet/item"l,
         association_id: ~x"./associationId/text()"s,
         instance_id: ~x"./instanceId/text()"os,
         iam_instance_profile: [
@@ -2686,7 +2715,7 @@ test "DescribeNetworkInsightsAnalyses keeps status, path-found flag, and explana
   <explanationSet><item>
   <direction>ingress</direction><explanationCode>ENI_SG_RULES_MISMATCH</explanationCode>
   <networkInterface><id>eni-1</id><arn>arn:aws:ec2:us-east-1:1:network-interface/eni-1</arn></networkInterface>
-  <securityGroups><item><id>sg-1</id></item></securityGroups>
+  <securityGroupSet><item><id>sg-1</id></item></securityGroupSet>
   <port>443</port>
   </item></explanationSet>
   <forwardPathComponentSet><item>
@@ -2694,9 +2723,9 @@ test "DescribeNetworkInsightsAnalyses keeps status, path-found flag, and explana
   <component><id>i-1</id><name>web</name></component>
   <subnet><id>subnet-1</id></subnet>
   <outboundHeader><protocol>6</protocol>
-  <sourceAddresses><item>10.0.1.5/32</item></sourceAddresses>
-  <destinationAddresses><item>10.0.2.9/32</item></destinationAddresses>
-  <destinationPortRanges><item><from>443</from><to>443</to></item></destinationPortRanges>
+  <sourceAddressSet><item>10.0.1.5/32</item></sourceAddressSet>
+  <destinationAddressSet><item>10.0.2.9/32</item></destinationAddressSet>
+  <destinationPortRangeSet><item><from>443</from><to>443</to></item></destinationPortRangeSet>
   </outboundHeader>
   </item></forwardPathComponentSet>
   </item></networkInsightsAnalysisSet></DescribeNetworkInsightsAnalysesResponse>
@@ -2889,7 +2918,7 @@ def parse_create_network_insights_path_for_test(xml),
 defp parse_create_network_insights_path(body) do
   %{
     network_insights_path:
-      xpath(body, ~x"//CreateNetworkInsightsPathResponse/networkInsightsPath"o,
+      xpath(body, ~x"//networkInsightsPath"e,
         network_insights_path_id: ~x"./networkInsightsPathId/text()"s,
         network_insights_path_arn: ~x"./networkInsightsPathArn/text()"os,
         created_date: ~x"./createdDate/text()"os,
@@ -2901,9 +2930,29 @@ defp parse_create_network_insights_path(body) do
         destination_ip: ~x"./destinationIp/text()"os,
         protocol: ~x"./protocol/text()"os,
         destination_port: ~x"./destinationPort/text()"oi,
+        filter_at_source: [~x"./filterAtSource"o | path_filter_fields()],
+        filter_at_destination: [~x"./filterAtDestination"o | path_filter_fields()],
         tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
       )
   }
+end
+
+# PathFilter, shared by filterAtSource and filterAtDestination.
+defp path_filter_fields do
+  [
+    source_address: ~x"./sourceAddress/text()"os,
+    source_port_range: [
+      ~x"./sourcePortRange"o,
+      from_port: ~x"./fromPort/text()"oi,
+      to_port: ~x"./toPort/text()"oi
+    ],
+    destination_address: ~x"./destinationAddress/text()"os,
+    destination_port_range: [
+      ~x"./destinationPortRange"o,
+      from_port: ~x"./fromPort/text()"oi,
+      to_port: ~x"./toPort/text()"oi
+    ]
+  ]
 end
 
 @doc """
@@ -2956,14 +3005,14 @@ def parse_start_network_insights_analysis_for_test(xml),
   do: parse_start_network_insights_analysis(xml)
 
 defp parse_start_network_insights_analysis(body) do
-  analysis =
-    xpath(
-      body,
-      ~x"//StartNetworkInsightsAnalysisResponse/networkInsightsAnalysis"o,
-      network_insights_analysis_fields()
+  result =
+    xpath(body, ~x"//StartNetworkInsightsAnalysisResponse"e,
+      network_insights_analysis: [
+        ~x"./networkInsightsAnalysis"o | network_insights_analysis_fields()
+      ]
     )
 
-  %{network_insights_analysis: coerce_network_path_found(analysis)}
+  %{network_insights_analysis: coerce_network_path_found(result.network_insights_analysis)}
 end
 
 @doc """
@@ -3043,15 +3092,16 @@ def parse_describe_network_insights_analyses_for_test(xml),
   do: parse_describe_network_insights_analyses(xml)
 
 defp parse_describe_network_insights_analyses(body) do
-  analyses =
-    xpath(
-      body,
-      ~x"//DescribeNetworkInsightsAnalysesResponse/networkInsightsAnalysisSet/item"l,
-      network_insights_analysis_fields()
+  result =
+    xpath(body, ~x"//DescribeNetworkInsightsAnalysesResponse"e,
+      network_insights_analysis_set: [
+        ~x"./networkInsightsAnalysisSet/item"l | network_insights_analysis_fields()
+      ]
     )
 
   %{
-    network_insights_analysis_set: Enum.map(analyses, &coerce_network_path_found/1),
+    network_insights_analysis_set:
+      Enum.map(result.network_insights_analysis_set, &coerce_network_path_found/1),
     next_token: xpath(body, ~x"//DescribeNetworkInsightsAnalysesResponse/nextToken/text()"os)
   }
 end
@@ -3103,6 +3153,7 @@ defp network_insights_analysis_fields do
     network_insights_path_id: ~x"./networkInsightsPathId/text()"os,
     additional_account_set: ~x"./additionalAccountSet/item/text()"sl,
     filter_in_arn_set: ~x"./filterInArnSet/item/text()"sl,
+    filter_out_arn_set: ~x"./filterOutArnSet/item/text()"sl,
     start_date: ~x"./startDate/text()"os,
     status: ~x"./status/text()"os,
     status_message: ~x"./statusMessage/text()"os,
@@ -3173,6 +3224,8 @@ defp path_component_fields do
       component: [~x"./component"o | analysis_component_fields()]
     ],
     explanation_set: [~x"./explanationSet/item"l | explanation_fields()],
+    firewall_stateless_rule: [~x"./firewallStatelessRule"o | firewall_stateless_rule_fields()],
+    firewall_stateful_rule: [~x"./firewallStatefulRule"o | firewall_stateful_rule_fields()],
     service_name: ~x"./serviceName/text()"os
   ]
 end
@@ -3181,15 +3234,15 @@ end
 defp analysis_packet_header_fields do
   [
     protocol: ~x"./protocol/text()"os,
-    source_addresses: ~x"./sourceAddresses/item/text()"sl,
-    destination_addresses: ~x"./destinationAddresses/item/text()"sl,
+    source_addresses: ~x"./sourceAddressSet/item/text()"sl,
+    destination_addresses: ~x"./destinationAddressSet/item/text()"sl,
     source_port_ranges: [
-      ~x"./sourcePortRanges/item"l,
+      ~x"./sourcePortRangeSet/item"l,
       from: ~x"./from/text()"oi,
       to: ~x"./to/text()"oi
     ],
     destination_port_ranges: [
-      ~x"./destinationPortRanges/item"l,
+      ~x"./destinationPortRangeSet/item"l,
       from: ~x"./from/text()"oi,
       to: ~x"./to/text()"oi
     ]
@@ -3299,7 +3352,7 @@ defp explanation_fields do
     route_table_route: [~x"./routeTableRoute"o | analysis_route_table_route_fields()],
     security_group: [~x"./securityGroup"o | analysis_component_fields()],
     security_group_rule: [~x"./securityGroupRule"o | analysis_security_group_rule_fields()],
-    security_groups: [~x"./securityGroups/item"l | analysis_component_fields()],
+    security_groups: [~x"./securityGroupSet/item"l | analysis_component_fields()],
     subnet: [~x"./subnet"o | analysis_component_fields()],
     subnet_route_table: [~x"./subnetRouteTable"o | analysis_component_fields()],
     vpc: [~x"./vpc"o | analysis_component_fields()],
@@ -3307,7 +3360,47 @@ defp explanation_fields do
     vpn_gateway: [~x"./vpnGateway"o | analysis_component_fields()],
     transit_gateway: [~x"./transitGateway"o | analysis_component_fields()],
     transit_gateway_attachment: [~x"./transitGatewayAttachment"o | analysis_component_fields()],
-    transit_gateway_route_table: [~x"./transitGatewayRouteTable"o | analysis_component_fields()]
+    transit_gateway_route_table: [~x"./transitGatewayRouteTable"o | analysis_component_fields()],
+    vpc_endpoint: [~x"./vpcEndpoint"o | analysis_component_fields()],
+    availability_zone_ids: ~x"./availabilityZoneIdSet/item/text()"sl,
+    firewall_stateless_rule: [~x"./firewallStatelessRule"o | firewall_stateless_rule_fields()],
+    firewall_stateful_rule: [~x"./firewallStatefulRule"o | firewall_stateful_rule_fields()]
+  ]
+end
+
+# FirewallStatelessRule.
+defp firewall_stateless_rule_fields do
+  [
+    rule_group_arn: ~x"./ruleGroupArn/text()"os,
+    sources: ~x"./sourceSet/item/text()"sl,
+    destinations: ~x"./destinationSet/item/text()"sl,
+    source_ports: [~x"./sourcePortSet/item"l, from: ~x"./from/text()"oi, to: ~x"./to/text()"oi],
+    destination_ports: [
+      ~x"./destinationPortSet/item"l,
+      from: ~x"./from/text()"oi,
+      to: ~x"./to/text()"oi
+    ],
+    protocols: ~x"./protocolSet/item/text()"sl,
+    rule_action: ~x"./ruleAction/text()"os,
+    priority: ~x"./priority/text()"oi
+  ]
+end
+
+# FirewallStatefulRule.
+defp firewall_stateful_rule_fields do
+  [
+    rule_group_arn: ~x"./ruleGroupArn/text()"os,
+    sources: ~x"./sourceSet/item/text()"sl,
+    destinations: ~x"./destinationSet/item/text()"sl,
+    source_ports: [~x"./sourcePortSet/item"l, from: ~x"./from/text()"oi, to: ~x"./to/text()"oi],
+    destination_ports: [
+      ~x"./destinationPortSet/item"l,
+      from: ~x"./from/text()"oi,
+      to: ~x"./to/text()"oi
+    ],
+    protocol: ~x"./protocol/text()"os,
+    rule_action: ~x"./ruleAction/text()"os,
+    direction: ~x"./direction/text()"os
   ]
 end
 
@@ -3319,6 +3412,8 @@ defp client_token(opts) do
   opts[:client_token] || Base.encode16(:crypto.strong_rand_bytes(16), case: :lower)
 end
 ```
+
+Note for the reviewer: `client_token/1` is a genuinely new helper — nothing in `lib/` generates idempotency tokens, AWS requires the member on the wire, and `:crypto` is already a dependency (S3's Content-MD5 hashing). It is called out here so its addition is approved deliberately rather than slipping in.
 
 Sandbox wiring per recipe B — four pairs in `ec2/sandbox.ex`:
 - `create_network_insights_path_response(source, destination, protocol, opts)` keyed off `source`, `examples = AwsSdk.Sandbox.doc_examples([:source, :destination, :protocol])`, applying `[source, destination, protocol, opts]`
@@ -3511,7 +3606,7 @@ defp parse_describe_scaling_activities(body) do
 end
 ```
 
-Sandbox wiring per recipe A (AutoScaling's sandbox module follows the same shape — mirror the `describe_instance_refreshes` pair in `lib/aws_sdk/auto_scaling/sandbox.ex`), keyed off `auto_scaling_group_name`; delegate `sandbox_describe_scaling_activities_response(auto_scaling_group_name, opts)` (as `:describe_scaling_activities_response`) and `else`-stub `(_, _)` in `auto_scaling.ex`.
+Sandbox wiring mirrors the `describe_instance_refreshes` pair in `lib/aws_sdk/auto_scaling/sandbox.ex` exactly, including its argument naming: `describe_scaling_activities_response(asg, opts)` with `AwsSdk.Sandbox.doc_examples([:asg])`, keyed off `asg`; delegate `sandbox_describe_scaling_activities_response(asg, opts)` (as `:describe_scaling_activities_response`) and `else`-stub `defp sandbox_describe_scaling_activities_response(_a, _o), do: raise(@sandbox_unavailable)` in `auto_scaling.ex` (the attribute already exists there).
 
 - [ ] **Step 4: Verify** — `mix compile && mix test && mix format`, all clean/green.
 
@@ -3688,6 +3783,8 @@ end
 
 with `listener_fields/0` holding the previously-inline keyword list verbatim (listener_arn, load_balancer_arn, port, protocol, ssl_policy, alpn_policy, certificates, mutual_authentication, default_actions — unchanged selectors). Then:
 
+ELBv2's parsers are already `@doc false` public functions (`parse_describe_listeners/1` and friends), so — deviating from recipe B on purpose — no `parse_*_for_test` wrapper is added; the conformance test calls `parse_modify_listener/1` directly, matching the module:
+
 ```elixir
 @doc false
 def parse_modify_listener(body) do
@@ -3813,7 +3910,18 @@ def get_instance_profile(instance_profile_name, opts \\ [])
 end
 ```
 
-`do_get_instance_profile/2` sends `%{"InstanceProfileName" => instance_profile_name}` with action `"GetInstanceProfile"` through the exact same `with` pipeline `do_get_role/2` uses (copy its body, changing only the action, params, and the success expression to `{:ok, parse_instance_profile(body)}`).
+`do_get_instance_profile/2` (same shape as the post-refactor `do_get_role/2`):
+
+```elixir
+defp do_get_instance_profile(instance_profile_name, opts) do
+  params = %{"InstanceProfileName" => instance_profile_name}
+
+  with {:ok, op} <- build_operation("GetInstanceProfile", params, opts),
+       {:ok, %{body: body}} <- Client.request(op) do
+    {:ok, parse_instance_profile(body)}
+  end
+end
+```
 
 Parser — reuse `parse_role/2` for the nested roles:
 
@@ -3822,19 +3930,23 @@ Parser — reuse `parse_role/2` for the nested roles:
 def parse_instance_profile_for_test(xml), do: parse_instance_profile(xml)
 
 defp parse_instance_profile(body) do
-  profile =
-    xpath(body, ~x"//GetInstanceProfileResult/InstanceProfile"e,
-      path: ~x"./Path/text()"os,
-      instance_profile_name: ~x"./InstanceProfileName/text()"s,
-      instance_profile_id: ~x"./InstanceProfileId/text()"os,
-      arn: ~x"./Arn/text()"os,
-      create_date: ~x"./CreateDate/text()"os,
-      tags: [~x"./Tags/member"l, key: ~x"./Key/text()"s, value: ~x"./Value/text()"s]
-    )
-
-  roles = parse_role(body, ~x"//GetInstanceProfileResult/InstanceProfile/Roles/member"l)
-
-  %{instance_profile: Map.put(profile, :roles, roles)}
+  %{
+    instance_profile: %{
+      path: xpath(body, ~x"//GetInstanceProfileResult/InstanceProfile/Path/text()"s),
+      instance_profile_name:
+        xpath(body, ~x"//GetInstanceProfileResult/InstanceProfile/InstanceProfileName/text()"s),
+      instance_profile_id:
+        xpath(body, ~x"//GetInstanceProfileResult/InstanceProfile/InstanceProfileId/text()"s),
+      arn: xpath(body, ~x"//GetInstanceProfileResult/InstanceProfile/Arn/text()"s),
+      create_date: xpath(body, ~x"//GetInstanceProfileResult/InstanceProfile/CreateDate/text()"s),
+      roles: parse_role(body, ~x"//GetInstanceProfileResult/InstanceProfile/Roles/member"l),
+      tags:
+        xpath(body, ~x"//GetInstanceProfileResult/InstanceProfile/Tags/member"l,
+          key: ~x"./Key/text()"s,
+          value: ~x"./Value/text()"s
+        )
+    }
+  }
 end
 ```
 
@@ -3856,8 +3968,8 @@ git commit -m "feat: IAM GetInstanceProfile"
 ### Task 18: S3 `delete_objects`
 
 **Files:**
-- Modify: `lib/aws_sdk/s3.ex` (public fn next to `delete_object`), `lib/aws_sdk/s3/xml_builder.ex` (new `build_delete/2`), `lib/aws_sdk/s3/sandbox.ex`
-- Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/s3/sandbox_test.exs`, `test/aws_sdk/s3/xml_builder_test.exs` (if this file exists — check; otherwise put the builder assertions in the conformance test)
+- Modify: `lib/aws_sdk/s3.ex` (public fn next to `delete_object`), `lib/aws_sdk/s3/xml_builder.ex` (new `build_delete/2`; extend the `@moduledoc`'s operation list — it currently names only the three `Put*` operations — with `DeleteObjects`), `lib/aws_sdk/s3/xml_parser.ex` (new `parse_delete_result/1`), `lib/aws_sdk/s3/sandbox.ex`
+- Test: `test/aws_sdk/conformance_test.exs`, `test/aws_sdk/s3/sandbox_test.exs` (no `xml_builder_test.exs` exists; the builder and parser assertions live in the conformance test)
 
 **Interfaces:**
 - Consumes: `build_operation/4`, `Client.request/1`, `put_opts/2`, `xml_body_headers/1` in `s3.ex`; SweetXml (already imported or aliased in `s3.ex` — check how `XMLParser` is used and follow; the parse function may live in `AwsSdk.S3.XMLParser` if that is where the module keeps body parsers — mirror `parse_complete_multipart`'s home).
@@ -4053,7 +4165,19 @@ end
 
 (S3 requires `Content-MD5` on `DeleteObjects`; `xml_body_headers/1` already supplies it.)
 
-Sandbox wiring per recipe A in `lib/aws_sdk/s3/sandbox.ex`, mirroring the `delete_object` pair — `delete_objects_response(bucket, objects, opts)` keyed off `bucket` with `examples = AwsSdk.Sandbox.doc_examples([:bucket, :objects])`; delegate `sandbox_delete_objects_response(bucket, objects, opts)` / stub `(_, _, _)` in `s3.ex` following its existing sandbox-delegation section.
+Sandbox wiring per recipe A in `lib/aws_sdk/s3/sandbox.ex`, mirroring the `delete_object` pair — `delete_objects_response(bucket, objects, opts)` keyed off `bucket` with `examples = AwsSdk.Sandbox.doc_examples([:bucket, :objects])`; delegate `sandbox_delete_objects_response(bucket, objects, opts)` in `s3.ex`. The `else`-branch stub follows S3's own style — a full function raising a heredoc (mirror `sandbox_delete_object_response`'s stub):
+
+```elixir
+defp sandbox_delete_objects_response(bucket, objects, opts) do
+  raise """
+  Cannot use sandbox mode outside of test environment.
+
+  bucket: #{inspect(bucket)}
+  objects: #{inspect(objects)}
+  options: #{inspect(opts)}
+  """
+end
+```
 
 - [ ] **Step 4: Verify** — `mix compile && mix test && mix format`, all clean/green.
 
@@ -4079,6 +4203,8 @@ git commit -m "feat: S3 DeleteObjects batch delete"
 
 Run: `mix test`
 Expected: PASS. Cross-check each operation in NEXT.md's tables against the public functions now exported (`grep -n "def send_command\|def get_command_invocation\|def list_command_invocations" lib/aws_sdk/ssm.ex` and equivalents per module). Every row, including the two formerly-optional ones, must exist.
+
+This is a standalone 19th commit, one past the spec's 18-item list — the spec's commit plan records it as its own final entry.
 
 - [ ] **Step 2: Delete and commit**
 
