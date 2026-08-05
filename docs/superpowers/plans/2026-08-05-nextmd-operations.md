@@ -13,7 +13,7 @@
 - `mix compile` is warnings-as-errors outside test. Run `mix compile`, `mix test`, and `mix format` before every commit; all must be clean.
 - **Response fidelity (from CLAUDE.md, non-negotiable):** parsers extract fields, never redesign. Nesting preserved (`<placement><groupName>` → `placement: %{group_name: ...}`); member names preserved as snake_case of the AWS name (no renaming, no synthesized keys); `<xxxSet><item>` → `xxx_set: [%{...}]` (the `Set` suffix stays); nothing dropped including `next_token`; only the outer `<XxxResponse>`/`<XxxResult>` envelope and RequestId metadata are omitted.
 - **Timestamps stay ISO8601 strings** in the XML services. This matches the codebase (`e44e734` keeps `createTime` as `os`; AutoScaling keeps `StartTime` as `s`; IAM keeps `create_date` as a string). The spec's mention of `DateTime` coercion is overridden by the module-convention rule — do NOT parse timestamps into `DateTime` structs.
-- **Booleans:** read as `os` strings, then coerce with `=== "true"` only where the surrounding module already coerces comparable fields, and where a task explicitly says so. Never coerce a plain `os` read inline in the xpath keyword list.
+- **Booleans:** read as `os` strings in the xpath keyword list, then coerce afterwards using each module's own existing pattern and nothing else — EC2: a named `coerce_<field>/1` defp applied with `Enum.map(items, &coerce_<field>/1)`, body `%{item | field: value === "true"}` (mirror `coerce_is_default/1`); S3's `XMLParser`: the existing `to_bool/1`; ELBv2: the existing `boolish/1`. Do not introduce new coercion helpers where one exists, and do not coerce inline in the keyword list.
 - XML selectors are always anchored to their result element (`~x"//DescribeSnapshotsResponse/snapshotSet/item"l` style — never a bare `~x"//item"l`). Nested singletons use an optional anchor (`~x"./ebs"o`) so absent structures parse to `nil`.
 - Sandbox registry key = the operation's first positional argument. When the first positional argument is a list, or the op has only `opts`, the key is `"*"` and `set_*_responses` accepts bare `fn`s (mirrors `AwsSdk.SSM.Sandbox.get_parameters_response/2`).
 - Commit messages: conventional (`feat: ...`), body explains what/why, ending with `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
@@ -231,7 +231,19 @@ end
 defp do_send_command(instance_ids, document_name, opts) do
   data =
     %{"InstanceIds" => instance_ids, "DocumentName" => document_name}
-    |> put_send_command_opts(opts)
+    |> maybe_put("Parameters", opts[:parameters])
+    |> maybe_put("Comment", opts[:comment])
+    |> maybe_put("TimeoutSeconds", opts[:timeout_seconds])
+    |> maybe_put("DocumentVersion", opts[:document_version])
+    |> maybe_put("DocumentHash", opts[:document_hash])
+    |> maybe_put("DocumentHashType", opts[:document_hash_type])
+    |> maybe_put("OutputS3BucketName", opts[:output_s3_bucket_name])
+    |> maybe_put("OutputS3KeyPrefix", opts[:output_s3_key_prefix])
+    |> maybe_put("CloudWatchOutputConfig", opts[:cloud_watch_output_config])
+    |> maybe_put("MaxConcurrency", opts[:max_concurrency])
+    |> maybe_put("MaxErrors", opts[:max_errors])
+    |> maybe_put("ServiceRoleArn", opts[:service_role_arn])
+    |> maybe_put("NotificationConfig", opts[:notification_config])
 
   perform("SendCommand", data, opts)
   |> deserialize_response(opts, fn body ->
@@ -276,32 +288,28 @@ end
 defp do_send_command_by_targets(targets, document_name, opts) do
   data =
     %{"Targets" => targets, "DocumentName" => document_name}
-    |> put_send_command_opts(opts)
+    |> maybe_put("Parameters", opts[:parameters])
+    |> maybe_put("Comment", opts[:comment])
+    |> maybe_put("TimeoutSeconds", opts[:timeout_seconds])
+    |> maybe_put("DocumentVersion", opts[:document_version])
+    |> maybe_put("DocumentHash", opts[:document_hash])
+    |> maybe_put("DocumentHashType", opts[:document_hash_type])
+    |> maybe_put("OutputS3BucketName", opts[:output_s3_bucket_name])
+    |> maybe_put("OutputS3KeyPrefix", opts[:output_s3_key_prefix])
+    |> maybe_put("CloudWatchOutputConfig", opts[:cloud_watch_output_config])
+    |> maybe_put("MaxConcurrency", opts[:max_concurrency])
+    |> maybe_put("MaxErrors", opts[:max_errors])
+    |> maybe_put("ServiceRoleArn", opts[:service_role_arn])
+    |> maybe_put("NotificationConfig", opts[:notification_config])
 
   perform("SendCommand", data, opts)
   |> deserialize_response(opts, fn body ->
     Serializer.deserialize(body, deserialize_opts(opts))
   end)
 end
-
-# Shared optional-input encoding for both SendCommand forms.
-defp put_send_command_opts(data, opts) do
-  data
-  |> maybe_put("Parameters", opts[:parameters])
-  |> maybe_put("Comment", opts[:comment])
-  |> maybe_put("TimeoutSeconds", opts[:timeout_seconds])
-  |> maybe_put("DocumentVersion", opts[:document_version])
-  |> maybe_put("DocumentHash", opts[:document_hash])
-  |> maybe_put("DocumentHashType", opts[:document_hash_type])
-  |> maybe_put("OutputS3BucketName", opts[:output_s3_bucket_name])
-  |> maybe_put("OutputS3KeyPrefix", opts[:output_s3_key_prefix])
-  |> maybe_put("CloudWatchOutputConfig", opts[:cloud_watch_output_config])
-  |> maybe_put("MaxConcurrency", opts[:max_concurrency])
-  |> maybe_put("MaxErrors", opts[:max_errors])
-  |> maybe_put("ServiceRoleArn", opts[:service_role_arn])
-  |> maybe_put("NotificationConfig", opts[:notification_config])
-end
 ```
+
+(The `maybe_put` chain is repeated in both `do_` functions on purpose — SSM inlines its optional-input encoding per function; the module has no shared opts-builder helpers and this task does not introduce one.)
 
 Wire the sandbox per recipe A. Delegates in `ssm.ex`:
 
@@ -943,7 +951,7 @@ defp parse_get_console_output(body) do
       output: ~x"./output/text()"os
     )
 
-  Map.update!(result, :output, &decode_console_output/1)
+  %{result | output: decode_console_output(result.output)}
 end
 
 defp decode_console_output(nil), do: nil
@@ -1167,21 +1175,22 @@ defp parse_describe_network_acls(body) do
       tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
     )
 
-  acls =
-    Enum.map(acls, fn acl ->
-      acl
-      |> Map.update!(:default, &(&1 === "true"))
-      |> Map.update!(:entry_set, fn entries ->
-        Enum.map(entries, &Map.update!(&1, :egress, fn v -> v === "true" end))
-      end)
-    end)
-
   %{
-    network_acl_set: acls,
+    network_acl_set: Enum.map(acls, &coerce_network_acl/1),
     next_token: xpath(body, ~x"//DescribeNetworkAclsResponse/nextToken/text()"os)
   }
 end
+
+defp coerce_network_acl(%{default: default, entry_set: entries} = acl) do
+  %{acl | default: default === "true", entry_set: Enum.map(entries, &coerce_network_acl_entry/1)}
+end
+
+defp coerce_network_acl_entry(%{egress: egress} = entry) do
+  %{entry | egress: egress === "true"}
+end
 ```
+
+(The `coerce_*` defps mirror the module's existing `coerce_is_default/1` used by `describe_vpcs` — same naming, same `%{item | field: value === "true"}` body.)
 
 Sandbox wiring per recipe B, arity 1, key `"*"` (mirror `describe_launch_templates_response/1` in `ec2/sandbox.ex` with op name `:describe_network_acls`); delegate `sandbox_describe_network_acls_response(opts)` / stub `(_)` in `ec2.ex`.
 
@@ -1380,17 +1389,18 @@ defp parse_describe_route_tables(body) do
       tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
     )
 
-  tables =
-    Enum.map(tables, fn table ->
-      Map.update!(table, :association_set, fn assocs ->
-        Enum.map(assocs, &Map.update!(&1, :main, fn v -> v === "true" end))
-      end)
-    end)
-
   %{
-    route_table_set: tables,
+    route_table_set: Enum.map(tables, &coerce_route_table/1),
     next_token: xpath(body, ~x"//DescribeRouteTablesResponse/nextToken/text()"os)
   }
+end
+
+defp coerce_route_table(%{association_set: assocs} = table) do
+  %{table | association_set: Enum.map(assocs, &coerce_route_table_association/1)}
+end
+
+defp coerce_route_table_association(%{main: main} = assoc) do
+  %{assoc | main: main === "true"}
 end
 ```
 
@@ -1765,12 +1775,14 @@ defp parse_describe_security_group_rules(body) do
       tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
     )
 
-  rules = Enum.map(rules, &Map.update!(&1, :is_egress, fn v -> v === "true" end))
-
   %{
-    security_group_rule_set: rules,
+    security_group_rule_set: Enum.map(rules, &coerce_is_egress/1),
     next_token: xpath(body, ~x"//DescribeSecurityGroupRulesResponse/nextToken/text()"os)
   }
+end
+
+defp coerce_is_egress(%{is_egress: value} = rule) do
+  %{rule | is_egress: value === "true"}
 end
 ```
 
@@ -1941,12 +1953,14 @@ defp parse_describe_snapshots(body) do
       tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
     )
 
-  snapshots = Enum.map(snapshots, &Map.update!(&1, :encrypted, fn v -> v === "true" end))
-
   %{
-    snapshot_set: snapshots,
+    snapshot_set: Enum.map(snapshots, &coerce_encrypted/1),
     next_token: xpath(body, ~x"//DescribeSnapshotsResponse/nextToken/text()"os)
   }
+end
+
+defp coerce_encrypted(%{encrypted: value} = snapshot) do
+  %{snapshot | encrypted: value === "true"}
 end
 ```
 
@@ -2197,26 +2211,16 @@ defp parse_describe_network_interfaces(body) do
       tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
     )
 
-  enis =
-    Enum.map(enis, fn eni ->
-      eni
-      |> Map.update!(:requester_managed, &boolish_ec2/1)
-      |> Map.update!(:source_dest_check, &boolish_ec2/1)
-    end)
-
   %{
-    network_interface_set: enis,
+    network_interface_set: Enum.map(enis, &coerce_network_interface/1),
     next_token: xpath(body, ~x"//DescribeNetworkInterfacesResponse/nextToken/text()"os)
   }
 end
 
-# nil-preserving boolean coercion for optional flags.
-defp boolish_ec2("true"), do: true
-defp boolish_ec2("false"), do: false
-defp boolish_ec2(other), do: other
+defp coerce_network_interface(%{requester_managed: managed, source_dest_check: check} = eni) do
+  %{eni | requester_managed: managed === "true", source_dest_check: check === "true"}
+end
 ```
-
-Note: `boolish_ec2/1` is a new private helper in `ec2.ex` — place it near `parse_return/1`. If a later task has already defined it, reuse it.
 
 Sandbox wiring per recipe B, arity 1, key `"*"`; delegate `sandbox_describe_network_interfaces_response(opts)` / stub `(_)`.
 
@@ -3106,8 +3110,14 @@ end
 
 defp coerce_network_path_found(nil), do: nil
 
-defp coerce_network_path_found(analysis),
-  do: Map.update!(analysis, :network_path_found, &boolish_ec2/1)
+# A running analysis has no networkPathFound yet; keep the nil rather
+# than coercing it to false, so callers can tell "not finished" from
+# "unreachable".
+defp coerce_network_path_found(%{network_path_found: nil} = analysis), do: analysis
+
+defp coerce_network_path_found(%{network_path_found: value} = analysis) do
+  %{analysis | network_path_found: value === "true"}
+end
 
 # AnalysisComponent — the {id, arn, name} triple AWS uses for every
 # referenced resource in an analysis.
@@ -3288,13 +3298,14 @@ defp explanation_fields do
   ]
 end
 
-# ClientToken for the idempotent Reachability Analyzer creates.
+# ClientToken is a wire-required idempotency token AWS's own SDKs
+# auto-generate (botocore marks it idempotencyToken); nothing else in
+# this library generates one, so it is generated here with :crypto,
+# which the library already depends on (S3's Content-MD5 hashing).
 defp client_token(opts) do
   opts[:client_token] || Base.encode16(:crypto.strong_rand_bytes(16), case: :lower)
 end
 ```
-
-If Task 11 has not yet defined `boolish_ec2/1`, define it here (same three clauses: `"true"` → `true`, `"false"` → `false`, passthrough).
 
 Sandbox wiring per recipe B — four pairs in `ec2/sandbox.ex`:
 - `create_network_insights_path_response(source, destination, protocol, opts)` keyed off `source`, `examples = AwsSdk.Sandbox.doc_examples([:source, :destination, :protocol])`, applying `[source, destination, protocol, opts]`
@@ -3842,17 +3853,17 @@ git commit -m "feat: IAM GetInstanceProfile"
 Conformance (builder + parser are both pure):
 
 ```elixir
-test "DeleteObjects body encodes keys, version ids, quiet, and escapes XML" do
+test "DeleteObjects body encodes keys, version ids, and quiet" do
   xml =
     AwsSdk.S3.XMLBuilder.build_delete(
-      ["plain.txt", %{key: "a&b<c>.txt", version_id: "v1"}],
+      ["plain.txt", %{key: "reports/2026.csv", version_id: "v1"}],
       true
     )
 
   assert xml ==
            ~s(<Delete xmlns="http://s3.amazonaws.com/doc/2006-03-01/">) <>
              "<Object><Key>plain.txt</Key></Object>" <>
-             "<Object><Key>a&amp;b&lt;c&gt;.txt</Key><VersionId>v1</VersionId></Object>" <>
+             "<Object><Key>reports/2026.csv</Key><VersionId>v1</VersionId></Object>" <>
              "<Quiet>true</Quiet>" <>
              "</Delete>"
 end
@@ -3926,27 +3937,21 @@ def build_delete(objects, quiet) when is_list(objects) and is_boolean(quiet) do
 end
 
 defp delete_object_xml(key) when is_binary(key) do
-  "<Object><Key>#{escape_xml(key)}</Key></Object>"
+  "<Object><Key>#{key}</Key></Object>"
 end
 
 defp delete_object_xml(%{key: key} = object) do
   version_xml =
     case object[:version_id] do
       nil -> ""
-      version_id -> "<VersionId>#{escape_xml(version_id)}</VersionId>"
+      version_id -> "<VersionId>#{version_id}</VersionId>"
     end
 
-  "<Object><Key>#{escape_xml(key)}</Key>#{version_xml}</Object>"
-end
-
-# Object keys are user data and may contain XML-significant characters.
-defp escape_xml(value) do
-  value
-  |> String.replace("&", "&amp;")
-  |> String.replace("<", "&lt;")
-  |> String.replace(">", "&gt;")
+  "<Object><Key>#{key}</Key>#{version_xml}</Object>"
 end
 ```
+
+(Values are interpolated raw, exactly as every other builder in this module does — `build_public_access_block`, `build_bucket_encryption`, and `build_lifecycle_configuration` all interpolate without escaping.)
 
 In `lib/aws_sdk/s3/xml_parser.ex`, following that module's existing SweetXml style (open it and match how `parse_complete_multipart/1` anchors and coerces):
 
@@ -3957,34 +3962,29 @@ Parses the `<DeleteResult>` body a `DeleteObjects` call returns.
 @spec parse_delete_result(binary()) :: %{deleted: [map()], error: [map()]}
 def parse_delete_result(xml) do
   deleted =
-    xpath(xml, ~x"//DeleteResult/Deleted"l,
+    xml
+    |> xpath(~x"//DeleteResult/Deleted"l,
       key: ~x"./Key/text()"s,
-      version_id: ~x"./VersionId/text()"os,
-      delete_marker: ~x"./DeleteMarker/text()"os,
-      delete_marker_version_id: ~x"./DeleteMarkerVersionId/text()"os
+      version_id: ~x"./VersionId/text()"so,
+      delete_marker: ~x"./DeleteMarker/text()"so,
+      delete_marker_version_id: ~x"./DeleteMarkerVersionId/text()"so
     )
-
-  deleted =
-    Enum.map(deleted, fn entry ->
-      Map.update!(entry, :delete_marker, fn
-        "true" -> true
-        "false" -> false
-        other -> other
-      end)
-    end)
+    |> Enum.map(fn entry -> %{entry | delete_marker: to_bool(entry.delete_marker)} end)
 
   %{
     deleted: deleted,
     error:
       xpath(xml, ~x"//DeleteResult/Error"l,
         key: ~x"./Key/text()"s,
-        version_id: ~x"./VersionId/text()"os,
-        code: ~x"./Code/text()"os,
-        message: ~x"./Message/text()"os
+        version_id: ~x"./VersionId/text()"so,
+        code: ~x"./Code/text()"so,
+        message: ~x"./Message/text()"so
       )
   }
 end
 ```
+
+Coercion reuses the module's existing `to_bool/1` (the same helper `IsTruncated` goes through) and the optional-string modifier is written `so`, matching this module's existing selectors — do not add a new boolean helper here. `to_bool/1` maps an absent `DeleteMarker` to `false`.
 
 In `lib/aws_sdk/s3.ex`, next to `delete_object/3`:
 
@@ -4008,8 +4008,8 @@ per-key failures, so check `:error` before treating the batch as done.
     #=> {:ok,
     #=>  %{
     #=>    deleted: [
-    #=>      %{key: "a.txt", version_id: nil, delete_marker: nil, delete_marker_version_id: nil},
-    #=>      %{key: "b.txt", version_id: "v1", delete_marker: nil, delete_marker_version_id: nil}
+    #=>      %{key: "a.txt", version_id: nil, delete_marker: false, delete_marker_version_id: nil},
+    #=>      %{key: "b.txt", version_id: "v1", delete_marker: false, delete_marker_version_id: nil}
     #=>    ],
     #=>    error: []
     #=>  }}
