@@ -39,7 +39,7 @@ All are functions added to existing service modules — no new modules. Commit
 | Function | Signature | Notes |
 |---|---|---|
 | `send_command` | `send_command(instance_ids, document_name, opts \\ [])` | `opts`: `:parameters`, `:comment`, `:timeout_seconds`, output S3/CloudWatch options, etc. Returns the full `Command` structure (deployd reads `command_id`). Sandbox key `"*"`. |
-| `send_command_by_targets` | `send_command_by_targets(targets, document_name, opts \\ [])` | The one-of partner (AWS: `InstanceIds` xor `Targets`), per the `describe_rules`/`describe_rules_by_arns` precedent. Sandbox key `"*"`. |
+| `send_command_by_targets` | `send_command_by_targets(targets, document_name, opts \\ [])` | The one-of partner (AWS: `InstanceIds` xor `Targets`), per the `describe_rules`/`describe_rules_by_arns` precedent. `targets` is a list of atom-keyed `%{key:, values:}` maps encoded to the wire's `Key`/`Values` (mirrors EC2's `%{name:, values:}` filters). Sandbox key `"*"`. |
 | `get_command_invocation` | `get_command_invocation(command_id, instance_id, opts \\ [])` | Both AWS-required. Full shape: `status`, `status_details`, `standard_output_content`, `standard_error_content`, `response_code`, plugin/document fields, output URLs. Sandbox keys off `command_id`. |
 | `list_command_invocations` | `list_command_invocations(opts \\ [])` | All inputs optional (`:command_id`, `:instance_id`, `:details`, `:filters`, `:max_results`, `:next_token`). Sandbox key `"*"`. |
 

@@ -146,7 +146,7 @@ describe "send_command_by_targets/3" do
 
     assert {:ok, %{command: %{command_id: "cmd-456"}}} =
              SSM.send_command_by_targets(
-               [%{"Key" => "tag:Role", "Values" => ["web"]}],
+               [%{key: "tag:Role", values: ["web"]}],
                "AWS-RunShellScript",
                sandbox: [enabled: true]
              )
@@ -260,15 +260,16 @@ this is the `Targets` form of `send_command/3`.
 
 ## Arguments
 
-  * `targets` - List of target maps with PascalCase keys, e.g.
-    `[%{"Key" => "tag:Role", "Values" => ["web"]}]`.
+  * `targets` - List of `%{key:, values:}` maps, e.g.
+    `[%{key: "tag:Role", values: ["web"]}]` — encoded to the wire's
+    `Key`/`Values`, like EC2's `%{name:, values:}` filters.
   * `document_name` - The SSM document to run.
   * `opts` - Same options as `send_command/3`.
 
 ## Examples
 
     AwsSdk.SSM.send_command_by_targets(
-      [%{"Key" => "tag:Role", "Values" => ["web"]}],
+      [%{key: "tag:Role", values: ["web"]}],
       "AWS-RunShellScript",
       parameters: %{"commands" => ["uptime"]}
     )
@@ -286,8 +287,11 @@ def send_command_by_targets([_ | _] = targets, document_name, opts \\ [])
 end
 
 defp do_send_command_by_targets(targets, document_name, opts) do
+  wire_targets =
+    Enum.map(targets, fn %{key: key, values: values} -> %{"Key" => key, "Values" => values} end)
+
   data =
-    %{"Targets" => targets, "DocumentName" => document_name}
+    %{"Targets" => wire_targets, "DocumentName" => document_name}
     |> maybe_put("Parameters", opts[:parameters])
     |> maybe_put("Comment", opts[:comment])
     |> maybe_put("TimeoutSeconds", opts[:timeout_seconds])
