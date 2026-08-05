@@ -40,9 +40,20 @@ def request(%_{} = op) do
 end
 ```
 
-- The three error clauses are moved **verbatim** from the modules'
+- The error clauses are moved **verbatim** from the modules'
   `deserialize_response/3` — same `ErrorMessage` constructors, same
   messages, same detail maps. Behavior-compatible by construction.
+- S3's `deserialize_response` carries one clause the others lack:
+  3xx → `ErrorMessage.bad_request("redirect not followed.", ...)`.
+  `Client.request/1` includes it, making the contract uniform: 3xx →
+  `bad_request`, 4xx → `not_found`, 5xx → `service_unavailable`,
+  transport → `internal_server_error`. For the non-S3 modules this is a
+  theoretical behavior change (a 3xx previously fell through to
+  `internal_server_error`; the JSON/Query AWS APIs do not redirect).
+- S3's `normalize_notification_error/2` re-implements the standard
+  mapping and exists only because two call sites bypass
+  `deserialize_response`; once `s3_request` errors arrive as
+  `ErrorMessage`, it is deleted.
 - `execute/1` stays as-is (raw transport seam; the signer test and
   streaming paths depend on it).
 - Success value is the same response map `execute/1` returns today, so
@@ -95,11 +106,20 @@ Per service module (`ssm`, `ec2`, `iam`, `sts`, `auto_scaling`,
 - `sandbox?/1` branches, `Sandbox` modules, `build_operation/3`, and all
   parsers are untouched.
 
-S3 is the exception-heavy module and gets its own pass: its
-`deserialize_response` clauses that handle header deserialization,
-streaming downloads, embedded `<Error>` on 200, and the notification 404
-normalization are inlined into the operations that need them, matching
-one clause to one call site. No S3 behavior changes.
+S3 is the exception-heavy module and gets its own pass: `s3_request/4`
+(its `perform`-equivalent) and `normalize_notification_error/2` are
+deleted along with `deserialize_response/3`; each of the 22 call sites
+becomes the explicit `build_operation` + `Client.request` pipeline, with
+the old success callback's body (header deserialization, streaming
+response handling, embedded `<Error>`-on-200 parsing) moved into the
+`with` block. No S3 behavior changes.
+
+One normalization note for every module: the old `deserialize_response`
+success clause wrapped bare callback results in `{:ok, _}` and passed
+`{:ok, _}`/`{:error, _}` tuples through. When a callback body moves into
+a `with` block, that is preserved by hand — bare-value expressions get
+an explicit `{:ok, ...}` wrap; tuple-returning expressions are left
+alone.
 
 ## CLAUDE.md updates
 
