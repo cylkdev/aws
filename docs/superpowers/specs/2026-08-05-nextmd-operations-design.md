@@ -19,7 +19,9 @@ All are functions added to existing service modules — no new modules. Commit
   fidelity rules in `CLAUDE.md`: nesting preserved, member names preserved
   (`snake_case` of the AWS name), `*Set/item` lists preserved, nothing
   dropped (including pagination tokens), envelope dropped. Leaf coercion
-  only: integers, booleans, `DateTime` timestamps.
+  only: integers and booleans. Timestamps stay ISO8601 strings, matching
+  the existing parsers (`e44e734` keeps `createTime` as a string; AutoScaling
+  and IAM do the same).
 - `defdelegate sandbox_<op>_response` in the service module; the
   `<op>_response` / `set_<op>_responses` pair in the service's `Sandbox`
   module. Registry key is the first positional argument; when the first
@@ -48,13 +50,13 @@ existing EC2 describe.
 | Function | Signature | Notes |
 |---|---|---|
 | `terminate_instances` | `(instance_ids, opts)` | Parses `instancesSet` → `[%{instance_id, current_state, previous_state}]` with state `code` as integer. |
-| `get_console_output` | `(instance_id, opts)` | `:latest` in opts. `output` Base64-decoded (per NEXT.md); `timestamp` as `DateTime`. |
+| `get_console_output` | `(instance_id, opts)` | `:latest` in opts. `output` Base64-decoded (per NEXT.md); `timestamp` kept as the ISO8601 string. |
 | `describe_network_acls` | `(opts)` | Full shape: `entrySet` (icmp type/code, port range), `associationSet`, `tagSet`, `is_default`, `vpc_id`, `owner_id`, `next_token`. |
 | `describe_route_tables` | `(opts)` | `routeSet`, `associationSet` (incl. `associationState`), `propagatingVgwSet`, `tagSet`, `next_token`. |
 | `describe_key_pairs` | `(opts)` | `keySet` with fingerprint, type, create time, tags. |
 | `delete_key_pair` | `(key_name, opts)` | Returns `return`/`key_pair_id` per the documented response. |
 | `describe_security_group_rules` | `(opts)` | Rule-granular read: `securityGroupRuleSet` with referenced group info, `next_token`. |
-| `describe_snapshots` | `(opts)` | `:owner_ids`, `:snapshot_ids`, `:filters`, pagination. Full snapshot shape, `start_time` as `DateTime`. |
+| `describe_snapshots` | `(opts)` | `:owner_ids`, `:snapshot_ids`, `:filters`, pagination. Full snapshot shape, `start_time` as ISO8601 string. |
 | `describe_network_interfaces` | `(opts)` | `attachment`, `association`, `groupSet`, `privateIpAddressesSet`, `tagSet`, `next_token`. |
 | `describe_instance_status` | `(opts)` | `:instance_ids`, `:include_all_instances`. `systemStatus`/`instanceStatus` with `details` lists, `eventsSet`. |
 | `describe_iam_instance_profile_associations` | `(opts)` | Association id, instance id, `iamInstanceProfile`, state, timestamp. |
@@ -67,7 +69,7 @@ existing EC2 describe.
 
 | Function | Signature | Notes |
 |---|---|---|
-| `describe_scaling_activities` | `(auto_scaling_group_name, opts)` | Mirrors `describe_instance_refreshes` exactly. `:max_records`, pagination in opts. Full `Activity` shape: `status_code`, `status_message`, `cause`, `description`, `details`, `progress`, `start_time`/`end_time` as `DateTime`, `next_token`. |
+| `describe_scaling_activities` | `(auto_scaling_group_name, opts)` | Mirrors `describe_instance_refreshes` exactly. `:max_records`, pagination in opts. Full `Activity` shape: `status_code`, `status_message`, `cause`, `description`, `details`, `progress`, `start_time`/`end_time` as ISO8601 strings, `next_token`. |
 
 ## AwsSdk.ElasticLoadBalancingV2 (Query; `flatten_query/1`)
 
@@ -79,7 +81,7 @@ existing EC2 describe.
 
 | Function | Signature | Notes |
 |---|---|---|
-| `get_instance_profile` | `(instance_profile_name, opts)` | Reuses the existing `parse_role` for the nested `Roles` member. `create_date` as `DateTime`. |
+| `get_instance_profile` | `(instance_profile_name, opts)` | Reuses the existing `parse_role` for the nested `Roles` member. `create_date` as ISO8601 string. |
 
 ## AwsSdk.S3 (REST/XML)
 
