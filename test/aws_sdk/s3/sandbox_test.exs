@@ -675,4 +675,15 @@ defmodule AwsSdk.S3.SandboxTest do
                )
     end
   end
+
+  describe "delete_objects/3" do
+    test "keys off the bucket" do
+      Sandbox.set_delete_objects_responses([
+        {"my-bucket", fn -> {:ok, %{deleted: [%{key: "a.txt"}], error: []}} end}
+      ])
+
+      assert {:ok, %{deleted: [%{key: "a.txt"}], error: []}} =
+               S3.delete_objects("my-bucket", ["a.txt"], sandbox: [enabled: true])
+    end
+  end
 end

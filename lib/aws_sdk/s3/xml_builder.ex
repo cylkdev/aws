@@ -2,7 +2,7 @@ defmodule AwsSdk.S3.XMLBuilder do
   @moduledoc """
   Builds the XML request bodies that S3 expects for write operations whose
   payload is an XML document: `PutPublicAccessBlock`, `PutBucketEncryption`,
-  and `PutBucketLifecycleConfiguration`.
+  `PutBucketLifecycleConfiguration`, and `DeleteObjects`.
 
   Counterpart to `AwsSdk.S3.XMLParser`, which extracts data from the XML
   responses S3 returns. Each builder is a pure function over Elixir data and
@@ -11,6 +11,42 @@ defmodule AwsSdk.S3.XMLBuilder do
   """
 
   @xmlns "http://s3.amazonaws.com/doc/2006-03-01/"
+
+  @doc """
+  Builds the `<Delete>` XML body for `DeleteObjects`.
+
+  Each object is a key binary or a `%{key: key, version_id: version_id}`
+  map. `quiet` asks S3 to omit per-key success entries from the response.
+
+  ## Examples
+
+      AwsSdk.S3.XMLBuilder.build_delete(["a.txt", %{key: "b.txt", version_id: "v1"}], false)
+      #=> ~s(<Delete xmlns="http://s3.amazonaws.com/doc/2006-03-01/">) <>
+      #=>   "<Object><Key>a.txt</Key></Object>" <>
+      #=>   "<Object><Key>b.txt</Key><VersionId>v1</VersionId></Object>" <>
+      #=>   "</Delete>"
+  """
+  @spec build_delete(objects :: [String.t() | map()], quiet :: boolean()) :: binary()
+  def build_delete(objects, quiet) when is_list(objects) and is_boolean(quiet) do
+    objects_xml = Enum.map_join(objects, &delete_object_xml/1)
+    quiet_xml = if quiet, do: "<Quiet>true</Quiet>", else: ""
+
+    "<Delete xmlns=\"#{@xmlns}\">#{objects_xml}#{quiet_xml}</Delete>"
+  end
+
+  defp delete_object_xml(key) when is_binary(key) do
+    "<Object><Key>#{key}</Key></Object>"
+  end
+
+  defp delete_object_xml(%{key: key} = object) do
+    version_xml =
+      case object[:version_id] do
+        nil -> ""
+        version_id -> "<VersionId>#{version_id}</VersionId>"
+      end
+
+    "<Object><Key>#{key}</Key>#{version_xml}</Object>"
+  end
 
   @doc """
   Builds the `<PublicAccessBlockConfiguration>` XML body for

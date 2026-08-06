@@ -470,6 +470,41 @@ defmodule AwsSdk.S3 do
   end
 
   @doc """
+  Deletes up to 1000 objects from a bucket in a single request.
+
+  S3 reports per-key outcomes in the body — a 200 response can still carry
+  per-key failures, so check `:error` before treating the batch as done.
+
+  ## Arguments
+
+    * `bucket` - The bucket name.
+    * `objects` - List of keys (binaries) and/or `%{key:, version_id:}` maps.
+    * `opts` - Options:
+      * `:quiet` - Boolean; ask S3 to omit per-key success entries.
+
+  ## Examples
+
+      AwsSdk.S3.delete_objects("my-bucket", ["a.txt", %{key: "b.txt", version_id: "v1"}])
+      #=> {:ok,
+      #=>  %{
+      #=>    deleted: [
+      #=>      %{key: "a.txt", version_id: "", delete_marker: false, delete_marker_version_id: ""},
+      #=>      %{key: "b.txt", version_id: "v1", delete_marker: false, delete_marker_version_id: ""}
+      #=>    ],
+      #=>    error: []
+      #=>  }}
+  """
+  @spec delete_objects(bucket :: String.t(), objects :: [String.t() | map()], opts :: keyword()) ::
+          {:ok, %{deleted: [map()], error: [map()]}} | {:error, term()}
+  def delete_objects(bucket, [_ | _] = objects, opts \\ []) when is_binary(bucket) do
+    if sandbox?(opts) do
+      sandbox_delete_objects_response(bucket, objects, opts)
+    else
+      do_delete_objects(bucket, objects, opts)
+    end
+  end
+
+  @doc """
   Returns the content of an object stored in S3.
 
   ## Permissions
@@ -1877,6 +1912,18 @@ defmodule AwsSdk.S3 do
     end
   end
 
+  defp do_delete_objects(bucket, objects, opts) do
+    xml = XMLBuilder.build_delete(objects, opts[:quiet] || false)
+    headers = xml_body_headers(xml)
+    request_opts = put_opts(opts, query: %{"delete" => ""}, body: xml, headers: headers)
+
+    # S3 requires Content-MD5 on DeleteObjects; xml_body_headers/1 supplies it.
+    with {:ok, op} <- build_operation(:post, bucket, nil, request_opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, XMLParser.parse_delete_result(body)}
+    end
+  end
+
   defp do_get_object(bucket, key, opts) do
     decode_json? = Keyword.get(opts, :decode_json, false)
 
@@ -2939,6 +2986,11 @@ defmodule AwsSdk.S3 do
       as: :head_object_response
 
     @doc false
+    defdelegate sandbox_delete_objects_response(bucket, objects, opts),
+      to: AwsSdk.S3.Sandbox,
+      as: :delete_objects_response
+
+    @doc false
     defdelegate sandbox_delete_object_response(bucket, key, opts),
       to: AwsSdk.S3.Sandbox,
       as: :delete_object_response
@@ -3122,6 +3174,16 @@ defmodule AwsSdk.S3 do
 
       bucket: #{inspect(bucket)}
       key: #{inspect(key)}
+      options: #{inspect(opts)}
+      """
+    end
+
+    defp sandbox_delete_objects_response(bucket, objects, opts) do
+      raise """
+      Cannot use sandbox mode outside of test environment.
+
+      bucket: #{inspect(bucket)}
+      objects: #{inspect(objects)}
       options: #{inspect(opts)}
       """
     end

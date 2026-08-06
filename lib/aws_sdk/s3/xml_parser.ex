@@ -487,6 +487,33 @@ defmodule AwsSdk.S3.XMLParser do
   end
 
   # S3 returns IsTruncated as "true"/"false" text.
+  @doc """
+  Parses the `<DeleteResult>` body a `DeleteObjects` call returns.
+  """
+  @spec parse_delete_result(binary()) :: %{deleted: [map()], error: [map()]}
+  def parse_delete_result(xml) do
+    deleted =
+      xml
+      |> xpath(~x"//DeleteResult/Deleted"l,
+        key: ~x"./Key/text()"s,
+        version_id: ~x"./VersionId/text()"so,
+        delete_marker: ~x"./DeleteMarker/text()"so,
+        delete_marker_version_id: ~x"./DeleteMarkerVersionId/text()"so
+      )
+      |> Enum.map(fn entry -> %{entry | delete_marker: to_bool(entry.delete_marker)} end)
+
+    %{
+      deleted: deleted,
+      error:
+        xpath(xml, ~x"//DeleteResult/Error"l,
+          key: ~x"./Key/text()"s,
+          version_id: ~x"./VersionId/text()"so,
+          code: ~x"./Code/text()"so,
+          message: ~x"./Message/text()"so
+        )
+    }
+  end
+
   defp to_bool("true"), do: true
   defp to_bool("false"), do: false
   defp to_bool(_), do: false

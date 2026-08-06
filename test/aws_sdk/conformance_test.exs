@@ -1154,4 +1154,42 @@ defmodule AwsSdk.ConformanceTest do
     assert role.role_name == "web-role"
     assert profile.tags == [%{key: "Team", value: "ops"}]
   end
+
+  test "DeleteObjects body encodes keys, version ids, and quiet" do
+    xml =
+      AwsSdk.S3.XMLBuilder.build_delete(
+        ["plain.txt", %{key: "reports/2026.csv", version_id: "v1"}],
+        true
+      )
+
+    assert xml ==
+             ~s(<Delete xmlns="http://s3.amazonaws.com/doc/2006-03-01/">) <>
+               "<Object><Key>plain.txt</Key></Object>" <>
+               "<Object><Key>reports/2026.csv</Key><VersionId>v1</VersionId></Object>" <>
+               "<Quiet>true</Quiet>" <>
+               "</Delete>"
+  end
+
+  test "DeleteObjects result keeps deleted entries and per-key errors" do
+    xml = """
+    <DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+    <Deleted><Key>a.txt</Key></Deleted>
+    <Deleted><Key>b.txt</Key><VersionId>v2</VersionId>
+    <DeleteMarker>true</DeleteMarker><DeleteMarkerVersionId>dm1</DeleteMarkerVersionId></Deleted>
+    <Error><Key>c.txt</Key><Code>AccessDenied</Code><Message>Access Denied</Message></Error>
+    </DeleteResult>
+    """
+
+    parsed = AwsSdk.S3.XMLParser.parse_delete_result(xml)
+
+    assert [a, b] = parsed.deleted
+    assert a.key == "a.txt"
+    assert b.version_id == "v2"
+    assert b.delete_marker == true
+    assert b.delete_marker_version_id == "dm1"
+    assert [err] = parsed.error
+    assert err.key == "c.txt"
+    assert err.code == "AccessDenied"
+    assert err.message == "Access Denied"
+  end
 end

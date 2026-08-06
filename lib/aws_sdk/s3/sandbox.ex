@@ -120,6 +120,21 @@ if Code.ensure_loaded?(SandboxRegistry) do
       )
     end
 
+    def delete_objects_response(bucket, objects, opts) do
+      examples = AwsSdk.Sandbox.doc_examples([:bucket, :objects])
+      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :delete_objects, bucket, examples)
+      AwsSdk.Sandbox.apply_func(func, [bucket, objects, opts], examples)
+    end
+
+    def set_delete_objects_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :delete_objects,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
+
     def get_object_response(bucket, key, opts) do
       examples = AwsSdk.Sandbox.doc_examples([:bucket, :key])
       func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :get_object, bucket, examples)
