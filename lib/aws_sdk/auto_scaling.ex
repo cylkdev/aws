@@ -167,9 +167,10 @@ defmodule AwsSdk.AutoScaling do
         "IncludeInstances" => opts[:include_instances]
       })
 
-    "DescribeAutoScalingGroups"
-    |> perform(params, opts)
-    |> deserialize_response(opts, &parse_describe_auto_scaling_groups/1)
+    with {:ok, op} <- build_operation("DescribeAutoScalingGroups", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_auto_scaling_groups(body)}
+    end
   end
 
   @doc """
@@ -224,9 +225,10 @@ defmodule AwsSdk.AutoScaling do
         "NextToken" => opts[:next_token]
       })
 
-    "DescribeAutoScalingInstances"
-    |> perform(params, opts)
-    |> deserialize_response(opts, &parse_describe_auto_scaling_instances/1)
+    with {:ok, op} <- build_operation("DescribeAutoScalingInstances", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_auto_scaling_instances(body)}
+    end
   end
 
   @doc """
@@ -299,9 +301,10 @@ defmodule AwsSdk.AutoScaling do
         "NextToken" => opts[:next_token]
       })
 
-    "DescribeInstanceRefreshes"
-    |> perform(params, opts)
-    |> deserialize_response(opts, &parse_describe_instance_refreshes/1)
+    with {:ok, op} <- build_operation("DescribeInstanceRefreshes", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_instance_refreshes(body)}
+    end
   end
 
   @doc """
@@ -343,9 +346,10 @@ defmodule AwsSdk.AutoScaling do
         "DesiredConfiguration" => opts[:desired_configuration]
       })
 
-    "StartInstanceRefresh"
-    |> perform(params, opts)
-    |> deserialize_response(opts, &parse_start_instance_refresh/1)
+    with {:ok, op} <- build_operation("StartInstanceRefresh", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_start_instance_refresh(body)}
+    end
   end
 
   @doc """
@@ -371,9 +375,10 @@ defmodule AwsSdk.AutoScaling do
   defp do_cancel_instance_refresh(auto_scaling_group_name, opts) do
     params = flatten_query(%{"AutoScalingGroupName" => auto_scaling_group_name})
 
-    "CancelInstanceRefresh"
-    |> perform(params, opts)
-    |> deserialize_response(opts, &parse_cancel_instance_refresh/1)
+    with {:ok, op} <- build_operation("CancelInstanceRefresh", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_cancel_instance_refresh(body)}
+    end
   end
 
   @doc """
@@ -399,9 +404,10 @@ defmodule AwsSdk.AutoScaling do
   defp do_rollback_instance_refresh(auto_scaling_group_name, opts) do
     params = flatten_query(%{"AutoScalingGroupName" => auto_scaling_group_name})
 
-    "RollbackInstanceRefresh"
-    |> perform(params, opts)
-    |> deserialize_response(opts, &parse_rollback_instance_refresh/1)
+    with {:ok, op} <- build_operation("RollbackInstanceRefresh", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_rollback_instance_refresh(body)}
+    end
   end
 
   @doc """
@@ -479,9 +485,10 @@ defmodule AwsSdk.AutoScaling do
         "InstanceId" => opts[:instance_id]
       })
 
-    "CompleteLifecycleAction"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn _body -> %{} end)
+    with {:ok, op} <- build_operation("CompleteLifecycleAction", params, opts),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -540,9 +547,10 @@ defmodule AwsSdk.AutoScaling do
         "InstanceId" => opts[:instance_id]
       })
 
-    "RecordLifecycleActionHeartbeat"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn _body -> %{} end)
+    with {:ok, op} <- build_operation("RecordLifecycleActionHeartbeat", params, opts),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -583,9 +591,10 @@ defmodule AwsSdk.AutoScaling do
         "ShouldRespectGracePeriod" => opts[:should_respect_grace_period]
       })
 
-    "SetInstanceHealth"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn _body -> %{} end)
+    with {:ok, op} <- build_operation("SetInstanceHealth", params, opts),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -654,9 +663,10 @@ defmodule AwsSdk.AutoScaling do
         "ShouldDecrementDesiredCapacity" => should_decrement_desired_capacity
       })
 
-    "TerminateInstanceInAutoScalingGroup"
-    |> perform(params, opts)
-    |> deserialize_response(opts, &parse_terminate_instance_in_auto_scaling_group/1)
+    with {:ok, op} <- build_operation("TerminateInstanceInAutoScalingGroup", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_terminate_instance_in_auto_scaling_group(body)}
+    end
   end
 
   @doc """
@@ -695,9 +705,10 @@ defmodule AwsSdk.AutoScaling do
         "HonorCooldown" => opts[:honor_cooldown]
       })
 
-    "SetDesiredCapacity"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn _body -> %{} end)
+    with {:ok, op} <- build_operation("SetDesiredCapacity", params, opts),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -727,15 +738,6 @@ defmodule AwsSdk.AutoScaling do
   end
 
   defp default_host(region), do: "autoscaling.#{region}.amazonaws.com"
-
-  defp perform(action, params, opts) do
-    with {:ok, op} <- build_operation(action, params, opts) do
-      case Client.execute(op) do
-        {:ok, %{body: body}} -> {:ok, body}
-        {:error, _} = err -> err
-      end
-    end
-  end
 
   defp encode_body(action, params) do
     params
@@ -1236,28 +1238,5 @@ defmodule AwsSdk.AutoScaling do
         :error -> acc
       end
     end)
-  end
-
-  defp deserialize_response({:ok, body}, _opts, parser) do
-    case parser.(body) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _parser)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _parser)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _parser) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 end
