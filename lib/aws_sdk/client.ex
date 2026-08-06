@@ -100,8 +100,7 @@ defmodule AwsSdk.Client do
       AwsSdk.Client.execute(op)
       #=> {:error, %Mint.TransportError{reason: :nxdomain}}
 
-  The three shapes above are exactly what each service module's
-  `deserialize_response/3` pattern-matches on.
+  The three shapes above are exactly what `request/1` pattern-matches on.
   """
   @spec execute(struct) ::
           {:ok, response}

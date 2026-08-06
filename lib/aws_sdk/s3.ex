@@ -1719,7 +1719,7 @@ defmodule AwsSdk.S3 do
   @doc """
   Returns the URL a caller would hit for `{bucket, key, query}` given
   `opts`. Used by presigning so the SigV4 signature lines up with the
-  URL built by `s3_request/4`.
+  URL built by `build_operation/4`.
 
   ## Examples
 
