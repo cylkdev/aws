@@ -1803,8 +1803,8 @@ defmodule AwsSdk.S3 do
     body = create_bucket_body(region)
 
     with {:ok, op} <- build_operation(:put, bucket, nil, Keyword.put(opts, :body, body)) do
-      case Client.execute(op) do
-        {:error, {:http_error, 409, resp}} ->
+      case Client.request(op) do
+        {:error, %ErrorMessage{details: %{status: 409, response: resp}}} ->
           {:error,
            ErrorMessage.conflict(
              "bucket already exists",
@@ -1814,20 +1814,8 @@ defmodule AwsSdk.S3 do
         {:ok, %{headers: headers}} ->
           {:ok, deserialize_headers(headers, opts)}
 
-        {:error, {:http_error, status_code, response}} when status_code in 300..399 ->
-          {:error, ErrorMessage.bad_request("redirect not followed.", %{response: response})}
-
-        {:error, {:http_error, status_code, response}} when status_code in 400..499 ->
-          {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-
-        {:error, {:http_error, status_code, response}} when status_code >= 500 ->
-          {:error,
-           ErrorMessage.service_unavailable("service temporarily unavailable", %{
-             response: response
-           })}
-
-        {:error, reason} ->
-          {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
+        {:error, _} = error ->
+          error
       end
     end
   end
@@ -1858,8 +1846,8 @@ defmodule AwsSdk.S3 do
 
     with {:ok, op} <-
            build_operation(:put, bucket, key, put_opts(opts, body: body, headers: headers)) do
-      case Client.execute(op) do
-        {:error, {:http_error, 412, resp}} when if_none_match? ->
+      case Client.request(op) do
+        {:error, %ErrorMessage{details: %{status: 412, response: resp}}} when if_none_match? ->
           {:error,
            ErrorMessage.conflict(
              "object already exists",
@@ -1869,20 +1857,8 @@ defmodule AwsSdk.S3 do
         {:ok, %{headers: headers}} ->
           {:ok, deserialize_headers(headers, opts)}
 
-        {:error, {:http_error, status_code, response}} when status_code in 300..399 ->
-          {:error, ErrorMessage.bad_request("redirect not followed.", %{response: response})}
-
-        {:error, {:http_error, status_code, response}} when status_code in 400..499 ->
-          {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-
-        {:error, {:http_error, status_code, response}} when status_code >= 500 ->
-          {:error,
-           ErrorMessage.service_unavailable("service temporarily unavailable", %{
-             response: response
-           })}
-
-        {:error, reason} ->
-          {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
+        {:error, _} = error ->
+          error
       end
     end
   end

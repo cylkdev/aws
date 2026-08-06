@@ -141,7 +141,9 @@ defmodule AwsSdk.Client do
   errors → `internal_server_error` — moved verbatim from the per-service
   `deserialize_response/3` helpers it replaces. Success passes
   `execute/1`'s response map (`:status_code`, `:headers`, `:body`, and the
-  streaming variants) through untouched.
+  streaming variants) through untouched. For HTTP failures, `details`
+  carries the original `:status` code alongside `:response` so callers can
+  special-case specific statuses without losing the shared mapping.
   """
   @spec request(struct) :: {:ok, map} | {:error, ErrorMessage.t()}
   def request(%_{} = op) do
@@ -150,14 +152,22 @@ defmodule AwsSdk.Client do
         {:ok, response}
 
       {:error, {:http_error, status_code, response}} when status_code in 300..399 ->
-        {:error, ErrorMessage.bad_request("redirect not followed.", %{response: response})}
+        {:error,
+         ErrorMessage.bad_request("redirect not followed.", %{
+           status: status_code,
+           response: response
+         })}
 
       {:error, {:http_error, status_code, response}} when status_code in 400..499 ->
-        {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
+        {:error,
+         ErrorMessage.not_found("resource not found.", %{status: status_code, response: response})}
 
       {:error, {:http_error, status_code, response}} when status_code >= 500 ->
         {:error,
-         ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
+         ErrorMessage.service_unavailable("service temporarily unavailable", %{
+           status: status_code,
+           response: response
+         })}
 
       {:error, reason} ->
         {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
