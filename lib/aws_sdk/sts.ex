@@ -109,9 +109,8 @@ defmodule AwsSdk.STS do
   end
 
   defp do_get_caller_identity(opts) do
-    "GetCallerIdentity"
-    |> perform(%{}, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("GetCallerIdentity", %{}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       fields =
         xpath(body, ~x"//GetCallerIdentityResult"e,
           account: ~x"./Account/text()"s,
@@ -120,7 +119,7 @@ defmodule AwsSdk.STS do
         )
 
       {:ok, fields}
-    end)
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -274,15 +273,6 @@ defmodule AwsSdk.STS do
     end
   end
 
-  defp perform(action, params, opts) do
-    with {:ok, op} <- build_operation(action, params, opts) do
-      case Client.execute(op) do
-        {:ok, %{body: body}} -> {:ok, body}
-        {:error, _} = err -> err
-      end
-    end
-  end
-
   defp encode_body(action, params) do
     params
     |> Map.merge(%{"Action" => action, "Version" => @api_version})
@@ -330,28 +320,5 @@ defmodule AwsSdk.STS do
         :error -> acc
       end
     end)
-  end
-
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 end
