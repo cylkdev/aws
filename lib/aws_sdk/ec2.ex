@@ -1913,6 +1913,116 @@ defmodule AwsSdk.EC2 do
   end
 
   @doc """
+  Describes EBS snapshots.
+
+  Without `:owner_ids`, `:restorable_by_user_ids`, or `:snapshot_ids`, AWS
+  returns all snapshots you can access, including public ones — pass
+  `owner_ids: ["self"]` for just your own.
+
+  ## Options
+
+    * `:snapshot_ids` - List of snapshot IDs, encoded as `SnapshotId.N`.
+    * `:owner_ids` - List of owner IDs (or `"self"`/`"amazon"`), encoded as `Owner.N`.
+    * `:restorable_by_user_ids` - List of account IDs, encoded as `RestorableBy.N`.
+    * `:filters` - List of `%{name:, values:}` filters.
+    * `:next_token`, `:max_results` - Pagination.
+
+  ## Examples
+
+      AwsSdk.EC2.describe_snapshots(owner_ids: ["self"])
+      #=> {:ok,
+      #=>  %{
+      #=>    snapshot_set: [
+      #=>      %{
+      #=>        snapshot_id: "snap-0abc",
+      #=>        volume_id: "vol-0abc",
+      #=>        status: "completed",
+      #=>        status_message: "",
+      #=>        start_time: "2026-01-01T00:00:00Z",
+      #=>        progress: "100%",
+      #=>        owner_id: "123456789012",
+      #=>        owner_alias: "",
+      #=>        volume_size: 30,
+      #=>        description: "",
+      #=>        encrypted: false,
+      #=>        kms_key_id: "",
+      #=>        outpost_arn: "",
+      #=>        storage_tier: "standard",
+      #=>        restore_expiry_time: "",
+      #=>        tag_set: []
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+  """
+  @spec describe_snapshots(opts :: keyword()) ::
+          {:ok, %{snapshot_set: list(map()), next_token: String.t() | nil}} | {:error, term()}
+  def describe_snapshots(opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_describe_snapshots_response(opts)
+    else
+      do_describe_snapshots(opts)
+    end
+  end
+
+  defp do_describe_snapshots(opts) do
+    params =
+      %{}
+      |> put_member_list("SnapshotId", opts[:snapshot_ids] || [])
+      |> put_member_list("Owner", opts[:owner_ids] || [])
+      |> put_member_list("RestorableBy", opts[:restorable_by_user_ids] || [])
+      |> put_filters(opts[:filters] || [])
+      |> maybe_put("NextToken", opts[:next_token])
+      |> maybe_put("MaxResults", opts[:max_results])
+
+    with {:ok, op} <- build_operation("DescribeSnapshots", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_snapshots(body)}
+    end
+  end
+
+  @doc false
+  def parse_describe_snapshots_for_test(xml), do: parse_describe_snapshots(xml)
+
+  defp parse_describe_snapshots(body) do
+    snapshots =
+      xpath(body, ~x"//snapshotSet/item"l,
+        snapshot_id: ~x"./snapshotId/text()"s,
+        volume_id: ~x"./volumeId/text()"os,
+        status: ~x"./status/text()"os,
+        status_message: ~x"./statusMessage/text()"os,
+        start_time: ~x"./startTime/text()"os,
+        progress: ~x"./progress/text()"os,
+        owner_id: ~x"./ownerId/text()"os,
+        owner_alias: ~x"./ownerAlias/text()"os,
+        volume_size: ~x"./volumeSize/text()"oi,
+        description: ~x"./description/text()"os,
+        encrypted: ~x"./encrypted/text()"s,
+        kms_key_id: ~x"./kmsKeyId/text()"os,
+        data_encryption_key_id: ~x"./dataEncryptionKeyId/text()"os,
+        outpost_arn: ~x"./outpostArn/text()"os,
+        storage_tier: ~x"./storageTier/text()"os,
+        restore_expiry_time: ~x"./restoreExpiryTime/text()"os,
+        sse_type: ~x"./sseType/text()"os,
+        availability_zone: ~x"./availabilityZone/text()"os,
+        transfer_type: ~x"./transferType/text()"os,
+        completion_duration_minutes: ~x"./completionDurationMinutes/text()"oi,
+        completion_time: ~x"./completionTime/text()"os,
+        full_snapshot_size_in_bytes: ~x"./fullSnapshotSizeInBytes/text()"oi,
+        tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
+      )
+
+    %{
+      snapshot_set: Enum.map(snapshots, &coerce_encrypted/1),
+      next_token: xpath(body, ~x"//DescribeSnapshotsResponse/nextToken/text()"os)
+    }
+  end
+
+  defp coerce_encrypted(%{encrypted: value} = snapshot) do
+    %{snapshot | encrypted: value === "true"}
+  end
+
+  @doc """
   Deletes an EBS snapshot.
 
   ## Examples
@@ -2706,6 +2816,11 @@ defmodule AwsSdk.EC2 do
     defdelegate sandbox_describe_security_group_rules_response(opts),
       to: AwsSdk.EC2.Sandbox,
       as: :describe_security_group_rules_response
+
+    @doc false
+    defdelegate sandbox_describe_snapshots_response(opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :describe_snapshots_response
   else
     defp sandbox_disabled?, do: true
 
@@ -2747,6 +2862,8 @@ defmodule AwsSdk.EC2 do
 
     defp sandbox_describe_security_group_rules_response(_),
       do: raise("sandbox not available")
+
+    defp sandbox_describe_snapshots_response(_), do: raise("sandbox not available")
   end
 
   # ---------------------------------------------------------------------------

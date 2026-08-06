@@ -829,4 +829,30 @@ defmodule AwsSdk.ConformanceTest do
     assert egress.referenced_group_info.group_id == "sg-2"
     assert parsed.next_token == "tok"
   end
+
+  test "DescribeSnapshots keeps the full snapshot shape" do
+    xml = """
+    <DescribeSnapshotsResponse><snapshotSet><item>
+    <snapshotId>snap-1</snapshotId><volumeId>vol-1</volumeId>
+    <status>completed</status><startTime>2026-01-01T00:00:00Z</startTime>
+    <progress>100%</progress><ownerId>123456789012</ownerId>
+    <volumeSize>30</volumeSize><description>ami backing</description>
+    <encrypted>false</encrypted><storageTier>standard</storageTier>
+    <tagSet><item><key>Name</key><value>web</value></item></tagSet>
+    </item></snapshotSet>
+    <nextToken>tok</nextToken></DescribeSnapshotsResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_describe_snapshots_for_test(xml)
+
+    assert [snap] = parsed.snapshot_set
+    assert snap.snapshot_id == "snap-1"
+    assert snap.volume_id == "vol-1"
+    assert snap.status == "completed"
+    assert snap.start_time == "2026-01-01T00:00:00Z"
+    assert snap.volume_size == 30
+    assert snap.encrypted == false
+    assert snap.tag_set == [%{key: "Name", value: "web"}]
+    assert parsed.next_token == "tok"
+  end
 end

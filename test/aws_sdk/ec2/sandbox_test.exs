@@ -345,4 +345,15 @@ defmodule AwsSdk.EC2.SandboxTest do
                EC2.describe_security_group_rules(sandbox: [enabled: true])
     end
   end
+
+  describe "describe_snapshots/1" do
+    test "returns the registered snapshots" do
+      Sandbox.set_describe_snapshots_responses([
+        fn -> {:ok, %{snapshot_set: [%{snapshot_id: "snap-1"}], next_token: nil}} end
+      ])
+
+      assert {:ok, %{snapshot_set: [%{snapshot_id: "snap-1"}]}} =
+               EC2.describe_snapshots(owner_ids: ["self"], sandbox: [enabled: true])
+    end
+  end
 end
