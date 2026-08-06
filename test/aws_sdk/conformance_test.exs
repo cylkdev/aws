@@ -728,4 +728,42 @@ defmodule AwsSdk.ConformanceTest do
     assert acl.tag_set == [%{key: "Name", value: "main"}]
     assert parsed.next_token == "tok"
   end
+
+  test "DescribeRouteTables keeps routes, associations, and propagating VGWs" do
+    xml = """
+    <DescribeRouteTablesResponse><routeTableSet><item>
+    <routeTableId>rtb-1</routeTableId><vpcId>vpc-1</vpcId><ownerId>123456789012</ownerId>
+    <routeSet>
+    <item><destinationCidrBlock>10.0.0.0/16</destinationCidrBlock>
+    <gatewayId>local</gatewayId><state>active</state><origin>CreateRouteTable</origin></item>
+    <item><destinationCidrBlock>0.0.0.0/0</destinationCidrBlock>
+    <natGatewayId>nat-1</natGatewayId><state>blackhole</state><origin>CreateRoute</origin></item>
+    </routeSet>
+    <associationSet><item>
+    <routeTableAssociationId>rtbassoc-1</routeTableAssociationId>
+    <routeTableId>rtb-1</routeTableId><subnetId>subnet-1</subnetId><main>false</main>
+    <associationState><state>associated</state></associationState>
+    </item></associationSet>
+    <propagatingVgwSet><item><gatewayId>vgw-1</gatewayId></item></propagatingVgwSet>
+    <tagSet><item><key>Name</key><value>private</value></item></tagSet>
+    </item></routeTableSet></DescribeRouteTablesResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_describe_route_tables_for_test(xml)
+
+    assert [table] = parsed.route_table_set
+    assert table.route_table_id == "rtb-1"
+    assert [local, nat] = table.route_set
+    assert local.gateway_id == "local"
+    assert nat.nat_gateway_id == "nat-1"
+    assert nat.state == "blackhole"
+    assert [assoc] = table.association_set
+    assert assoc.main == false
+    # The associationState element is present, so it is a map (not nil); its
+    # absent statusMessage is "" the way every other optional scalar reads.
+    assert assoc.association_state == %{state: "associated", status_message: ""}
+    assert table.propagating_vgw_set == [%{gateway_id: "vgw-1"}]
+    # Absent nextToken reads "" here, as it does in every EC2 parser.
+    assert parsed.next_token == ""
+  end
 end

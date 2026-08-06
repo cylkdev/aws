@@ -371,5 +371,20 @@ if Code.ensure_loaded?(SandboxRegistry) do
         AwsSdk.Sandbox.normalize_no_key(tuples)
       )
     end
+
+    def describe_route_tables_response(opts) do
+      examples = AwsSdk.Sandbox.doc_examples([])
+      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :describe_route_tables, "*", examples)
+      AwsSdk.Sandbox.apply_func(func, [opts], examples)
+    end
+
+    def set_describe_route_tables_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :describe_route_tables,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
   end
 end

@@ -300,4 +300,15 @@ defmodule AwsSdk.EC2.SandboxTest do
                EC2.describe_network_acls(sandbox: [enabled: true])
     end
   end
+
+  describe "describe_route_tables/1" do
+    test "returns the registered route tables" do
+      Sandbox.set_describe_route_tables_responses([
+        fn -> {:ok, %{route_table_set: [%{route_table_id: "rtb-1"}], next_token: nil}} end
+      ])
+
+      assert {:ok, %{route_table_set: [%{route_table_id: "rtb-1"}]}} =
+               EC2.describe_route_tables(sandbox: [enabled: true])
+    end
+  end
 end

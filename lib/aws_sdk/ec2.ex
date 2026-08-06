@@ -767,6 +767,137 @@ defmodule AwsSdk.EC2 do
   end
 
   @doc """
+  Describes route tables.
+
+  ## Options
+
+    * `:route_table_ids` - List of route table IDs, encoded as `RouteTableId.N`.
+    * `:filters` - List of `%{name:, values:}` filters.
+    * `:next_token`, `:max_results` - Pagination.
+
+  ## Examples
+
+      AwsSdk.EC2.describe_route_tables(filters: [%{name: "vpc-id", values: ["vpc-0abc"]}])
+      #=> {:ok,
+      #=>  %{
+      #=>    route_table_set: [
+      #=>      %{
+      #=>        route_table_id: "rtb-0abc",
+      #=>        vpc_id: "vpc-0abc",
+      #=>        owner_id: "123456789012",
+      #=>        route_set: [
+      #=>          %{
+      #=>            destination_cidr_block: "0.0.0.0/0",
+      #=>            gateway_id: "igw-0abc",
+      #=>            state: "active",
+      #=>            origin: "CreateRoute",
+      #=>            nat_gateway_id: ""
+      #=>          }
+      #=>        ],
+      #=>        association_set: [
+      #=>          %{
+      #=>            route_table_association_id: "rtbassoc-1",
+      #=>            route_table_id: "rtb-0abc",
+      #=>            subnet_id: "subnet-1",
+      #=>            gateway_id: "",
+      #=>            main: false,
+      #=>            association_state: %{state: "associated", status_message: ""}
+      #=>          }
+      #=>        ],
+      #=>        propagating_vgw_set: [],
+      #=>        tag_set: []
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  Only the commonly-read route members are shown; the parser returns every
+  documented member of the response.
+  """
+  @spec describe_route_tables(opts :: keyword()) ::
+          {:ok, %{route_table_set: list(map()), next_token: String.t() | nil}} | {:error, term()}
+  def describe_route_tables(opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_describe_route_tables_response(opts)
+    else
+      do_describe_route_tables(opts)
+    end
+  end
+
+  defp do_describe_route_tables(opts) do
+    params =
+      %{}
+      |> put_member_list("RouteTableId", opts[:route_table_ids] || [])
+      |> put_filters(opts[:filters] || [])
+      |> maybe_put("NextToken", opts[:next_token])
+      |> maybe_put("MaxResults", opts[:max_results])
+
+    with {:ok, op} <- build_operation("DescribeRouteTables", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_route_tables(body)}
+    end
+  end
+
+  @doc false
+  def parse_describe_route_tables_for_test(xml), do: parse_describe_route_tables(xml)
+
+  defp parse_describe_route_tables(body) do
+    tables =
+      xpath(body, ~x"//routeTableSet/item"l,
+        route_table_id: ~x"./routeTableId/text()"s,
+        vpc_id: ~x"./vpcId/text()"os,
+        owner_id: ~x"./ownerId/text()"os,
+        route_set: [
+          ~x"./routeSet/item"l,
+          destination_cidr_block: ~x"./destinationCidrBlock/text()"os,
+          destination_ipv6_cidr_block: ~x"./destinationIpv6CidrBlock/text()"os,
+          destination_prefix_list_id: ~x"./destinationPrefixListId/text()"os,
+          egress_only_internet_gateway_id: ~x"./egressOnlyInternetGatewayId/text()"os,
+          gateway_id: ~x"./gatewayId/text()"os,
+          instance_id: ~x"./instanceId/text()"os,
+          instance_owner_id: ~x"./instanceOwnerId/text()"os,
+          nat_gateway_id: ~x"./natGatewayId/text()"os,
+          transit_gateway_id: ~x"./transitGatewayId/text()"os,
+          local_gateway_id: ~x"./localGatewayId/text()"os,
+          carrier_gateway_id: ~x"./carrierGatewayId/text()"os,
+          network_interface_id: ~x"./networkInterfaceId/text()"os,
+          vpc_peering_connection_id: ~x"./vpcPeeringConnectionId/text()"os,
+          core_network_arn: ~x"./coreNetworkArn/text()"os,
+          state: ~x"./state/text()"os,
+          origin: ~x"./origin/text()"os
+        ],
+        association_set: [
+          ~x"./associationSet/item"l,
+          route_table_association_id: ~x"./routeTableAssociationId/text()"s,
+          route_table_id: ~x"./routeTableId/text()"os,
+          subnet_id: ~x"./subnetId/text()"os,
+          gateway_id: ~x"./gatewayId/text()"os,
+          main: ~x"./main/text()"s,
+          association_state: [
+            ~x"./associationState"o,
+            state: ~x"./state/text()"os,
+            status_message: ~x"./statusMessage/text()"os
+          ]
+        ],
+        propagating_vgw_set: [~x"./propagatingVgwSet/item"l, gateway_id: ~x"./gatewayId/text()"s],
+        tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
+      )
+
+    %{
+      route_table_set: Enum.map(tables, &coerce_route_table/1),
+      next_token: xpath(body, ~x"//DescribeRouteTablesResponse/nextToken/text()"os)
+    }
+  end
+
+  defp coerce_route_table(%{association_set: assocs} = table) do
+    %{table | association_set: Enum.map(assocs, &coerce_route_table_association/1)}
+  end
+
+  defp coerce_route_table_association(%{main: main} = assoc) do
+    %{assoc | main: main === "true"}
+  end
+
+  @doc """
   Describes one or more subnets.
 
   ## Options
@@ -2342,6 +2473,11 @@ defmodule AwsSdk.EC2 do
     defdelegate sandbox_describe_network_acls_response(opts),
       to: AwsSdk.EC2.Sandbox,
       as: :describe_network_acls_response
+
+    @doc false
+    defdelegate sandbox_describe_route_tables_response(opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :describe_route_tables_response
   else
     defp sandbox_disabled?, do: true
 
@@ -2377,6 +2513,7 @@ defmodule AwsSdk.EC2 do
     defp sandbox_terminate_instances_response(_, _), do: raise("sandbox not available")
     defp sandbox_get_console_output_response(_, _), do: raise("sandbox not available")
     defp sandbox_describe_network_acls_response(_), do: raise("sandbox not available")
+    defp sandbox_describe_route_tables_response(_), do: raise("sandbox not available")
   end
 
   # ---------------------------------------------------------------------------
