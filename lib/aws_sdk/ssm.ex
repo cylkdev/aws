@@ -124,10 +124,10 @@ defmodule AwsSdk.SSM do
       %{"Name" => name}
       |> maybe_put("WithDecryption", opts[:with_decryption])
 
-    perform("GetParameter", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("GetParameter", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -167,10 +167,10 @@ defmodule AwsSdk.SSM do
       %{"Names" => names}
       |> maybe_put("WithDecryption", opts[:with_decryption])
 
-    perform("GetParameters", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("GetParameters", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -221,10 +221,10 @@ defmodule AwsSdk.SSM do
       |> maybe_put("MaxResults", opts[:max_results])
       |> maybe_put("NextToken", opts[:next_token])
 
-    perform("GetParametersByPath", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("GetParametersByPath", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -286,10 +286,10 @@ defmodule AwsSdk.SSM do
       |> maybe_put("Policies", opts[:policies])
       |> maybe_put("DataType", opts[:data_type])
 
-    perform("PutParameter", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("PutParameter", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -311,10 +311,10 @@ defmodule AwsSdk.SSM do
   end
 
   defp do_delete_parameter(name, opts) do
-    perform("DeleteParameter", %{"Name" => name}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DeleteParameter", %{"Name" => name}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -341,10 +341,10 @@ defmodule AwsSdk.SSM do
   end
 
   defp do_delete_parameters(names, opts) do
-    perform("DeleteParameters", %{"Names" => names}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DeleteParameters", %{"Names" => names}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -398,10 +398,10 @@ defmodule AwsSdk.SSM do
       |> maybe_put("NextToken", opts[:next_token])
       |> maybe_put("Shared", opts[:shared])
 
-    perform("DescribeParameters", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DescribeParameters", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -466,10 +466,10 @@ defmodule AwsSdk.SSM do
       |> maybe_put("MaxResults", opts[:max_results])
       |> maybe_put("NextToken", opts[:next_token])
 
-    perform("DescribeInstanceInformation", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DescribeInstanceInformation", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -500,23 +500,8 @@ defmodule AwsSdk.SSM do
     end
   end
 
-  defp perform(action, data, opts) do
-    with {:ok, op} <- build_operation(action, data, opts) do
-      op
-      |> Client.execute()
-      |> decode_response()
-    end
-  end
-
   defp encode_body(data) when map_size(data) === 0, do: "{}"
   defp encode_body(data), do: data |> :json.encode() |> IO.iodata_to_binary()
-
-  defp decode_response({:ok, %{body: body}}), do: {:ok, decode_body(body)}
-
-  defp decode_response({:error, {:http_error, status, body}}),
-    do: {:error, {:http_error, status, decode_body(body)}}
-
-  defp decode_response({:error, _reason} = err), do: err
 
   defp decode_body(""), do: %{}
 
@@ -624,28 +609,5 @@ defmodule AwsSdk.SSM do
         :error -> acc
       end
     end)
-  end
-
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 end
