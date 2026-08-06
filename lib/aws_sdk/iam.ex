@@ -128,11 +128,10 @@ defmodule AwsSdk.IAM do
       |> maybe_put("Path", opts[:path])
       |> maybe_put("PermissionsBoundary", opts[:permissions_boundary])
 
-    "CreateUser"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("CreateUser", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       {:ok, %{user: parse_user(body, ~x"//CreateUserResult/User"e)}}
-    end)
+    end
   end
 
   @doc """
@@ -178,11 +177,11 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_get_user(opts) do
-    "GetUser"
-    |> perform(maybe_put(%{}, "UserName", opts[:user_name]), opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <-
+           build_operation("GetUser", maybe_put(%{}, "UserName", opts[:user_name]), opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       {:ok, %{user: parse_user(body, ~x"//GetUserResult/User"e)}}
-    end)
+    end
   end
 
   @doc """
@@ -235,9 +234,8 @@ defmodule AwsSdk.IAM do
       |> maybe_put("MaxItems", opts[:max_items])
       |> maybe_put("Marker", opts[:marker])
 
-    "ListUsers"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("ListUsers", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       marker = xpath(body, ~x"//ListUsersResult/Marker/text()"s)
 
       {:ok,
@@ -246,7 +244,7 @@ defmodule AwsSdk.IAM do
          is_truncated: xpath(body, ~x"//ListUsersResult/IsTruncated/text()"s) === "true",
          marker: if(marker === "", do: nil, else: marker)
        }}
-    end)
+    end
   end
 
   @doc """
@@ -276,9 +274,10 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_delete_user(username, opts) do
-    "DeleteUser"
-    |> perform(%{"UserName" => username}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <- build_operation("DeleteUser", %{"UserName" => username}, opts),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -321,11 +320,11 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_create_access_key(opts) do
-    "CreateAccessKey"
-    |> perform(maybe_put(%{}, "UserName", opts[:user_name]), opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <-
+           build_operation("CreateAccessKey", maybe_put(%{}, "UserName", opts[:user_name]), opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       {:ok, %{access_key: parse_access_key(body, ~x"//CreateAccessKeyResult/AccessKey"e)}}
-    end)
+    end
   end
 
   @doc """
@@ -379,9 +378,8 @@ defmodule AwsSdk.IAM do
       |> maybe_put("Marker", opts[:marker])
       |> maybe_put("MaxItems", opts[:max_items])
 
-    "ListAccessKeys"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("ListAccessKeys", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       access_key_metadata =
         xpath(body, ~x"//AccessKeyMetadata/member"l,
           access_key_id: ~x"./AccessKeyId/text()"s,
@@ -396,7 +394,7 @@ defmodule AwsSdk.IAM do
          is_truncated: xpath(body, ~x"//ListAccessKeysResult/IsTruncated/text()"s) == "true",
          marker: xpath(body, ~x"//ListAccessKeysResult/Marker/text()"so)
        }}
-    end)
+    end
   end
 
   @doc """
@@ -426,9 +424,10 @@ defmodule AwsSdk.IAM do
   defp do_delete_access_key(access_key_id, opts) do
     params = maybe_put(%{"AccessKeyId" => access_key_id}, "UserName", opts[:user_name])
 
-    "DeleteAccessKey"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <- build_operation("DeleteAccessKey", params, opts),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -470,11 +469,10 @@ defmodule AwsSdk.IAM do
   defp do_create_group(name, opts) do
     params = maybe_put(%{"GroupName" => name}, "Path", opts[:path])
 
-    "CreateGroup"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("CreateGroup", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       {:ok, %{group: parse_group(body, ~x"//CreateGroupResult/Group"e)}}
-    end)
+    end
   end
 
   @doc """
@@ -520,9 +518,8 @@ defmodule AwsSdk.IAM do
       |> maybe_put("MaxItems", opts[:max_items])
       |> maybe_put("Marker", opts[:marker])
 
-    "ListGroups"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("ListGroups", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       groups =
         xpath(body, ~x"//Groups/member"l,
           group_name: ~x"./GroupName/text()"s,
@@ -538,7 +535,7 @@ defmodule AwsSdk.IAM do
          is_truncated: xpath(body, ~x"//ListGroupsResult/IsTruncated/text()"s) == "true",
          marker: xpath(body, ~x"//ListGroupsResult/Marker/text()"so)
        }}
-    end)
+    end
   end
 
   @doc """
@@ -565,9 +562,10 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_delete_group(name, opts) do
-    "DeleteGroup"
-    |> perform(%{"GroupName" => name}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <- build_operation("DeleteGroup", %{"GroupName" => name}, opts),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -599,9 +597,15 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_add_user_to_group(group_name, username, opts) do
-    "AddUserToGroup"
-    |> perform(%{"GroupName" => group_name, "UserName" => username}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <-
+           build_operation(
+             "AddUserToGroup",
+             %{"GroupName" => group_name, "UserName" => username},
+             opts
+           ),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -633,9 +637,15 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_remove_user_from_group(group_name, username, opts) do
-    "RemoveUserFromGroup"
-    |> perform(%{"GroupName" => group_name, "UserName" => username}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <-
+           build_operation(
+             "RemoveUserFromGroup",
+             %{"GroupName" => group_name, "UserName" => username},
+             opts
+           ),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -705,11 +715,10 @@ defmodule AwsSdk.IAM do
       |> maybe_put("Description", opts[:description])
       |> maybe_put("MaxSessionDuration", opts[:max_session_duration])
 
-    "CreateRole"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("CreateRole", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       {:ok, %{role: parse_role(body, ~x"//Role"e)}}
-    end)
+    end
   end
 
   @doc """
@@ -760,11 +769,10 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_get_role(name, opts) do
-    "GetRole"
-    |> perform(%{"RoleName" => name}, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("GetRole", %{"RoleName" => name}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       {:ok, %{role: parse_role(body, ~x"//Role"e)}}
-    end)
+    end
   end
 
   @doc """
@@ -819,16 +827,15 @@ defmodule AwsSdk.IAM do
       |> maybe_put("Marker", opts[:marker])
       |> maybe_put("MaxItems", opts[:max_items])
 
-    "ListRoles"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("ListRoles", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       {:ok,
        %{
          roles: parse_role(body, ~x"//Roles/member"l),
          is_truncated: xpath(body, ~x"//ListRolesResult/IsTruncated/text()"s) == "true",
          marker: xpath(body, ~x"//ListRolesResult/Marker/text()"so)
        }}
-    end)
+    end
   end
 
   @doc """
@@ -857,9 +864,10 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_delete_role(name, opts) do
-    "DeleteRole"
-    |> perform(%{"RoleName" => name}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <- build_operation("DeleteRole", %{"RoleName" => name}, opts),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -906,9 +914,10 @@ defmodule AwsSdk.IAM do
       "PolicyDocument" => policy_document |> :json.encode() |> IO.iodata_to_binary()
     }
 
-    "UpdateAssumeRolePolicy"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <- build_operation("UpdateAssumeRolePolicy", params, opts),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -958,9 +967,10 @@ defmodule AwsSdk.IAM do
       "PolicyDocument" => document |> :json.encode() |> IO.iodata_to_binary()
     }
 
-    "PutRolePolicy"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <- build_operation("PutRolePolicy", params, opts),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -1003,9 +1013,13 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_get_role_policy(role_name, policy_name, opts) do
-    "GetRolePolicy"
-    |> perform(%{"RoleName" => role_name, "PolicyName" => policy_name}, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <-
+           build_operation(
+             "GetRolePolicy",
+             %{"RoleName" => role_name, "PolicyName" => policy_name},
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
       fields =
         xpath(body, ~x"//GetRolePolicyResult"e,
           role_name: ~x"./RoleName/text()"s,
@@ -1021,7 +1035,7 @@ defmodule AwsSdk.IAM do
          policy_name: fields.policy_name,
          policy_document: document
        }}
-    end)
+    end
   end
 
   @doc """
@@ -1052,9 +1066,15 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_delete_role_policy(role_name, policy_name, opts) do
-    "DeleteRolePolicy"
-    |> perform(%{"RoleName" => role_name, "PolicyName" => policy_name}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <-
+           build_operation(
+             "DeleteRolePolicy",
+             %{"RoleName" => role_name, "PolicyName" => policy_name},
+             opts
+           ),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -1102,9 +1122,8 @@ defmodule AwsSdk.IAM do
       |> maybe_put("Marker", opts[:marker])
       |> maybe_put("MaxItems", opts[:max_items])
 
-    "ListRolePolicies"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("ListRolePolicies", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       policy_names = xpath(body, ~x"//ListRolePoliciesResult/PolicyNames/member/text()"ls)
       is_truncated = xpath(body, ~x"//ListRolePoliciesResult/IsTruncated/text()"s) === "true"
       marker = xpath(body, ~x"//ListRolePoliciesResult/Marker/text()"s)
@@ -1115,7 +1134,7 @@ defmodule AwsSdk.IAM do
          is_truncated: is_truncated,
          marker: if(marker === "", do: nil, else: marker)
        }}
-    end)
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -1179,11 +1198,10 @@ defmodule AwsSdk.IAM do
       |> maybe_put("Path", opts[:path])
       |> maybe_put("Description", opts[:description])
 
-    "CreatePolicy"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("CreatePolicy", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       {:ok, %{policy: parse_policy(body, ~x"//Policy"e)}}
-    end)
+    end
   end
 
   @doc """
@@ -1229,11 +1247,10 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_get_policy(policy_arn, opts) do
-    "GetPolicy"
-    |> perform(%{"PolicyArn" => policy_arn}, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("GetPolicy", %{"PolicyArn" => policy_arn}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       {:ok, %{policy: parse_policy(body, ~x"//Policy"e)}}
-    end)
+    end
   end
 
   @doc """
@@ -1289,9 +1306,13 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_get_policy_version(policy_arn, version_id, opts) do
-    "GetPolicyVersion"
-    |> perform(%{"PolicyArn" => policy_arn, "VersionId" => version_id}, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <-
+           build_operation(
+             "GetPolicyVersion",
+             %{"PolicyArn" => policy_arn, "VersionId" => version_id},
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
       fields =
         xpath(body, ~x"//GetPolicyVersionResult/PolicyVersion"e,
           document: ~x"./Document/text()"s,
@@ -1314,7 +1335,7 @@ defmodule AwsSdk.IAM do
            create_date: fields.create_date
          }
        }}
-    end)
+    end
   end
 
   @doc """
@@ -1371,16 +1392,15 @@ defmodule AwsSdk.IAM do
       |> maybe_put("Marker", opts[:marker])
       |> maybe_put("MaxItems", opts[:max_items])
 
-    "ListPolicies"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("ListPolicies", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       {:ok,
        %{
          policies: parse_policy(body, ~x"//Policies/member"l),
          is_truncated: xpath(body, ~x"//ListPoliciesResult/IsTruncated/text()"s) == "true",
          marker: xpath(body, ~x"//ListPoliciesResult/Marker/text()"so)
        }}
-    end)
+    end
   end
 
   @doc """
@@ -1409,9 +1429,10 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_delete_policy(policy_arn, opts) do
-    "DeletePolicy"
-    |> perform(%{"PolicyArn" => policy_arn}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <- build_operation("DeletePolicy", %{"PolicyArn" => policy_arn}, opts),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -1464,9 +1485,8 @@ defmodule AwsSdk.IAM do
       }
       |> maybe_put("SetAsDefault", opts[:set_as_default])
 
-    "CreatePolicyVersion"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("CreatePolicyVersion", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       fields =
         xpath(body, ~x"//PolicyVersion"e,
           version_id: ~x"./VersionId/text()"s,
@@ -1482,7 +1502,7 @@ defmodule AwsSdk.IAM do
            create_date: fields.create_date
          }
        }}
-    end)
+    end
   end
 
   @doc """
@@ -1513,9 +1533,15 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_set_default_policy_version(policy_arn, version_id, opts) do
-    "SetDefaultPolicyVersion"
-    |> perform(%{"PolicyArn" => policy_arn, "VersionId" => version_id}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <-
+           build_operation(
+             "SetDefaultPolicyVersion",
+             %{"PolicyArn" => policy_arn, "VersionId" => version_id},
+             opts
+           ),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -1548,9 +1574,15 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_delete_policy_version(policy_arn, version_id, opts) do
-    "DeletePolicyVersion"
-    |> perform(%{"PolicyArn" => policy_arn, "VersionId" => version_id}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <-
+           build_operation(
+             "DeletePolicyVersion",
+             %{"PolicyArn" => policy_arn, "VersionId" => version_id},
+             opts
+           ),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -1601,9 +1633,8 @@ defmodule AwsSdk.IAM do
       |> maybe_put("Marker", opts[:marker])
       |> maybe_put("MaxItems", opts[:max_items])
 
-    "ListPolicyVersions"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("ListPolicyVersions", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       versions =
         xpath(body, ~x"//Versions/member"l,
           version_id: ~x"./VersionId/text()"s,
@@ -1621,7 +1652,7 @@ defmodule AwsSdk.IAM do
          is_truncated: is_truncated,
          marker: if(marker === "", do: nil, else: marker)
        }}
-    end)
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -1647,9 +1678,15 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_attach_role_policy(role_name, policy_arn, opts) do
-    "AttachRolePolicy"
-    |> perform(%{"RoleName" => role_name, "PolicyArn" => policy_arn}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <-
+           build_operation(
+             "AttachRolePolicy",
+             %{"RoleName" => role_name, "PolicyArn" => policy_arn},
+             opts
+           ),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -1671,9 +1708,15 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_detach_role_policy(role_name, policy_arn, opts) do
-    "DetachRolePolicy"
-    |> perform(%{"RoleName" => role_name, "PolicyArn" => policy_arn}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <-
+           build_operation(
+             "DetachRolePolicy",
+             %{"RoleName" => role_name, "PolicyArn" => policy_arn},
+             opts
+           ),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -1716,9 +1759,8 @@ defmodule AwsSdk.IAM do
       |> maybe_put("Marker", opts[:marker])
       |> maybe_put("MaxItems", opts[:max_items])
 
-    "ListAttachedRolePolicies"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("ListAttachedRolePolicies", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       policies =
         xpath(body, ~x"//AttachedPolicies/member"l,
           policy_name: ~x"./PolicyName/text()"s,
@@ -1732,7 +1774,7 @@ defmodule AwsSdk.IAM do
            xpath(body, ~x"//ListAttachedRolePoliciesResult/IsTruncated/text()"s) == "true",
          marker: xpath(body, ~x"//ListAttachedRolePoliciesResult/Marker/text()"so)
        }}
-    end)
+    end
   end
 
   @doc """
@@ -1754,9 +1796,15 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_attach_user_policy(username, policy_arn, opts) do
-    "AttachUserPolicy"
-    |> perform(%{"UserName" => username, "PolicyArn" => policy_arn}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <-
+           build_operation(
+             "AttachUserPolicy",
+             %{"UserName" => username, "PolicyArn" => policy_arn},
+             opts
+           ),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -1778,9 +1826,15 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_detach_user_policy(username, policy_arn, opts) do
-    "DetachUserPolicy"
-    |> perform(%{"UserName" => username, "PolicyArn" => policy_arn}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <-
+           build_operation(
+             "DetachUserPolicy",
+             %{"UserName" => username, "PolicyArn" => policy_arn},
+             opts
+           ),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -1802,9 +1856,15 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_attach_group_policy(group_name, policy_arn, opts) do
-    "AttachGroupPolicy"
-    |> perform(%{"GroupName" => group_name, "PolicyArn" => policy_arn}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <-
+           build_operation(
+             "AttachGroupPolicy",
+             %{"GroupName" => group_name, "PolicyArn" => policy_arn},
+             opts
+           ),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -1826,9 +1886,15 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_detach_group_policy(group_name, policy_arn, opts) do
-    "DetachGroupPolicy"
-    |> perform(%{"GroupName" => group_name, "PolicyArn" => policy_arn}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <-
+           build_operation(
+             "DetachGroupPolicy",
+             %{"GroupName" => group_name, "PolicyArn" => policy_arn},
+             opts
+           ),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -1888,9 +1954,8 @@ defmodule AwsSdk.IAM do
       |> maybe_put("Marker", opts[:marker])
       |> maybe_put("MaxItems", opts[:max_items])
 
-    "ListMFADevices"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("ListMFADevices", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       %{devices: devices, is_truncated: is_truncated, marker: marker} =
         xpath(body, ~x"//ListMFADevicesResult"e,
           devices: [
@@ -1909,7 +1974,7 @@ defmodule AwsSdk.IAM do
          is_truncated: is_truncated === "true",
          marker: if(marker === "", do: nil, else: marker)
        }}
-    end)
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -1957,12 +2022,11 @@ defmodule AwsSdk.IAM do
       |> put_member_list("ClientIDList", opts[:client_id_list] || [])
       |> put_member_list("ThumbprintList", opts[:thumbprint_list] || [])
 
-    "CreateOpenIDConnectProvider"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("CreateOpenIDConnectProvider", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       arn = xpath(body, ~x"//OpenIDConnectProviderArn/text()"s)
       {:ok, %{open_id_connect_provider_arn: arn}}
-    end)
+    end
   end
 
   @doc """
@@ -2007,9 +2071,13 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_get_open_id_connect_provider(provider_arn, opts) do
-    "GetOpenIDConnectProvider"
-    |> perform(%{"OpenIDConnectProviderArn" => provider_arn}, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <-
+           build_operation(
+             "GetOpenIDConnectProvider",
+             %{"OpenIDConnectProviderArn" => provider_arn},
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
       fields =
         xpath(body, ~x"//GetOpenIDConnectProviderResult"e,
           url: ~x"./Url/text()"s,
@@ -2020,7 +2088,7 @@ defmodule AwsSdk.IAM do
         )
 
       {:ok, fields}
-    end)
+    end
   end
 
   @doc """
@@ -2050,14 +2118,13 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_list_open_id_connect_providers(opts) do
-    "ListOpenIDConnectProviders"
-    |> perform(%{}, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("ListOpenIDConnectProviders", %{}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       providers =
         xpath(body, ~x"//OpenIDConnectProviderList/member"l, arn: ~x"./Arn/text()"s)
 
       {:ok, %{open_id_connect_provider_list: providers}}
-    end)
+    end
   end
 
   @doc """
@@ -2086,9 +2153,15 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_delete_open_id_connect_provider(provider_arn, opts) do
-    "DeleteOpenIDConnectProvider"
-    |> perform(%{"OpenIDConnectProviderArn" => provider_arn}, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <-
+           build_operation(
+             "DeleteOpenIDConnectProvider",
+             %{"OpenIDConnectProviderArn" => provider_arn},
+             opts
+           ),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -2129,9 +2202,10 @@ defmodule AwsSdk.IAM do
       %{"OpenIDConnectProviderArn" => provider_arn}
       |> put_member_list("ThumbprintList", thumbprint_list)
 
-    "UpdateOpenIDConnectProviderThumbprint"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <- build_operation("UpdateOpenIDConnectProviderThumbprint", params, opts),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -2165,12 +2239,15 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_add_client_id_to_open_id_connect_provider(provider_arn, client_id, opts) do
-    "AddClientIDToOpenIDConnectProvider"
-    |> perform(
-      %{"OpenIDConnectProviderArn" => provider_arn, "ClientID" => client_id},
-      opts
-    )
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <-
+           build_operation(
+             "AddClientIDToOpenIDConnectProvider",
+             %{"OpenIDConnectProviderArn" => provider_arn, "ClientID" => client_id},
+             opts
+           ),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   @doc """
@@ -2204,12 +2281,15 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_remove_client_id_from_open_id_connect_provider(provider_arn, client_id, opts) do
-    "RemoveClientIDFromOpenIDConnectProvider"
-    |> perform(
-      %{"OpenIDConnectProviderArn" => provider_arn, "ClientID" => client_id},
-      opts
-    )
-    |> deserialize_response(opts, fn _ -> {:ok, %{}} end)
+    with {:ok, op} <-
+           build_operation(
+             "RemoveClientIDFromOpenIDConnectProvider",
+             %{"OpenIDConnectProviderArn" => provider_arn, "ClientID" => client_id},
+             opts
+           ),
+         {:ok, %{body: _body}} <- Client.request(op) do
+      {:ok, %{}}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -2260,9 +2340,10 @@ defmodule AwsSdk.IAM do
   end
 
   defp do_get_account_summary(opts) do
-    "GetAccountSummary"
-    |> perform(%{}, opts)
-    |> deserialize_response(opts, fn body -> {:ok, parse_account_summary(body)} end)
+    with {:ok, op} <- build_operation("GetAccountSummary", %{}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_account_summary(body)}
+    end
   end
 
   @doc false
@@ -2308,15 +2389,6 @@ defmodule AwsSdk.IAM do
       }
 
       {:ok, apply_overrides(op, opts[:iam] || [])}
-    end
-  end
-
-  defp perform(action, params, opts) do
-    with {:ok, op} <- build_operation(action, params, opts) do
-      case Client.execute(op) do
-        {:ok, %{body: body}} -> {:ok, body}
-        {:error, _} = err -> err
-      end
     end
   end
 
@@ -2775,28 +2847,5 @@ defmodule AwsSdk.IAM do
         :error -> acc
       end
     end)
-  end
-
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 end
