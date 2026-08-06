@@ -798,4 +798,35 @@ defmodule AwsSdk.ConformanceTest do
     assert parsed.return == true
     assert parsed.key_pair_id == "key-1"
   end
+
+  test "DescribeSecurityGroupRules keeps rule granularity and referenced groups" do
+    xml = """
+    <DescribeSecurityGroupRulesResponse><securityGroupRuleSet>
+    <item><securityGroupRuleId>sgr-1</securityGroupRuleId>
+    <groupId>sg-1</groupId><groupOwnerId>123456789012</groupOwnerId>
+    <isEgress>false</isEgress><ipProtocol>tcp</ipProtocol>
+    <fromPort>443</fromPort><toPort>443</toPort>
+    <cidrIpv4>0.0.0.0/0</cidrIpv4>
+    <tagSet/></item>
+    <item><securityGroupRuleId>sgr-2</securityGroupRuleId>
+    <groupId>sg-1</groupId><isEgress>true</isEgress><ipProtocol>-1</ipProtocol>
+    <fromPort>-1</fromPort><toPort>-1</toPort>
+    <referencedGroupInfo><groupId>sg-2</groupId><userId>123456789012</userId></referencedGroupInfo>
+    </item>
+    </securityGroupRuleSet>
+    <nextToken>tok</nextToken></DescribeSecurityGroupRulesResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_describe_security_group_rules_for_test(xml)
+
+    assert [ingress, egress] = parsed.security_group_rule_set
+    assert ingress.security_group_rule_id == "sgr-1"
+    assert ingress.is_egress == false
+    assert ingress.from_port == 443
+    assert ingress.cidr_ipv4 == "0.0.0.0/0"
+    assert ingress.referenced_group_info == nil
+    assert egress.is_egress == true
+    assert egress.referenced_group_info.group_id == "sg-2"
+    assert parsed.next_token == "tok"
+  end
 end

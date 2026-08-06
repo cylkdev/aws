@@ -524,6 +524,110 @@ defmodule AwsSdk.EC2 do
     )
   end
 
+  @doc """
+  Describes security group rules — the rule-granular read (one entry per
+  rule, each with its own `security_group_rule_id`).
+
+  ## Options
+
+    * `:security_group_rule_ids` - List of rule IDs, encoded as
+      `SecurityGroupRuleId.N`.
+    * `:filters` - List of `%{name:, values:}` filters (e.g.
+      `%{name: "group-id", values: ["sg-1"]}`).
+    * `:next_token`, `:max_results` - Pagination.
+
+  ## Examples
+
+      AwsSdk.EC2.describe_security_group_rules(
+        filters: [%{name: "group-id", values: ["sg-0abc"]}]
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    security_group_rule_set: [
+      #=>      %{
+      #=>        security_group_rule_id: "sgr-0abc",
+      #=>        group_id: "sg-0abc",
+      #=>        group_owner_id: "123456789012",
+      #=>        is_egress: false,
+      #=>        ip_protocol: "tcp",
+      #=>        from_port: 443,
+      #=>        to_port: 443,
+      #=>        cidr_ipv4: "0.0.0.0/0",
+      #=>        cidr_ipv6: "",
+      #=>        prefix_list_id: "",
+      #=>        referenced_group_info: nil,
+      #=>        description: "",
+      #=>        tag_set: []
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+  """
+  @spec describe_security_group_rules(opts :: keyword()) ::
+          {:ok, %{security_group_rule_set: list(map()), next_token: String.t() | nil}}
+          | {:error, term()}
+  def describe_security_group_rules(opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_describe_security_group_rules_response(opts)
+    else
+      do_describe_security_group_rules(opts)
+    end
+  end
+
+  defp do_describe_security_group_rules(opts) do
+    params =
+      %{}
+      |> put_member_list("SecurityGroupRuleId", opts[:security_group_rule_ids] || [])
+      |> put_filters(opts[:filters] || [])
+      |> maybe_put("NextToken", opts[:next_token])
+      |> maybe_put("MaxResults", opts[:max_results])
+
+    with {:ok, op} <- build_operation("DescribeSecurityGroupRules", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_security_group_rules(body)}
+    end
+  end
+
+  @doc false
+  def parse_describe_security_group_rules_for_test(xml),
+    do: parse_describe_security_group_rules(xml)
+
+  defp parse_describe_security_group_rules(body) do
+    rules =
+      xpath(body, ~x"//securityGroupRuleSet/item"l,
+        security_group_rule_id: ~x"./securityGroupRuleId/text()"s,
+        group_id: ~x"./groupId/text()"os,
+        group_owner_id: ~x"./groupOwnerId/text()"os,
+        is_egress: ~x"./isEgress/text()"s,
+        ip_protocol: ~x"./ipProtocol/text()"os,
+        from_port: ~x"./fromPort/text()"oi,
+        to_port: ~x"./toPort/text()"oi,
+        cidr_ipv4: ~x"./cidrIpv4/text()"os,
+        cidr_ipv6: ~x"./cidrIpv6/text()"os,
+        prefix_list_id: ~x"./prefixListId/text()"os,
+        referenced_group_info: [
+          ~x"./referencedGroupInfo"o,
+          group_id: ~x"./groupId/text()"os,
+          peering_status: ~x"./peeringStatus/text()"os,
+          user_id: ~x"./userId/text()"os,
+          vpc_id: ~x"./vpcId/text()"os,
+          vpc_peering_connection_id: ~x"./vpcPeeringConnectionId/text()"os
+        ],
+        description: ~x"./description/text()"os,
+        security_group_rule_arn: ~x"./securityGroupRuleArn/text()"os,
+        tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
+      )
+
+    %{
+      security_group_rule_set: Enum.map(rules, &coerce_is_egress/1),
+      next_token: xpath(body, ~x"//DescribeSecurityGroupRulesResponse/nextToken/text()"os)
+    }
+  end
+
+  defp coerce_is_egress(%{is_egress: value} = rule) do
+    %{rule | is_egress: value === "true"}
+  end
+
   # `<return>` is a plain boolean on every mutating EC2 operation.
   defp parse_return(body) do
     %{return: xpath(body, ~x"//return/text()"os) == "true"}
@@ -2597,6 +2701,11 @@ defmodule AwsSdk.EC2 do
     defdelegate sandbox_delete_key_pair_response(key_name, opts),
       to: AwsSdk.EC2.Sandbox,
       as: :delete_key_pair_response
+
+    @doc false
+    defdelegate sandbox_describe_security_group_rules_response(opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :describe_security_group_rules_response
   else
     defp sandbox_disabled?, do: true
 
@@ -2635,6 +2744,9 @@ defmodule AwsSdk.EC2 do
     defp sandbox_describe_route_tables_response(_), do: raise("sandbox not available")
     defp sandbox_describe_key_pairs_response(_), do: raise("sandbox not available")
     defp sandbox_delete_key_pair_response(_, _), do: raise("sandbox not available")
+
+    defp sandbox_describe_security_group_rules_response(_),
+      do: raise("sandbox not available")
   end
 
   # ---------------------------------------------------------------------------
