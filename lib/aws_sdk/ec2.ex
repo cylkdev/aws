@@ -1335,6 +1335,115 @@ defmodule AwsSdk.EC2 do
   end
 
   # ---------------------------------------------------------------------------
+  # Key pairs
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Describes key pairs.
+
+  ## Options
+
+    * `:key_names` - List of key names, encoded as `KeyName.N`.
+    * `:key_pair_ids` - List of key pair IDs, encoded as `KeyPairId.N`.
+    * `:filters` - List of `%{name:, values:}` filters.
+    * `:include_public_key` - Boolean; include the public key material.
+
+  ## Examples
+
+      AwsSdk.EC2.describe_key_pairs(filters: [%{name: "key-name", values: ["deploy"]}])
+      #=> {:ok,
+      #=>  %{
+      #=>    key_set: [
+      #=>      %{
+      #=>        key_pair_id: "key-0abc",
+      #=>        key_name: "deploy",
+      #=>        key_fingerprint: "ab:cd:...",
+      #=>        key_type: "ed25519",
+      #=>        create_time: "2026-01-01T00:00:00Z",
+      #=>        public_key: "",
+      #=>        tag_set: []
+      #=>      }
+      #=>    ]
+      #=>  }}
+  """
+  @spec describe_key_pairs(opts :: keyword()) ::
+          {:ok, %{key_set: list(map())}} | {:error, term()}
+  def describe_key_pairs(opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_describe_key_pairs_response(opts)
+    else
+      do_describe_key_pairs(opts)
+    end
+  end
+
+  defp do_describe_key_pairs(opts) do
+    params =
+      %{}
+      |> put_member_list("KeyName", opts[:key_names] || [])
+      |> put_member_list("KeyPairId", opts[:key_pair_ids] || [])
+      |> put_filters(opts[:filters] || [])
+      |> maybe_put("IncludePublicKey", opts[:include_public_key])
+
+    with {:ok, op} <- build_operation("DescribeKeyPairs", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_key_pairs(body)}
+    end
+  end
+
+  @doc false
+  def parse_describe_key_pairs_for_test(xml), do: parse_describe_key_pairs(xml)
+
+  defp parse_describe_key_pairs(body) do
+    %{
+      key_set:
+        xpath(body, ~x"//keySet/item"l,
+          key_pair_id: ~x"./keyPairId/text()"os,
+          key_name: ~x"./keyName/text()"s,
+          key_fingerprint: ~x"./keyFingerprint/text()"os,
+          key_type: ~x"./keyType/text()"os,
+          create_time: ~x"./createTime/text()"os,
+          public_key: ~x"./publicKey/text()"os,
+          tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
+        )
+    }
+  end
+
+  @doc """
+  Deletes the specified key pair by name.
+
+  ## Examples
+
+      AwsSdk.EC2.delete_key_pair("deploy")
+      #=> {:ok, %{return: true, key_pair_id: "key-0abc"}}
+  """
+  @spec delete_key_pair(key_name :: String.t(), opts :: keyword()) ::
+          {:ok, %{return: boolean(), key_pair_id: String.t() | nil}} | {:error, term()}
+  def delete_key_pair(key_name, opts \\ []) when is_binary(key_name) do
+    if sandbox?(opts) do
+      sandbox_delete_key_pair_response(key_name, opts)
+    else
+      do_delete_key_pair(key_name, opts)
+    end
+  end
+
+  defp do_delete_key_pair(key_name, opts) do
+    with {:ok, op} <- build_operation("DeleteKeyPair", %{"KeyName" => key_name}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_delete_key_pair(body)}
+    end
+  end
+
+  @doc false
+  def parse_delete_key_pair_for_test(xml), do: parse_delete_key_pair(xml)
+
+  defp parse_delete_key_pair(body) do
+    %{
+      return: xpath(body, ~x"//DeleteKeyPairResponse/return/text()"os) == "true",
+      key_pair_id: xpath(body, ~x"//DeleteKeyPairResponse/keyPairId/text()"os)
+    }
+  end
+
+  # ---------------------------------------------------------------------------
   # Instance lifecycle
   # ---------------------------------------------------------------------------
 
@@ -2478,6 +2587,16 @@ defmodule AwsSdk.EC2 do
     defdelegate sandbox_describe_route_tables_response(opts),
       to: AwsSdk.EC2.Sandbox,
       as: :describe_route_tables_response
+
+    @doc false
+    defdelegate sandbox_describe_key_pairs_response(opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :describe_key_pairs_response
+
+    @doc false
+    defdelegate sandbox_delete_key_pair_response(key_name, opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :delete_key_pair_response
   else
     defp sandbox_disabled?, do: true
 
@@ -2514,6 +2633,8 @@ defmodule AwsSdk.EC2 do
     defp sandbox_get_console_output_response(_, _), do: raise("sandbox not available")
     defp sandbox_describe_network_acls_response(_), do: raise("sandbox not available")
     defp sandbox_describe_route_tables_response(_), do: raise("sandbox not available")
+    defp sandbox_describe_key_pairs_response(_), do: raise("sandbox not available")
+    defp sandbox_delete_key_pair_response(_, _), do: raise("sandbox not available")
   end
 
   # ---------------------------------------------------------------------------

@@ -766,4 +766,36 @@ defmodule AwsSdk.ConformanceTest do
     # Absent nextToken reads "" here, as it does in every EC2 parser.
     assert parsed.next_token == ""
   end
+
+  test "DescribeKeyPairs keeps fingerprint, type, and tags" do
+    xml = """
+    <DescribeKeyPairsResponse><keySet><item>
+    <keyPairId>key-1</keyPairId><keyName>deploy</keyName>
+    <keyFingerprint>ab:cd</keyFingerprint><keyType>ed25519</keyType>
+    <createTime>2026-01-01T00:00:00Z</createTime>
+    <tagSet><item><key>Team</key><value>ops</value></item></tagSet>
+    </item></keySet></DescribeKeyPairsResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_describe_key_pairs_for_test(xml)
+
+    assert [key] = parsed.key_set
+    assert key.key_pair_id == "key-1"
+    assert key.key_name == "deploy"
+    assert key.key_fingerprint == "ab:cd"
+    assert key.key_type == "ed25519"
+    assert key.create_time == "2026-01-01T00:00:00Z"
+    assert key.tag_set == [%{key: "Team", value: "ops"}]
+  end
+
+  test "DeleteKeyPair keeps the return flag and the deleted key's id" do
+    xml = """
+    <DeleteKeyPairResponse><return>true</return><keyPairId>key-1</keyPairId></DeleteKeyPairResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_delete_key_pair_for_test(xml)
+
+    assert parsed.return == true
+    assert parsed.key_pair_id == "key-1"
+  end
 end

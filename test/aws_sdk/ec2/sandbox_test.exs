@@ -311,4 +311,25 @@ defmodule AwsSdk.EC2.SandboxTest do
                EC2.describe_route_tables(sandbox: [enabled: true])
     end
   end
+
+  describe "describe_key_pairs/1" do
+    test "returns the registered key pairs" do
+      Sandbox.set_describe_key_pairs_responses([
+        fn -> {:ok, %{key_set: [%{key_name: "deploy"}]}} end
+      ])
+
+      assert {:ok, %{key_set: [%{key_name: "deploy"}]}} =
+               EC2.describe_key_pairs(sandbox: [enabled: true])
+    end
+  end
+
+  describe "delete_key_pair/2" do
+    test "keys off the key name" do
+      Sandbox.set_delete_key_pair_responses([
+        {"deploy", fn -> {:ok, %{return: true, key_pair_id: "key-1"}} end}
+      ])
+
+      assert {:ok, %{return: true}} = EC2.delete_key_pair("deploy", sandbox: [enabled: true])
+    end
+  end
 end

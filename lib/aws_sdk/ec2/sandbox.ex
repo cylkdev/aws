@@ -386,5 +386,35 @@ if Code.ensure_loaded?(SandboxRegistry) do
         AwsSdk.Sandbox.normalize_no_key(tuples)
       )
     end
+
+    def describe_key_pairs_response(opts) do
+      examples = AwsSdk.Sandbox.doc_examples([])
+      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :describe_key_pairs, "*", examples)
+      AwsSdk.Sandbox.apply_func(func, [opts], examples)
+    end
+
+    def set_describe_key_pairs_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :describe_key_pairs,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
+
+    def delete_key_pair_response(key_name, opts) do
+      examples = AwsSdk.Sandbox.doc_examples([:key_name])
+      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :delete_key_pair, key_name, examples)
+      AwsSdk.Sandbox.apply_func(func, [key_name, opts], examples)
+    end
+
+    def set_delete_key_pair_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :delete_key_pair,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
   end
 end
