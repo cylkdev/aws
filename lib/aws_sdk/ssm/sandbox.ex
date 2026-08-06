@@ -182,5 +182,20 @@ if Code.ensure_loaded?(SandboxRegistry) do
         AwsSdk.Sandbox.normalize_no_key(tuples)
       )
     end
+
+    def list_command_invocations_response(opts) do
+      examples = AwsSdk.Sandbox.doc_examples([])
+      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :list_command_invocations, "*", examples)
+      AwsSdk.Sandbox.apply_func(func, [opts], examples)
+    end
+
+    def set_list_command_invocations_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :list_command_invocations,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
   end
 end

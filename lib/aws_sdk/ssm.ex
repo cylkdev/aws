@@ -689,6 +689,70 @@ defmodule AwsSdk.SSM do
     end
   end
 
+  @doc """
+  Lists the invocations of a command across nodes — the fleet-wide view of
+  one `send_command/3` call.
+
+  ## Options
+
+    * `:command_id` - Restrict to one command's invocations.
+    * `:instance_id` - Restrict to one node.
+    * `:details` - Boolean; include per-plugin `command_plugins` detail.
+    * `:filters` - List of `%{"key" => k, "value" => v}` maps
+      (keys: `"InvokedAfter"`, `"InvokedBefore"`, `"Status"`, `"DocumentName"`).
+    * `:max_results` - Integer page size (1-50).
+    * `:next_token` - Pagination token.
+
+  ## Examples
+
+      AwsSdk.SSM.list_command_invocations(command_id: "0831e1a8-4c47-4c74-8f2a-EXAMPLE")
+      #=> {:ok,
+      #=>  %{
+      #=>    command_invocations: [
+      #=>      %{
+      #=>        command_id: "0831e1a8-4c47-4c74-8f2a-EXAMPLE",
+      #=>        instance_id: "i-1234567890abcdef0",
+      #=>        instance_name: "",
+      #=>        document_name: "AWS-RunShellScript",
+      #=>        document_version: "$DEFAULT",
+      #=>        requested_date_time: 1.7e9,
+      #=>        status: "Success",
+      #=>        status_details: "Success",
+      #=>        command_plugins: [],
+      #=>        service_role: "",
+      #=>        notification_config: %{notification_arn: "", notification_events: [], notification_type: ""},
+      #=>        cloud_watch_output_config: %{cloud_watch_log_group_name: "", cloud_watch_output_enabled: false}
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+  """
+  @spec list_command_invocations(opts :: keyword()) ::
+          {:ok, %{command_invocations: [map()], next_token: String.t() | nil}} | {:error, term()}
+  def list_command_invocations(opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_list_command_invocations_response(opts)
+    else
+      do_list_command_invocations(opts)
+    end
+  end
+
+  defp do_list_command_invocations(opts) do
+    data =
+      %{}
+      |> maybe_put("CommandId", opts[:command_id])
+      |> maybe_put("InstanceId", opts[:instance_id])
+      |> maybe_put("Details", opts[:details])
+      |> maybe_put("Filters", opts[:filters])
+      |> maybe_put("MaxResults", opts[:max_results])
+      |> maybe_put("NextToken", opts[:next_token])
+
+    with {:ok, op} <- build_operation("ListCommandInvocations", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
+  end
+
   # ---------------------------------------------------------------------------
   # Private helpers
   # ---------------------------------------------------------------------------
@@ -815,6 +879,11 @@ defmodule AwsSdk.SSM do
     defdelegate sandbox_get_command_invocation_response(command_id, instance_id, opts),
       to: AwsSdk.SSM.Sandbox,
       as: :get_command_invocation_response
+
+    @doc false
+    defdelegate sandbox_list_command_invocations_response(opts),
+      to: AwsSdk.SSM.Sandbox,
+      as: :list_command_invocations_response
   else
     defp sandbox_disabled?, do: true
 
@@ -829,6 +898,7 @@ defmodule AwsSdk.SSM do
     defp sandbox_send_command_response(_, _, _), do: raise("sandbox not available")
     defp sandbox_send_command_by_targets_response(_, _, _), do: raise("sandbox not available")
     defp sandbox_get_command_invocation_response(_, _, _), do: raise("sandbox not available")
+    defp sandbox_list_command_invocations_response(_), do: raise("sandbox not available")
   end
 
   # ---------------------------------------------------------------------------

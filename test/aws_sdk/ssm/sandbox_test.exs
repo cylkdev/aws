@@ -175,4 +175,24 @@ defmodule AwsSdk.SSM.SandboxTest do
                SSM.get_command_invocation("cmd-123", "i-1", sandbox: [enabled: true])
     end
   end
+
+  describe "list_command_invocations/1" do
+    test "returns the registered invocations" do
+      Sandbox.set_list_command_invocations_responses([
+        fn ->
+          {:ok,
+           %{
+             command_invocations: [
+               %{command_id: "cmd-123", instance_id: "i-1", status: "Success"},
+               %{command_id: "cmd-123", instance_id: "i-2", status: "InProgress"}
+             ],
+             next_token: nil
+           }}
+        end
+      ])
+
+      assert {:ok, %{command_invocations: [_, _]}} =
+               SSM.list_command_invocations(command_id: "cmd-123", sandbox: [enabled: true])
+    end
+  end
 end
