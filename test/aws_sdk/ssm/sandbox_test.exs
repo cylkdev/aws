@@ -152,4 +152,27 @@ defmodule AwsSdk.SSM.SandboxTest do
                )
     end
   end
+
+  describe "get_command_invocation/3" do
+    test "keys off the command id" do
+      Sandbox.set_get_command_invocation_responses([
+        {"cmd-123",
+         fn ->
+           {:ok,
+            %{
+              command_id: "cmd-123",
+              instance_id: "i-1",
+              status: "Success",
+              status_details: "Success",
+              response_code: 0,
+              standard_output_content: "ok\n",
+              standard_error_content: ""
+            }}
+         end}
+      ])
+
+      assert {:ok, %{status: "Success", standard_output_content: "ok\n"}} =
+               SSM.get_command_invocation("cmd-123", "i-1", sandbox: [enabled: true])
+    end
+  end
 end

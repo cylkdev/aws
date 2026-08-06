@@ -622,6 +622,73 @@ defmodule AwsSdk.SSM do
     end
   end
 
+  @doc """
+  Returns detailed information about a command a specific node ran.
+
+  deployd's polling loop: call until `:status` leaves `"Pending"`/
+  `"InProgress"`/`"Delayed"`; treat `"Success"` as pass and `"Failed"`,
+  `"Cancelled"`, or `"TimedOut"` as failure.
+
+  ## Arguments
+
+    * `command_id` - The parent command's ID (from `send_command/3`).
+    * `instance_id` - The managed node the command ran on.
+    * `opts` - Options:
+      * `:plugin_name` - Name of the step/plugin for multi-plugin documents.
+
+  ## Examples
+
+      AwsSdk.SSM.get_command_invocation("0831e1a8-4c47-4c74-8f2a-EXAMPLE", "i-1234567890abcdef0")
+      #=> {:ok,
+      #=>  %{
+      #=>    command_id: "0831e1a8-4c47-4c74-8f2a-EXAMPLE",
+      #=>    instance_id: "i-1234567890abcdef0",
+      #=>    document_name: "AWS-RunShellScript",
+      #=>    document_version: "$DEFAULT",
+      #=>    plugin_name: "aws:runShellScript",
+      #=>    response_code: 0,
+      #=>    execution_start_date_time: "2026-08-05T12:00:00.000Z",
+      #=>    execution_elapsed_time: "PT0.5S",
+      #=>    execution_end_date_time: "2026-08-05T12:00:01.000Z",
+      #=>    status: "Success",
+      #=>    status_details: "Success",
+      #=>    standard_output_content: "ok\\n",
+      #=>    standard_output_url: "",
+      #=>    standard_error_content: "",
+      #=>    standard_error_url: "",
+      #=>    cloud_watch_output_config: %{
+      #=>      cloud_watch_log_group_name: "",
+      #=>      cloud_watch_output_enabled: false
+      #=>    },
+      #=>    comment: ""
+      #=>  }}
+  """
+  @spec get_command_invocation(
+          command_id :: String.t(),
+          instance_id :: String.t(),
+          opts :: keyword()
+        ) ::
+          {:ok, map()} | {:error, term()}
+  def get_command_invocation(command_id, instance_id, opts \\ [])
+      when is_binary(command_id) and is_binary(instance_id) do
+    if sandbox?(opts) do
+      sandbox_get_command_invocation_response(command_id, instance_id, opts)
+    else
+      do_get_command_invocation(command_id, instance_id, opts)
+    end
+  end
+
+  defp do_get_command_invocation(command_id, instance_id, opts) do
+    data =
+      %{"CommandId" => command_id, "InstanceId" => instance_id}
+      |> maybe_put("PluginName", opts[:plugin_name])
+
+    with {:ok, op} <- build_operation("GetCommandInvocation", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
+  end
+
   # ---------------------------------------------------------------------------
   # Private helpers
   # ---------------------------------------------------------------------------
@@ -743,6 +810,11 @@ defmodule AwsSdk.SSM do
     defdelegate sandbox_send_command_by_targets_response(targets, document_name, opts),
       to: AwsSdk.SSM.Sandbox,
       as: :send_command_by_targets_response
+
+    @doc false
+    defdelegate sandbox_get_command_invocation_response(command_id, instance_id, opts),
+      to: AwsSdk.SSM.Sandbox,
+      as: :get_command_invocation_response
   else
     defp sandbox_disabled?, do: true
 
@@ -756,6 +828,7 @@ defmodule AwsSdk.SSM do
     defp sandbox_describe_instance_information_response(_), do: raise("sandbox not available")
     defp sandbox_send_command_response(_, _, _), do: raise("sandbox not available")
     defp sandbox_send_command_by_targets_response(_, _, _), do: raise("sandbox not available")
+    defp sandbox_get_command_invocation_response(_, _, _), do: raise("sandbox not available")
   end
 
   # ---------------------------------------------------------------------------
