@@ -116,10 +116,10 @@ defmodule AwsSdk.EventBridge do
       |> maybe_put("RoleArn", opts[:role_arn])
       |> maybe_put("EventBusName", opts[:event_bus_name])
 
-    perform("PutRule", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("PutRule", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -153,10 +153,10 @@ defmodule AwsSdk.EventBridge do
   defp do_describe_rule(name, opts) do
     data = maybe_put(%{"Name" => name}, "EventBusName", opts[:event_bus_name])
 
-    perform("DescribeRule", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DescribeRule", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -197,10 +197,10 @@ defmodule AwsSdk.EventBridge do
       |> maybe_put("Limit", opts[:limit])
       |> maybe_put("NextToken", opts[:next_token])
 
-    perform("ListRules", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("ListRules", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -230,10 +230,10 @@ defmodule AwsSdk.EventBridge do
       |> maybe_put("EventBusName", opts[:event_bus_name])
       |> maybe_put("Force", opts[:force])
 
-    perform("DeleteRule", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DeleteRule", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # Target management
@@ -291,10 +291,10 @@ defmodule AwsSdk.EventBridge do
         opts[:event_bus_name]
       )
 
-    perform("PutTargets", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("PutTargets", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -331,10 +331,10 @@ defmodule AwsSdk.EventBridge do
       |> maybe_put("Limit", opts[:limit])
       |> maybe_put("NextToken", opts[:next_token])
 
-    perform("ListTargetsByRule", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("ListTargetsByRule", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -363,10 +363,10 @@ defmodule AwsSdk.EventBridge do
       |> maybe_put("EventBusName", opts[:event_bus_name])
       |> maybe_put("Force", opts[:force])
 
-    perform("RemoveTargets", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("RemoveTargets", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # Connection management
@@ -430,10 +430,10 @@ defmodule AwsSdk.EventBridge do
         opts[:description]
       )
 
-    perform("CreateConnection", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("CreateConnection", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -464,10 +464,10 @@ defmodule AwsSdk.EventBridge do
   end
 
   defp do_describe_connection(name, opts) do
-    perform("DescribeConnection", %{"Name" => name}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DescribeConnection", %{"Name" => name}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -510,10 +510,10 @@ defmodule AwsSdk.EventBridge do
       |> maybe_put("AuthParameters", opts[:auth_parameters])
       |> maybe_put("Description", opts[:description])
 
-    perform("UpdateConnection", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("UpdateConnection", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -540,10 +540,10 @@ defmodule AwsSdk.EventBridge do
   end
 
   defp do_delete_connection(name, opts) do
-    perform("DeleteConnection", %{"Name" => name}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DeleteConnection", %{"Name" => name}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -584,10 +584,10 @@ defmodule AwsSdk.EventBridge do
       |> maybe_put("Limit", opts[:limit])
       |> maybe_put("NextToken", opts[:next_token])
 
-    perform("ListConnections", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("ListConnections", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # API Destination management
@@ -655,10 +655,10 @@ defmodule AwsSdk.EventBridge do
       |> maybe_put("Description", opts[:description])
       |> maybe_put("InvocationRateLimitPerSecond", opts[:invocation_rate_limit_per_second])
 
-    perform("CreateApiDestination", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("CreateApiDestination", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -690,10 +690,10 @@ defmodule AwsSdk.EventBridge do
   end
 
   defp do_describe_api_destination(name, opts) do
-    perform("DescribeApiDestination", %{"Name" => name}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DescribeApiDestination", %{"Name" => name}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -738,10 +738,10 @@ defmodule AwsSdk.EventBridge do
       |> maybe_put("Description", opts[:description])
       |> maybe_put("InvocationRateLimitPerSecond", opts[:invocation_rate_limit_per_second])
 
-    perform("UpdateApiDestination", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("UpdateApiDestination", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -763,10 +763,10 @@ defmodule AwsSdk.EventBridge do
   end
 
   defp do_delete_api_destination(name, opts) do
-    perform("DeleteApiDestination", %{"Name" => name}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DeleteApiDestination", %{"Name" => name}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -807,10 +807,10 @@ defmodule AwsSdk.EventBridge do
       |> maybe_put("Limit", opts[:limit])
       |> maybe_put("NextToken", opts[:next_token])
 
-    perform("ListApiDestinations", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("ListApiDestinations", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # Event Bus management
@@ -836,10 +836,10 @@ defmodule AwsSdk.EventBridge do
   defp do_create_event_bus(name, opts) do
     data = maybe_put(%{"Name" => name}, "EventSourceName", opts[:event_source_name])
 
-    perform("CreateEventBus", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("CreateEventBus", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -868,10 +868,10 @@ defmodule AwsSdk.EventBridge do
   end
 
   defp do_describe_event_bus(name, opts) do
-    perform("DescribeEventBus", %{"Name" => name}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DescribeEventBus", %{"Name" => name}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -895,10 +895,10 @@ defmodule AwsSdk.EventBridge do
   end
 
   defp do_delete_event_bus(name, opts) do
-    perform("DeleteEventBus", %{"Name" => name}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DeleteEventBus", %{"Name" => name}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -933,10 +933,10 @@ defmodule AwsSdk.EventBridge do
       |> maybe_put("Limit", opts[:limit])
       |> maybe_put("NextToken", opts[:next_token])
 
-    perform("ListEventBuses", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("ListEventBuses", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # Event publishing
@@ -992,10 +992,10 @@ defmodule AwsSdk.EventBridge do
   defp do_put_events(entries, opts) do
     data = %{"Entries" => Enum.map(entries, &camelize_with_json(&1, "Detail"))}
 
-    perform("PutEvents", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("PutEvents", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # Rule control
@@ -1021,10 +1021,10 @@ defmodule AwsSdk.EventBridge do
   defp do_enable_rule(name, opts) do
     data = maybe_put(%{"Name" => name}, "EventBusName", opts[:event_bus_name])
 
-    perform("EnableRule", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("EnableRule", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -1050,10 +1050,10 @@ defmodule AwsSdk.EventBridge do
   defp do_disable_rule(name, opts) do
     data = maybe_put(%{"Name" => name}, "EventBusName", opts[:event_bus_name])
 
-    perform("DisableRule", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DisableRule", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # Pattern helpers
@@ -1206,23 +1206,8 @@ defmodule AwsSdk.EventBridge do
     end
   end
 
-  defp perform(action, data, opts) do
-    with {:ok, op} <- build_operation(action, data, opts) do
-      op
-      |> Client.execute()
-      |> decode_response()
-    end
-  end
-
   defp encode_body(data) when map_size(data) === 0, do: "{}"
   defp encode_body(data), do: data |> :json.encode() |> IO.iodata_to_binary()
-
-  defp decode_response({:ok, %{body: body}}), do: {:ok, decode_body(body)}
-
-  defp decode_response({:error, {:http_error, status, body}}),
-    do: {:error, {:http_error, status, decode_body(body)}}
-
-  defp decode_response({:error, _reason} = err), do: err
 
   defp decode_body(""), do: %{}
 
@@ -1475,28 +1460,5 @@ defmodule AwsSdk.EventBridge do
         :error -> acc
       end
     end)
-  end
-
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 end
