@@ -89,9 +89,8 @@ defmodule AwsSdk.EC2 do
       "VpcId" => vpc_id
     }
 
-    "CreateSecurityGroup"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("CreateSecurityGroup", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       {:ok,
        xpath(
          body,
@@ -99,7 +98,7 @@ defmodule AwsSdk.EC2 do
          group_id: ~x"./groupId/text()"s,
          tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
        )}
-    end)
+    end
   end
 
   @doc """
@@ -163,9 +162,8 @@ defmodule AwsSdk.EC2 do
       |> put_member_list("GroupName", opts[:group_names] || [])
       |> put_filters(opts[:filters] || [])
 
-    "DescribeSecurityGroups"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("DescribeSecurityGroups", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       groups =
         xpath(body, ~x"//securityGroupInfo/item"l,
           group_id: ~x"./groupId/text()"s,
@@ -250,7 +248,7 @@ defmodule AwsSdk.EC2 do
          security_group_info: groups,
          next_token: xpath(body, ~x"//DescribeSecurityGroupsResponse/nextToken/text()"os)
        }}
-    end)
+    end
   end
 
   @doc """
@@ -282,9 +280,10 @@ defmodule AwsSdk.EC2 do
       |> maybe_put("GroupId", opts[:group_id])
       |> maybe_put("GroupName", opts[:group_name])
 
-    "DeleteSecurityGroup"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body -> {:ok, parse_return(body)} end)
+    with {:ok, op} <- build_operation("DeleteSecurityGroup", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_return(body)}
+    end
   end
 
   @doc """
@@ -444,9 +443,10 @@ defmodule AwsSdk.EC2 do
       %{"GroupId" => group_id}
       |> put_ip_permissions(ip_permissions)
 
-    action
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body -> {:ok, parse_sg_rule_result(action, body)} end)
+    with {:ok, op} <- build_operation(action, params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_sg_rule_result(action, body)}
+    end
   end
 
   # Authorize and Revoke return different members, so they are parsed
@@ -589,9 +589,8 @@ defmodule AwsSdk.EC2 do
       |> put_member_list("VpcId", opts[:vpc_ids] || [])
       |> put_filters(opts[:filters] || [])
 
-    "DescribeVpcs"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("DescribeVpcs", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       vpcs =
         xpath(body, ~x"//vpcSet/item"l,
           vpc_id: ~x"./vpcId/text()"s,
@@ -637,7 +636,7 @@ defmodule AwsSdk.EC2 do
          vpc_set: Enum.map(vpcs, &coerce_is_default/1),
          next_token: xpath(body, ~x"//DescribeVpcsResponse/nextToken/text()"os)
        }}
-    end)
+    end
   end
 
   defp coerce_is_default(%{is_default: value} = vpc) do
@@ -696,9 +695,8 @@ defmodule AwsSdk.EC2 do
       |> put_member_list("SubnetId", opts[:subnet_ids] || [])
       |> put_filters(opts[:filters] || [])
 
-    "DescribeSubnets"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("DescribeSubnets", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       subnets =
         xpath(body, ~x"//subnetSet/item"l,
           subnet_id: ~x"./subnetId/text()"s,
@@ -744,7 +742,7 @@ defmodule AwsSdk.EC2 do
          subnet_set: subnets,
          next_token: xpath(body, ~x"//DescribeSubnetsResponse/nextToken/text()"os)
        }}
-    end)
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -862,9 +860,10 @@ defmodule AwsSdk.EC2 do
       |> put_member_list("InstanceId", opts[:instance_ids] || [])
       |> put_filters(opts[:filters] || [])
 
-    "DescribeInstances"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body -> {:ok, parse_describe_instances(body)} end)
+    with {:ok, op} <- build_operation("DescribeInstances", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_instances(body)}
+    end
   end
 
   @doc false
@@ -1168,9 +1167,10 @@ defmodule AwsSdk.EC2 do
       |> put_member_list("ImageId", opts[:image_ids] || [])
       |> put_filters(reject_valueless_filters(opts[:filters] || []))
 
-    "DescribeImages"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body -> {:ok, parse_describe_images(body)} end)
+    with {:ok, op} <- build_operation("DescribeImages", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_images(body)}
+    end
   end
 
   @doc false
@@ -1289,9 +1289,8 @@ defmodule AwsSdk.EC2 do
   end
 
   defp do_deregister_image(image_id, opts) do
-    "DeregisterImage"
-    |> perform(%{"ImageId" => image_id}, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("DeregisterImage", %{"ImageId" => image_id}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       {:ok,
        Map.put(
          parse_return(body),
@@ -1301,7 +1300,7 @@ defmodule AwsSdk.EC2 do
            return_code: ~x"./returnCode/text()"os
          )
        )}
-    end)
+    end
   end
 
   @doc """
@@ -1323,9 +1322,10 @@ defmodule AwsSdk.EC2 do
   end
 
   defp do_delete_snapshot(snapshot_id, opts) do
-    "DeleteSnapshot"
-    |> perform(%{"SnapshotId" => snapshot_id}, opts)
-    |> deserialize_response(opts, fn body -> {:ok, parse_return(body)} end)
+    with {:ok, op} <- build_operation("DeleteSnapshot", %{"SnapshotId" => snapshot_id}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_return(body)}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -1365,9 +1365,10 @@ defmodule AwsSdk.EC2 do
       |> put_member_list("ResourceId", resource_ids)
       |> put_tags("Tag", tags)
 
-    "CreateTags"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body -> {:ok, parse_return(body)} end)
+    with {:ok, op} <- build_operation("CreateTags", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_return(body)}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -1434,9 +1435,10 @@ defmodule AwsSdk.EC2 do
       |> maybe_put("NextToken", opts[:next_token])
       |> maybe_put("MaxResults", opts[:max_results])
 
-    "DescribeLaunchTemplates"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body -> {:ok, parse_describe_launch_templates(body)} end)
+    with {:ok, op} <- build_operation("DescribeLaunchTemplates", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_launch_templates(body)}
+    end
   end
 
   @doc false
@@ -1580,11 +1582,10 @@ defmodule AwsSdk.EC2 do
       |> maybe_put("NextToken", opts[:next_token])
       |> maybe_put("MaxResults", opts[:max_results])
 
-    "DescribeLaunchTemplateVersions"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("DescribeLaunchTemplateVersions", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       {:ok, parse_describe_launch_template_versions(body)}
-    end)
+    end
   end
 
   @doc false
@@ -1822,9 +1823,8 @@ defmodule AwsSdk.EC2 do
   defp do_describe_tags(opts) do
     params = put_filters(%{}, opts[:filters] || [])
 
-    "DescribeTags"
-    |> perform(params, opts)
-    |> deserialize_response(opts, fn body ->
+    with {:ok, op} <- build_operation("DescribeTags", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
       tags =
         xpath(body, ~x"//tagSet/item"l,
           resource_id: ~x"./resourceId/text()"s,
@@ -1835,7 +1835,7 @@ defmodule AwsSdk.EC2 do
 
       {:ok,
        %{tag_set: tags, next_token: xpath(body, ~x"//DescribeTagsResponse/nextToken/text()"os)}}
-    end)
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -1869,15 +1869,6 @@ defmodule AwsSdk.EC2 do
   end
 
   defp default_host(region), do: "ec2.#{region}.amazonaws.com"
-
-  defp perform(action, params, opts) do
-    with {:ok, op} <- build_operation(action, params, opts) do
-      case Client.execute(op) do
-        {:ok, %{body: body}} -> {:ok, body}
-        {:error, _} = err -> err
-      end
-    end
-  end
 
   defp encode_body(action, params) do
     params
@@ -2118,28 +2109,5 @@ defmodule AwsSdk.EC2 do
         :error -> acc
       end
     end)
-  end
-
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:ok, _} = ok -> ok
-      {:error, _} = err -> err
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 end
