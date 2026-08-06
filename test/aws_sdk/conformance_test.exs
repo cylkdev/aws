@@ -943,4 +943,29 @@ defmodule AwsSdk.ConformanceTest do
     assert event.code == "system-reboot"
     assert parsed.next_token == ""
   end
+
+  test "DescribeIamInstanceProfileAssociations keeps the nested profile" do
+    xml = """
+    <DescribeIamInstanceProfileAssociationsResponse><iamInstanceProfileAssociationSet>
+    <item><associationId>iip-assoc-1</associationId><instanceId>i-1</instanceId>
+    <iamInstanceProfile><arn>arn:aws:iam::1:instance-profile/web</arn><id>AIPA1</id></iamInstanceProfile>
+    <state>associated</state><timestamp>2026-01-01T00:00:00Z</timestamp></item>
+    </iamInstanceProfileAssociationSet>
+    <nextToken>tok</nextToken></DescribeIamInstanceProfileAssociationsResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_describe_iam_instance_profile_associations_for_test(xml)
+
+    assert [assoc] = parsed.iam_instance_profile_association_set
+    assert assoc.association_id == "iip-assoc-1"
+    assert assoc.instance_id == "i-1"
+
+    assert assoc.iam_instance_profile == %{
+             arn: "arn:aws:iam::1:instance-profile/web",
+             id: "AIPA1"
+           }
+
+    assert assoc.state == "associated"
+    assert parsed.next_token == "tok"
+  end
 end

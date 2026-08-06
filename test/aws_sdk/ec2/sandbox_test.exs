@@ -386,4 +386,21 @@ defmodule AwsSdk.EC2.SandboxTest do
                )
     end
   end
+
+  describe "describe_iam_instance_profile_associations/1" do
+    test "returns the registered associations" do
+      Sandbox.set_describe_iam_instance_profile_associations_responses([
+        fn ->
+          {:ok,
+           %{
+             iam_instance_profile_association_set: [%{association_id: "iip-assoc-1"}],
+             next_token: nil
+           }}
+        end
+      ])
+
+      assert {:ok, %{iam_instance_profile_association_set: [%{association_id: "iip-assoc-1"}]}} =
+               EC2.describe_iam_instance_profile_associations(sandbox: [enabled: true])
+    end
+  end
 end

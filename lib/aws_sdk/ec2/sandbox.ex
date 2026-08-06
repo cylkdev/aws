@@ -482,5 +482,29 @@ if Code.ensure_loaded?(SandboxRegistry) do
         AwsSdk.Sandbox.normalize_no_key(tuples)
       )
     end
+
+    def describe_iam_instance_profile_associations_response(opts) do
+      examples = AwsSdk.Sandbox.doc_examples([])
+
+      func =
+        AwsSdk.Sandbox.find!(
+          @registry,
+          __MODULE__,
+          :describe_iam_instance_profile_associations,
+          "*",
+          examples
+        )
+
+      AwsSdk.Sandbox.apply_func(func, [opts], examples)
+    end
+
+    def set_describe_iam_instance_profile_associations_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :describe_iam_instance_profile_associations,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
   end
 end

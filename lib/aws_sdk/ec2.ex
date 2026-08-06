@@ -1826,6 +1826,89 @@ defmodule AwsSdk.EC2 do
     }
   end
 
+  @doc """
+  Describes IAM instance profile associations.
+
+  ## Options
+
+    * `:association_ids` - List of association IDs, encoded as `AssociationId.N`.
+    * `:filters` - List of `%{name:, values:}` filters (names: `"instance-id"`,
+      `"state"`).
+    * `:next_token`, `:max_results` - Pagination.
+
+  ## Examples
+
+      AwsSdk.EC2.describe_iam_instance_profile_associations(
+        filters: [%{name: "instance-id", values: ["i-0abc"]}]
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    iam_instance_profile_association_set: [
+      #=>      %{
+      #=>        association_id: "iip-assoc-0abc",
+      #=>        instance_id: "i-0abc",
+      #=>        iam_instance_profile: %{
+      #=>          arn: "arn:aws:iam::123456789012:instance-profile/web",
+      #=>          id: "AIPAEXAMPLE"
+      #=>        },
+      #=>        state: "associated",
+      #=>        timestamp: "2026-01-01T00:00:00Z"
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+  """
+  @spec describe_iam_instance_profile_associations(opts :: keyword()) ::
+          {:ok,
+           %{iam_instance_profile_association_set: list(map()), next_token: String.t() | nil}}
+          | {:error, term()}
+  def describe_iam_instance_profile_associations(opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_describe_iam_instance_profile_associations_response(opts)
+    else
+      do_describe_iam_instance_profile_associations(opts)
+    end
+  end
+
+  defp do_describe_iam_instance_profile_associations(opts) do
+    params =
+      %{}
+      |> put_member_list("AssociationId", opts[:association_ids] || [])
+      |> put_filters(opts[:filters] || [])
+      |> maybe_put("NextToken", opts[:next_token])
+      |> maybe_put("MaxResults", opts[:max_results])
+
+    with {:ok, op} <- build_operation("DescribeIamInstanceProfileAssociations", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_iam_instance_profile_associations(body)}
+    end
+  end
+
+  @doc false
+  def parse_describe_iam_instance_profile_associations_for_test(xml),
+    do: parse_describe_iam_instance_profile_associations(xml)
+
+  defp parse_describe_iam_instance_profile_associations(body) do
+    %{
+      iam_instance_profile_association_set:
+        xpath(
+          body,
+          ~x"//iamInstanceProfileAssociationSet/item"l,
+          association_id: ~x"./associationId/text()"s,
+          instance_id: ~x"./instanceId/text()"os,
+          iam_instance_profile: [
+            ~x"./iamInstanceProfile"o,
+            arn: ~x"./arn/text()"os,
+            id: ~x"./id/text()"os
+          ],
+          state: ~x"./state/text()"os,
+          timestamp: ~x"./timestamp/text()"os
+        ),
+      next_token:
+        xpath(body, ~x"//DescribeIamInstanceProfileAssociationsResponse/nextToken/text()"os)
+    }
+  end
+
   # InstanceStatusSummary: shared by systemStatus, instanceStatus, and
   # attachedEbsStatus.
   defp instance_status_summary_fields do
@@ -3124,6 +3207,11 @@ defmodule AwsSdk.EC2 do
     defdelegate sandbox_describe_instance_status_response(opts),
       to: AwsSdk.EC2.Sandbox,
       as: :describe_instance_status_response
+
+    @doc false
+    defdelegate sandbox_describe_iam_instance_profile_associations_response(opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :describe_iam_instance_profile_associations_response
   else
     defp sandbox_disabled?, do: true
 
@@ -3172,6 +3260,9 @@ defmodule AwsSdk.EC2 do
       do: raise("sandbox not available")
 
     defp sandbox_describe_instance_status_response(_), do: raise("sandbox not available")
+
+    defp sandbox_describe_iam_instance_profile_associations_response(_),
+      do: raise("sandbox not available")
   end
 
   # ---------------------------------------------------------------------------
