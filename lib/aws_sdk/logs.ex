@@ -102,10 +102,10 @@ defmodule AwsSdk.Logs do
       |> maybe_put("kmsKeyId", opts[:kms_key_id])
       |> maybe_put("tags", opts[:tags])
 
-    perform("CreateLogGroup", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("CreateLogGroup", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -129,10 +129,10 @@ defmodule AwsSdk.Logs do
   end
 
   defp do_delete_log_group(name, opts) do
-    perform("DeleteLogGroup", %{"logGroupName" => name}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DeleteLogGroup", %{"logGroupName" => name}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -181,10 +181,10 @@ defmodule AwsSdk.Logs do
       |> maybe_put("limit", opts[:limit])
       |> maybe_put("nextToken", opts[:next_token])
 
-    perform("DescribeLogGroups", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DescribeLogGroups", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -210,10 +210,10 @@ defmodule AwsSdk.Logs do
   defp do_put_retention_policy(name, days, opts) do
     data = %{"logGroupName" => name, "retentionInDays" => days}
 
-    perform("PutRetentionPolicy", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("PutRetentionPolicy", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -237,10 +237,10 @@ defmodule AwsSdk.Logs do
   end
 
   defp do_delete_retention_policy(name, opts) do
-    perform("DeleteRetentionPolicy", %{"logGroupName" => name}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DeleteRetentionPolicy", %{"logGroupName" => name}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # Log Streams
@@ -266,10 +266,10 @@ defmodule AwsSdk.Logs do
   defp do_create_log_stream(group, stream, opts) do
     data = %{"logGroupName" => group, "logStreamName" => stream}
 
-    perform("CreateLogStream", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("CreateLogStream", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -293,10 +293,10 @@ defmodule AwsSdk.Logs do
   defp do_delete_log_stream(group, stream, opts) do
     data = %{"logGroupName" => group, "logStreamName" => stream}
 
-    perform("DeleteLogStream", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DeleteLogStream", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -353,10 +353,10 @@ defmodule AwsSdk.Logs do
       |> maybe_put("limit", opts[:limit])
       |> maybe_put("nextToken", opts[:next_token])
 
-    perform("DescribeLogStreams", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DescribeLogStreams", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # Log Events
@@ -409,10 +409,10 @@ defmodule AwsSdk.Logs do
       "logEvents" => Enum.map(events, &camelize_keys/1)
     }
 
-    perform("PutLogEvents", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("PutLogEvents", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -466,10 +466,10 @@ defmodule AwsSdk.Logs do
       |> maybe_put("limit", opts[:limit])
       |> maybe_put("nextToken", opts[:next_token])
 
-    perform("GetLogEvents", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("GetLogEvents", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -528,10 +528,10 @@ defmodule AwsSdk.Logs do
       |> maybe_put("limit", opts[:limit])
       |> maybe_put("nextToken", opts[:next_token])
 
-    perform("FilterLogEvents", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("FilterLogEvents", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # Insights Queries
@@ -666,10 +666,10 @@ defmodule AwsSdk.Logs do
       })
       |> maybe_put("limit", opts[:limit])
 
-    perform("StartQuery", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("StartQuery", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -705,10 +705,10 @@ defmodule AwsSdk.Logs do
   end
 
   defp do_get_query_results(query_id, opts) do
-    perform("GetQueryResults", %{"queryId" => query_id}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("GetQueryResults", %{"queryId" => query_id}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -732,10 +732,10 @@ defmodule AwsSdk.Logs do
   end
 
   defp do_stop_query(query_id, opts) do
-    perform("StopQuery", %{"queryId" => query_id}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("StopQuery", %{"queryId" => query_id}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -765,23 +765,8 @@ defmodule AwsSdk.Logs do
     end
   end
 
-  defp perform(action, data, opts) do
-    with {:ok, op} <- build_operation(action, data, opts) do
-      op
-      |> Client.execute()
-      |> decode_response()
-    end
-  end
-
   defp encode_body(data) when map_size(data) === 0, do: "{}"
   defp encode_body(data), do: data |> :json.encode() |> IO.iodata_to_binary()
-
-  defp decode_response({:ok, %{body: body}}), do: {:ok, decode_body(body)}
-
-  defp decode_response({:error, {:http_error, status, body}}),
-    do: {:error, {:http_error, status, decode_body(body)}}
-
-  defp decode_response({:error, _reason} = err), do: err
 
   defp decode_body(""), do: %{}
 
@@ -980,28 +965,5 @@ defmodule AwsSdk.Logs do
         :error -> acc
       end
     end)
-  end
-
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 end
