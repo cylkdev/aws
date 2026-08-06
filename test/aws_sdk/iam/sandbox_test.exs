@@ -630,6 +630,17 @@ defmodule AwsSdk.IAM.SandboxTest do
 
   # Regex matching
 
+  describe "get_instance_profile/2" do
+    test "keys off the profile name" do
+      Sandbox.set_get_instance_profile_responses([
+        {"web", fn -> {:ok, %{instance_profile: %{instance_profile_name: "web", roles: []}}} end}
+      ])
+
+      assert {:ok, %{instance_profile: %{instance_profile_name: "web"}}} =
+               IAM.get_instance_profile("web", sandbox: [enabled: true])
+    end
+  end
+
   describe "regex matching" do
     test "matches user name by regex" do
       Sandbox.set_create_user_responses([

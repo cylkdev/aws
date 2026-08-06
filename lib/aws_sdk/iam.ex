@@ -775,6 +775,84 @@ defmodule AwsSdk.IAM do
     end
   end
 
+  # ---------------------------------------------------------------------------
+  # Instance profiles
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Retrieves information about the specified instance profile, including
+  its creation date and the roles associated with it.
+
+  ## Examples
+
+      AwsSdk.IAM.get_instance_profile("web")
+      #=> {:ok,
+      #=>  %{
+      #=>    instance_profile: %{
+      #=>      path: "/",
+      #=>      instance_profile_name: "web",
+      #=>      instance_profile_id: "AIPAEXAMPLE",
+      #=>      arn: "arn:aws:iam::123456789012:instance-profile/web",
+      #=>      create_date: "2026-01-01T00:00:00Z",
+      #=>      roles: [
+      #=>        %{
+      #=>          role_name: "web-role",
+      #=>          role_id: "AROAEXAMPLE",
+      #=>          arn: "arn:aws:iam::123456789012:role/web-role",
+      #=>          path: "/",
+      #=>          create_date: "2026-01-01T00:00:00Z"
+      #=>        }
+      #=>      ],
+      #=>      tags: [%{key: "Team", value: "ops"}]
+      #=>    }
+      #=>  }}
+
+  The nested roles carry every member `get_role/2` returns.
+  """
+  @spec get_instance_profile(instance_profile_name :: String.t(), opts :: keyword()) ::
+          {:ok, %{instance_profile: map()}} | {:error, term()}
+  def get_instance_profile(instance_profile_name, opts \\ [])
+      when is_binary(instance_profile_name) do
+    if sandbox?(opts) do
+      sandbox_get_instance_profile_response(instance_profile_name, opts)
+    else
+      do_get_instance_profile(instance_profile_name, opts)
+    end
+  end
+
+  defp do_get_instance_profile(instance_profile_name, opts) do
+    params = %{"InstanceProfileName" => instance_profile_name}
+
+    with {:ok, op} <- build_operation("GetInstanceProfile", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_instance_profile(body)}
+    end
+  end
+
+  @doc false
+  def parse_instance_profile_for_test(xml), do: parse_instance_profile(xml)
+
+  defp parse_instance_profile(body) do
+    %{
+      instance_profile: %{
+        path: xpath(body, ~x"//GetInstanceProfileResult/InstanceProfile/Path/text()"s),
+        instance_profile_name:
+          xpath(body, ~x"//GetInstanceProfileResult/InstanceProfile/InstanceProfileName/text()"s),
+        instance_profile_id:
+          xpath(body, ~x"//GetInstanceProfileResult/InstanceProfile/InstanceProfileId/text()"s),
+        arn: xpath(body, ~x"//GetInstanceProfileResult/InstanceProfile/Arn/text()"s),
+        create_date:
+          xpath(body, ~x"//GetInstanceProfileResult/InstanceProfile/CreateDate/text()"s),
+        roles: parse_role(body, ~x"//GetInstanceProfileResult/InstanceProfile/Roles/member"l),
+        tags:
+          xpath(body, ~x"//GetInstanceProfileResult/InstanceProfile/Tags/member"l,
+            key: ~x"./Key/text()"s,
+            value: ~x"./Value/text()"s
+          )
+      }
+    }
+  end
+
   @doc """
   Lists IAM roles.
 
@@ -2587,6 +2665,11 @@ defmodule AwsSdk.IAM do
       as: :get_role_response
 
     @doc false
+    defdelegate sandbox_get_instance_profile_response(instance_profile_name, opts),
+      to: AwsSdk.IAM.Sandbox,
+      as: :get_instance_profile_response
+
+    @doc false
     defdelegate sandbox_list_roles_response(opts),
       to: AwsSdk.IAM.Sandbox,
       as: :list_roles_response
@@ -2776,6 +2859,7 @@ defmodule AwsSdk.IAM do
     # Roles
     defp sandbox_create_role_response(_, _), do: raise("sandbox not available")
     defp sandbox_get_role_response(_, _), do: raise("sandbox not available")
+    defp sandbox_get_instance_profile_response(_, _), do: raise("sandbox not available")
     defp sandbox_list_roles_response(_), do: raise("sandbox not available")
     defp sandbox_delete_role_response(_, _), do: raise("sandbox not available")
 

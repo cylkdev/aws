@@ -1125,4 +1125,33 @@ defmodule AwsSdk.ConformanceTest do
     assert action.fixed_response_config.status_code == "503"
     assert action.fixed_response_config.message_body == "maintenance"
   end
+
+  test "GetInstanceProfile keeps the profile identity and its roles" do
+    xml = """
+    <GetInstanceProfileResponse><GetInstanceProfileResult><InstanceProfile>
+    <Path>/</Path>
+    <InstanceProfileName>web</InstanceProfileName>
+    <InstanceProfileId>AIPAEXAMPLE</InstanceProfileId>
+    <Arn>arn:aws:iam::123456789012:instance-profile/web</Arn>
+    <CreateDate>2026-01-01T00:00:00Z</CreateDate>
+    <Roles><member>
+    <RoleName>web-role</RoleName><RoleId>AROAEXAMPLE</RoleId>
+    <Arn>arn:aws:iam::123456789012:role/web-role</Arn><Path>/</Path>
+    <CreateDate>2026-01-01T00:00:00Z</CreateDate>
+    </member></Roles>
+    <Tags><member><Key>Team</Key><Value>ops</Value></member></Tags>
+    </InstanceProfile></GetInstanceProfileResult></GetInstanceProfileResponse>
+    """
+
+    parsed = AwsSdk.IAM.parse_instance_profile_for_test(xml)
+
+    profile = parsed.instance_profile
+    assert profile.instance_profile_name == "web"
+    assert profile.instance_profile_id == "AIPAEXAMPLE"
+    assert profile.arn == "arn:aws:iam::123456789012:instance-profile/web"
+    assert profile.create_date == "2026-01-01T00:00:00Z"
+    assert [role] = profile.roles
+    assert role.role_name == "web-role"
+    assert profile.tags == [%{key: "Team", value: "ops"}]
+  end
 end

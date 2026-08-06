@@ -213,6 +213,30 @@ if Code.ensure_loaded?(SandboxRegistry) do
       AwsSdk.Sandbox.apply_func(func, [name, opts], examples)
     end
 
+    def get_instance_profile_response(instance_profile_name, opts) do
+      examples = AwsSdk.Sandbox.doc_examples([:instance_profile_name])
+
+      func =
+        AwsSdk.Sandbox.find!(
+          @registry,
+          __MODULE__,
+          :get_instance_profile,
+          instance_profile_name,
+          examples
+        )
+
+      AwsSdk.Sandbox.apply_func(func, [instance_profile_name, opts], examples)
+    end
+
+    def set_get_instance_profile_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :get_instance_profile,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
+
     def set_get_role_responses(tuples) do
       AwsSdk.Sandbox.set_responses(
         @registry,
