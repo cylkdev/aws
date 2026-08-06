@@ -1146,6 +1146,82 @@ defmodule AwsSdk.EC2 do
     }
   end
 
+  @doc """
+  Gets the console output for the specified instance.
+
+  AWS returns the output base64-encoded on the wire; this function decodes
+  it, since the encoding is transport detail rather than content. If the
+  payload is somehow not valid base64 it is returned as-is.
+
+  ## Arguments
+
+    * `instance_id` - The instance ID.
+
+  ## Options
+
+    * `:latest` - Boolean; when `true`, returns the latest output instead
+      of the buffered post-boot snapshot.
+
+  ## Examples
+
+      AwsSdk.EC2.get_console_output("i-1234567890abcdef0", latest: true)
+      #=> {:ok,
+      #=>  %{
+      #=>    instance_id: "i-1234567890abcdef0",
+      #=>    timestamp: "2026-08-05T12:00:00.000Z",
+      #=>    output: "[    0.000000] Linux version 6.1..."
+      #=>  }}
+  """
+  @spec get_console_output(instance_id :: String.t(), opts :: keyword()) ::
+          {:ok, %{instance_id: String.t(), timestamp: String.t() | nil, output: String.t() | nil}}
+          | {:error, term()}
+  def get_console_output(instance_id, opts \\ []) when is_binary(instance_id) do
+    if sandbox?(opts) do
+      sandbox_get_console_output_response(instance_id, opts)
+    else
+      do_get_console_output(instance_id, opts)
+    end
+  end
+
+  defp do_get_console_output(instance_id, opts) do
+    params =
+      %{"InstanceId" => instance_id}
+      |> maybe_put("Latest", opts[:latest])
+
+    with {:ok, op} <- build_operation("GetConsoleOutput", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_get_console_output(body)}
+    end
+  end
+
+  @doc false
+  def parse_get_console_output_for_test(xml), do: parse_get_console_output(xml)
+
+  defp parse_get_console_output(body) do
+    result =
+      xpath(body, ~x"//GetConsoleOutputResponse"e,
+        instance_id: ~x"./instanceId/text()"s,
+        timestamp: ~x"./timestamp/text()"os,
+        output: ~x"./output/text()"os
+      )
+
+    %{result | output: decode_console_output(result.output)}
+  end
+
+  defp decode_console_output(nil), do: nil
+
+  # SweetXml renders an absent <output> as "", but "no console output yet" is
+  # not the same as "the console printed nothing", so it surfaces as nil.
+  defp decode_console_output(""), do: nil
+
+  defp decode_console_output(encoded) do
+    # AWS base64-encodes the console text and may fold in whitespace.
+    case Base.decode64(encoded, ignore: :whitespace) do
+      {:ok, decoded} -> decoded
+      :error -> encoded
+    end
+  end
+
   # ---------------------------------------------------------------------------
   # Images and snapshots
   # ---------------------------------------------------------------------------
@@ -2133,6 +2209,11 @@ defmodule AwsSdk.EC2 do
     defdelegate sandbox_terminate_instances_response(instance_ids, opts),
       to: AwsSdk.EC2.Sandbox,
       as: :terminate_instances_response
+
+    @doc false
+    defdelegate sandbox_get_console_output_response(instance_id, opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :get_console_output_response
   else
     defp sandbox_disabled?, do: true
 
@@ -2166,6 +2247,7 @@ defmodule AwsSdk.EC2 do
     defp sandbox_deregister_image_response(_, _), do: raise("sandbox not available")
     defp sandbox_delete_snapshot_response(_, _), do: raise("sandbox not available")
     defp sandbox_terminate_instances_response(_, _), do: raise("sandbox not available")
+    defp sandbox_get_console_output_response(_, _), do: raise("sandbox not available")
   end
 
   # ---------------------------------------------------------------------------

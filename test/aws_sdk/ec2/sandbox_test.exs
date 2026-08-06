@@ -278,4 +278,15 @@ defmodule AwsSdk.EC2.SandboxTest do
                EC2.terminate_instances(["i-1"], sandbox: [enabled: true])
     end
   end
+
+  describe "get_console_output/2" do
+    test "keys off the instance id" do
+      Sandbox.set_get_console_output_responses([
+        {"i-1", fn -> {:ok, %{instance_id: "i-1", timestamp: nil, output: "boot ok\n"}} end}
+      ])
+
+      assert {:ok, %{output: "boot ok\n"}} =
+               EC2.get_console_output("i-1", sandbox: [enabled: true])
+    end
+  end
 end

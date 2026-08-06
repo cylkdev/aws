@@ -338,5 +338,23 @@ if Code.ensure_loaded?(SandboxRegistry) do
         AwsSdk.Sandbox.normalize_no_key(tuples)
       )
     end
+
+    def get_console_output_response(instance_id, opts) do
+      examples = AwsSdk.Sandbox.doc_examples([:instance_id])
+
+      func =
+        AwsSdk.Sandbox.find!(@registry, __MODULE__, :get_console_output, instance_id, examples)
+
+      AwsSdk.Sandbox.apply_func(func, [instance_id, opts], examples)
+    end
+
+    def set_get_console_output_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :get_console_output,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
   end
 end

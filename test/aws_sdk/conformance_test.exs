@@ -665,4 +665,29 @@ defmodule AwsSdk.ConformanceTest do
     assert one.previous_state == %{code: 16, name: "running"}
     assert two.current_state.name == "terminated"
   end
+
+  test "GetConsoleOutput decodes the base64 output and keeps the timestamp" do
+    # "boot ok\n" base64-encoded, as AWS returns it on the wire.
+    xml = """
+    <GetConsoleOutputResponse>
+    <instanceId>i-1</instanceId>
+    <timestamp>2026-08-05T12:00:00.000Z</timestamp>
+    <output>Ym9vdCBvawo=</output>
+    </GetConsoleOutputResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_get_console_output_for_test(xml)
+
+    assert parsed.instance_id == "i-1"
+    assert parsed.timestamp == "2026-08-05T12:00:00.000Z"
+    assert parsed.output == "boot ok\n"
+  end
+
+  test "GetConsoleOutput yields nil output when AWS omits it" do
+    xml = "<GetConsoleOutputResponse><instanceId>i-1</instanceId></GetConsoleOutputResponse>"
+
+    parsed = AwsSdk.EC2.parse_get_console_output_for_test(xml)
+
+    assert parsed.output == nil
+  end
 end
