@@ -308,6 +308,70 @@ defmodule AwsSdk.AutoScaling do
   end
 
   @doc """
+  Describes the scaling activities for an Auto Scaling group.
+
+  Maps to AWS `DescribeScalingActivities`. `auto_scaling_group_name` is
+  required here (AWS allows omitting it to list account-wide activity;
+  this wrapper scopes to one group).
+
+  ## Options
+
+    - `:activity_ids` - list of activity IDs to fetch
+    - `:include_deleted_groups` - boolean; include activity from deleted groups
+    - `:max_records` - page size (max 100)
+    - `:next_token` - pagination token
+
+  ## Examples
+
+      AwsSdk.AutoScaling.describe_scaling_activities("web-asg", max_records: 10)
+      #=> {:ok,
+      #=>  %{
+      #=>    activities: [
+      #=>      %{
+      #=>        activity_id: "act-0abc",
+      #=>        auto_scaling_group_name: "web-asg",
+      #=>        description: "Terminating EC2 instance: i-0abc",
+      #=>        cause: "At 2026-08-05T12:00:00Z an instance refresh replaced instances",
+      #=>        start_time: "2026-08-05T12:00:00Z",
+      #=>        end_time: "2026-08-05T12:05:00Z",
+      #=>        status_code: "Successful",
+      #=>        status_message: "",
+      #=>        progress: 100,
+      #=>        details: "{...}",
+      #=>        auto_scaling_group_state: "",
+      #=>        auto_scaling_group_arn: "arn:aws:autoscaling:..."
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+  """
+  @spec describe_scaling_activities(String.t(), keyword) :: {:ok, map} | {:error, term}
+  def describe_scaling_activities(auto_scaling_group_name, opts \\ [])
+      when is_binary(auto_scaling_group_name) do
+    if sandbox?(opts) do
+      sandbox_describe_scaling_activities_response(auto_scaling_group_name, opts)
+    else
+      do_describe_scaling_activities(auto_scaling_group_name, opts)
+    end
+  end
+
+  defp do_describe_scaling_activities(auto_scaling_group_name, opts) do
+    params =
+      flatten_query(%{
+        "AutoScalingGroupName" => auto_scaling_group_name,
+        "ActivityIds" => opts[:activity_ids],
+        "IncludeDeletedGroups" => opts[:include_deleted_groups],
+        "MaxRecords" => opts[:max_records],
+        "NextToken" => opts[:next_token]
+      })
+
+    with {:ok, op} <- build_operation("DescribeScalingActivities", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_scaling_activities(body)}
+    end
+  end
+
+  @doc """
   Starts an instance refresh for an Auto Scaling group.
 
   Maps to AWS `StartInstanceRefresh`. `auto_scaling_group_name` is required.
@@ -976,6 +1040,33 @@ defmodule AwsSdk.AutoScaling do
     %{auto_scaling_instances: instances, next_token: nilify(result.next_token)}
   end
 
+  @doc false
+  def parse_describe_scaling_activities_for_test(xml), do: parse_describe_scaling_activities(xml)
+
+  defp parse_describe_scaling_activities(body) do
+    result =
+      xpath(body, ~x"//DescribeScalingActivitiesResult"e,
+        activities: [
+          ~x"./Activities/member"l,
+          activity_id: ~x"./ActivityId/text()"s,
+          auto_scaling_group_name: ~x"./AutoScalingGroupName/text()"s,
+          description: ~x"./Description/text()"os,
+          cause: ~x"./Cause/text()"os,
+          start_time: ~x"./StartTime/text()"os,
+          end_time: ~x"./EndTime/text()"os,
+          status_code: ~x"./StatusCode/text()"os,
+          status_message: ~x"./StatusMessage/text()"os,
+          progress: ~x"./Progress/text()"oi,
+          details: ~x"./Details/text()"os,
+          auto_scaling_group_state: ~x"./AutoScalingGroupState/text()"os,
+          auto_scaling_group_arn: ~x"./AutoScalingGroupARN/text()"os
+        ],
+        next_token: ~x"./NextToken/text()"s
+      )
+
+    %{activities: result.activities, next_token: nilify(result.next_token)}
+  end
+
   defp parse_describe_instance_refreshes(body) do
     result =
       xpath(body, ~x"//DescribeInstanceRefreshesResult"e,
@@ -1158,6 +1249,11 @@ defmodule AwsSdk.AutoScaling do
       as: :describe_instance_refreshes_response
 
     @doc false
+    defdelegate sandbox_describe_scaling_activities_response(asg, opts),
+      to: AwsSdk.AutoScaling.Sandbox,
+      as: :describe_scaling_activities_response
+
+    @doc false
     defdelegate sandbox_start_instance_refresh_response(asg, opts),
       to: AwsSdk.AutoScaling.Sandbox,
       as: :start_instance_refresh_response
@@ -1207,6 +1303,7 @@ defmodule AwsSdk.AutoScaling do
     defp sandbox_describe_auto_scaling_groups_response(_o), do: raise(@sandbox_unavailable)
     defp sandbox_describe_auto_scaling_instances_response(_o), do: raise(@sandbox_unavailable)
     defp sandbox_describe_instance_refreshes_response(_a, _o), do: raise(@sandbox_unavailable)
+    defp sandbox_describe_scaling_activities_response(_a, _o), do: raise(@sandbox_unavailable)
     defp sandbox_start_instance_refresh_response(_a, _o), do: raise(@sandbox_unavailable)
     defp sandbox_cancel_instance_refresh_response(_a, _o), do: raise(@sandbox_unavailable)
     defp sandbox_rollback_instance_refresh_response(_a, _o), do: raise(@sandbox_unavailable)

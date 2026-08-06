@@ -1067,4 +1067,36 @@ defmodule AwsSdk.ConformanceTest do
 
     assert parsed.network_insights_path_id == "nip-1"
   end
+
+  test "DescribeScalingActivities keeps status, cause, and details" do
+    xml = """
+    <DescribeScalingActivitiesResponse><DescribeScalingActivitiesResult>
+    <Activities><member>
+    <ActivityId>act-1</ActivityId>
+    <AutoScalingGroupName>web-asg</AutoScalingGroupName>
+    <Description>Terminating EC2 instance: i-1</Description>
+    <Cause>instance refresh</Cause>
+    <StartTime>2026-08-05T12:00:00Z</StartTime>
+    <EndTime>2026-08-05T12:05:00Z</EndTime>
+    <StatusCode>Successful</StatusCode>
+    <Progress>100</Progress>
+    <Details>{"Subnet ID":"subnet-1"}</Details>
+    <AutoScalingGroupARN>arn:aws:autoscaling:us-east-1:1:autoScalingGroup:x:autoScalingGroupName/web-asg</AutoScalingGroupARN>
+    </member></Activities>
+    <NextToken>tok</NextToken>
+    </DescribeScalingActivitiesResult></DescribeScalingActivitiesResponse>
+    """
+
+    parsed = AwsSdk.AutoScaling.parse_describe_scaling_activities_for_test(xml)
+
+    assert [activity] = parsed.activities
+    assert activity.activity_id == "act-1"
+    assert activity.auto_scaling_group_name == "web-asg"
+    assert activity.status_code == "Successful"
+    assert activity.status_message == ""
+    assert activity.cause == "instance refresh"
+    assert activity.progress == 100
+    assert activity.details == ~s({"Subnet ID":"subnet-1"})
+    assert parsed.next_token == "tok"
+  end
 end

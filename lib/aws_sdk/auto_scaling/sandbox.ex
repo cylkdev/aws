@@ -73,6 +73,24 @@ if Code.ensure_loaded?(SandboxRegistry) do
       )
     end
 
+    def describe_scaling_activities_response(asg, opts) do
+      examples = AwsSdk.Sandbox.doc_examples([:asg])
+
+      func =
+        AwsSdk.Sandbox.find!(@registry, __MODULE__, :describe_scaling_activities, asg, examples)
+
+      AwsSdk.Sandbox.apply_func(func, [asg, opts], examples)
+    end
+
+    def set_describe_scaling_activities_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :describe_scaling_activities,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
+
     def start_instance_refresh_response(asg, opts) do
       examples = AwsSdk.Sandbox.doc_examples([:asg])
       func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :start_instance_refresh, asg, examples)

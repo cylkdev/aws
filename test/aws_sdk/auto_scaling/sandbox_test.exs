@@ -87,4 +87,25 @@ defmodule AwsSdk.AutoScaling.SandboxTest do
       assert {:ok, %{}} = AutoScaling.set_desired_capacity("my-asg", 5, sandbox: [enabled: true])
     end
   end
+
+  describe "describe_scaling_activities/2" do
+    test "keys off the group name" do
+      Sandbox.set_describe_scaling_activities_responses([
+        {"web-asg",
+         fn ->
+           {:ok,
+            %{
+              activities: [%{activity_id: "act-1", status_code: "InProgress"}],
+              next_token: nil
+            }}
+         end}
+      ])
+
+      assert {:ok, %{activities: [%{status_code: "InProgress"}]}} =
+               AutoScaling.describe_scaling_activities("web-asg",
+                 max_records: 10,
+                 sandbox: [enabled: true]
+               )
+    end
+  end
 end
