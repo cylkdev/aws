@@ -369,4 +369,21 @@ defmodule AwsSdk.EC2.SandboxTest do
                EC2.describe_network_interfaces(sandbox: [enabled: true])
     end
   end
+
+  describe "describe_instance_status/1" do
+    test "returns the registered statuses" do
+      Sandbox.set_describe_instance_status_responses([
+        fn ->
+          {:ok, %{instance_status_set: [%{instance_id: "i-1"}], next_token: nil}}
+        end
+      ])
+
+      assert {:ok, %{instance_status_set: [%{instance_id: "i-1"}]}} =
+               EC2.describe_instance_status(
+                 instance_ids: ["i-1"],
+                 include_all_instances: true,
+                 sandbox: [enabled: true]
+               )
+    end
+  end
 end

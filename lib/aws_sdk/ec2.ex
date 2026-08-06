@@ -1723,6 +1723,123 @@ defmodule AwsSdk.EC2 do
     }
   end
 
+  @doc """
+  Describes the status of the specified instances (system status and
+  instance status checks, plus scheduled events).
+
+  ## Options
+
+    * `:instance_ids` - List of instance IDs, encoded as `InstanceId.N`.
+    * `:include_all_instances` - Boolean; when `true`, includes stopped
+      instances instead of only running ones.
+    * `:filters` - List of `%{name:, values:}` filters.
+    * `:next_token`, `:max_results` - Pagination.
+
+  ## Examples
+
+      AwsSdk.EC2.describe_instance_status(instance_ids: ["i-0abc"], include_all_instances: true)
+      #=> {:ok,
+      #=>  %{
+      #=>    instance_status_set: [
+      #=>      %{
+      #=>        instance_id: "i-0abc",
+      #=>        availability_zone: "us-east-1a",
+      #=>        outpost_arn: "",
+      #=>        operator: nil,
+      #=>        instance_state: %{code: 16, name: "running"},
+      #=>        system_status: %{
+      #=>          status: "ok",
+      #=>          details: [%{name: "reachability", status: "passed", impaired_since: ""}]
+      #=>        },
+      #=>        instance_status: %{
+      #=>          status: "ok",
+      #=>          details: [%{name: "reachability", status: "passed", impaired_since: ""}]
+      #=>        },
+      #=>        attached_ebs_status: nil,
+      #=>        events_set: []
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+  """
+  @spec describe_instance_status(opts :: keyword()) ::
+          {:ok, %{instance_status_set: list(map()), next_token: String.t() | nil}}
+          | {:error, term()}
+  def describe_instance_status(opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_describe_instance_status_response(opts)
+    else
+      do_describe_instance_status(opts)
+    end
+  end
+
+  defp do_describe_instance_status(opts) do
+    params =
+      %{}
+      |> put_member_list("InstanceId", opts[:instance_ids] || [])
+      |> put_filters(opts[:filters] || [])
+      |> maybe_put("IncludeAllInstances", opts[:include_all_instances])
+      |> maybe_put("NextToken", opts[:next_token])
+      |> maybe_put("MaxResults", opts[:max_results])
+
+    with {:ok, op} <- build_operation("DescribeInstanceStatus", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_instance_status(body)}
+    end
+  end
+
+  @doc false
+  def parse_describe_instance_status_for_test(xml), do: parse_describe_instance_status(xml)
+
+  defp parse_describe_instance_status(body) do
+    %{
+      instance_status_set:
+        xpath(body, ~x"//instanceStatusSet/item"l,
+          instance_id: ~x"./instanceId/text()"s,
+          availability_zone: ~x"./availabilityZone/text()"os,
+          availability_zone_id: ~x"./availabilityZoneId/text()"os,
+          outpost_arn: ~x"./outpostArn/text()"os,
+          operator: [
+            ~x"./operator"o,
+            managed: ~x"./managed/text()"os,
+            principal: ~x"./principal/text()"os
+          ],
+          instance_state: [
+            ~x"./instanceState"o,
+            code: ~x"./code/text()"oi,
+            name: ~x"./name/text()"os
+          ],
+          system_status: [~x"./systemStatus"o | instance_status_summary_fields()],
+          instance_status: [~x"./instanceStatus"o | instance_status_summary_fields()],
+          attached_ebs_status: [~x"./attachedEbsStatus"o | instance_status_summary_fields()],
+          events_set: [
+            ~x"./eventsSet/item"l,
+            instance_event_id: ~x"./instanceEventId/text()"os,
+            code: ~x"./code/text()"os,
+            description: ~x"./description/text()"os,
+            not_before: ~x"./notBefore/text()"os,
+            not_after: ~x"./notAfter/text()"os,
+            not_before_deadline: ~x"./notBeforeDeadline/text()"os
+          ]
+        ),
+      next_token: xpath(body, ~x"//DescribeInstanceStatusResponse/nextToken/text()"os)
+    }
+  end
+
+  # InstanceStatusSummary: shared by systemStatus, instanceStatus, and
+  # attachedEbsStatus.
+  defp instance_status_summary_fields do
+    [
+      status: ~x"./status/text()"os,
+      details: [
+        ~x"./details/item"l,
+        name: ~x"./name/text()"os,
+        status: ~x"./status/text()"os,
+        impaired_since: ~x"./impairedSince/text()"os
+      ]
+    ]
+  end
+
   # ---------------------------------------------------------------------------
   # Instance lifecycle
   # ---------------------------------------------------------------------------
@@ -3002,6 +3119,11 @@ defmodule AwsSdk.EC2 do
     defdelegate sandbox_describe_network_interfaces_response(opts),
       to: AwsSdk.EC2.Sandbox,
       as: :describe_network_interfaces_response
+
+    @doc false
+    defdelegate sandbox_describe_instance_status_response(opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :describe_instance_status_response
   else
     defp sandbox_disabled?, do: true
 
@@ -3048,6 +3170,8 @@ defmodule AwsSdk.EC2 do
 
     defp sandbox_describe_network_interfaces_response(_),
       do: raise("sandbox not available")
+
+    defp sandbox_describe_instance_status_response(_), do: raise("sandbox not available")
   end
 
   # ---------------------------------------------------------------------------

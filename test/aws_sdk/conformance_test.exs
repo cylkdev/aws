@@ -909,4 +909,38 @@ defmodule AwsSdk.ConformanceTest do
     assert eni.attachment == nil
     assert eni.association == nil
   end
+
+  test "DescribeInstanceStatus keeps both status structures with details and events" do
+    xml = """
+    <DescribeInstanceStatusResponse><instanceStatusSet><item>
+    <instanceId>i-1</instanceId><availabilityZone>us-east-1a</availabilityZone>
+    <instanceState><code>16</code><name>running</name></instanceState>
+    <systemStatus><status>ok</status>
+    <details><item><name>reachability</name><status>passed</status></item></details>
+    </systemStatus>
+    <instanceStatus><status>impaired</status>
+    <details><item><name>reachability</name><status>failed</status>
+    <impairedSince>2026-08-05T11:00:00Z</impairedSince></item></details>
+    </instanceStatus>
+    <eventsSet><item><instanceEventId>event-1</instanceEventId>
+    <code>system-reboot</code><description>scheduled reboot</description>
+    <notBefore>2026-08-10T00:00:00Z</notBefore></item></eventsSet>
+    </item></instanceStatusSet></DescribeInstanceStatusResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_describe_instance_status_for_test(xml)
+
+    assert [status] = parsed.instance_status_set
+    assert status.instance_id == "i-1"
+    assert status.instance_state == %{code: 16, name: "running"}
+    assert status.system_status.status == "ok"
+    assert [sys_detail] = status.system_status.details
+    assert sys_detail.status == "passed"
+    assert status.instance_status.status == "impaired"
+    assert [inst_detail] = status.instance_status.details
+    assert inst_detail.impaired_since == "2026-08-05T11:00:00Z"
+    assert [event] = status.events_set
+    assert event.code == "system-reboot"
+    assert parsed.next_token == ""
+  end
 end
