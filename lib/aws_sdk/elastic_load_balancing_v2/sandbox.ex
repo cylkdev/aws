@@ -232,6 +232,21 @@ if Code.ensure_loaded?(SandboxRegistry) do
       AwsSdk.Sandbox.apply_func(func, [rule_arn, actions, opts], examples)
     end
 
+    def modify_listener_response(listener_arn, default_actions, opts) do
+      examples = AwsSdk.Sandbox.doc_examples([:listener_arn, :default_actions])
+      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :modify_listener, listener_arn, examples)
+      AwsSdk.Sandbox.apply_func(func, [listener_arn, default_actions, opts], examples)
+    end
+
+    def set_modify_listener_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :modify_listener,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
+
     def set_modify_rule_responses(tuples) do
       AwsSdk.Sandbox.set_responses(
         @registry,

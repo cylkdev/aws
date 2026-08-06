@@ -1099,4 +1099,30 @@ defmodule AwsSdk.ConformanceTest do
     assert activity.details == ~s({"Subnet ID":"subnet-1"})
     assert parsed.next_token == "tok"
   end
+
+  test "ModifyListener returns the listener with its new default actions" do
+    xml = """
+    <ModifyListenerResponse><ModifyListenerResult><Listeners><member>
+    <ListenerArn>arn:listener/1</ListenerArn>
+    <LoadBalancerArn>arn:lb/1</LoadBalancerArn>
+    <Port>443</Port><Protocol>HTTPS</Protocol>
+    <DefaultActions><member>
+    <Type>fixed-response</Type>
+    <FixedResponseConfig><StatusCode>503</StatusCode>
+    <ContentType>text/plain</ContentType><MessageBody>maintenance</MessageBody>
+    </FixedResponseConfig>
+    </member></DefaultActions>
+    </member></Listeners></ModifyListenerResult></ModifyListenerResponse>
+    """
+
+    parsed = AwsSdk.ElasticLoadBalancingV2.parse_modify_listener(xml)
+
+    assert [listener] = parsed.listeners
+    assert listener.listener_arn == "arn:listener/1"
+    assert listener.port == 443
+    assert [action] = listener.default_actions
+    assert action.type == "fixed-response"
+    assert action.fixed_response_config.status_code == "503"
+    assert action.fixed_response_config.message_body == "maintenance"
+  end
 end

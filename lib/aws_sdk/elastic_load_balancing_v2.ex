@@ -18,9 +18,9 @@ defmodule AwsSdk.ElasticLoadBalancingV2 do
   identifier is `elasticloadbalancing` and the API version is
   `2015-12-01`.
 
-  `modify_rule/3` is the only mutating operation; load balancers,
-  listeners, and target groups are expected to be declared elsewhere
-  (e.g. terraform) and only read here.
+  `modify_rule/3` and `modify_listener/3` are the only mutating
+  operations; load balancers, listeners, and target groups are expected
+  to be declared elsewhere (e.g. terraform) and otherwise only read here.
 
   Where AWS accepts one of several mutually exclusive selectors, each is
   its own function, because each sends a different wire parameter --
@@ -724,6 +724,94 @@ defmodule AwsSdk.ElasticLoadBalancingV2 do
     end
   end
 
+  @doc """
+  Modifies a listener's default actions.
+
+  The action encoding is identical to `modify_rule/3` — the intended use
+  is resetting a listener's default action to a fixed-response 503 and
+  back. Any property not supplied keeps its current value.
+
+  ## Arguments
+
+    - `listener_arn` - the listener's ARN
+    - `default_actions` - list of action maps (same shape `modify_rule/3` takes)
+
+  ## Options
+
+    - `:port`, `:protocol`, `:ssl_policy`, `:certificates` - other listener
+      properties AWS allows modifying; passed through the same Query encoding
+
+  ## Examples
+
+      AwsSdk.ElasticLoadBalancingV2.modify_listener(
+        "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/web/50dc6c/f2f7dc",
+        [
+          %{
+            type: "fixed-response",
+            fixed_response_config: %{
+              status_code: "503",
+              content_type: "text/plain",
+              message_body: "maintenance"
+            }
+          }
+        ]
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    listeners: [
+      #=>      %{
+      #=>        listener_arn: "arn:aws:elasticloadbalancing:...:listener/app/web/50dc6c/f2f7dc",
+      #=>        load_balancer_arn: "arn:aws:elasticloadbalancing:...:loadbalancer/app/web/50dc6c",
+      #=>        port: 443,
+      #=>        protocol: "HTTPS",
+      #=>        ssl_policy: "ELBSecurityPolicy-TLS13-1-2-2021-06",
+      #=>        alpn_policy: [],
+      #=>        certificates: [%{certificate_arn: "arn:aws:acm:..."}],
+      #=>        mutual_authentication: %{mode: "off"},
+      #=>        default_actions: [
+      #=>          %{type: "fixed-response", fixed_response_config: %{status_code: "503"}}
+      #=>        ]
+      #=>      }
+      #=>    ]
+      #=>  }}
+
+  `ModifyListener` returns the listener as it now stands, with no
+  `:next_marker`.
+  """
+  @spec modify_listener(
+          listener_arn :: String.t(),
+          default_actions :: [map()],
+          opts :: keyword()
+        ) ::
+          {:ok, map()} | {:error, term()}
+  # An empty action list is dropped by the encoder, so it would issue a
+  # real ModifyListener that changes nothing and reports success.
+  def modify_listener(listener_arn, [_ | _] = default_actions, opts \\ [])
+      when is_binary(listener_arn) do
+    if sandbox?(opts) do
+      sandbox_modify_listener_response(listener_arn, default_actions, opts)
+    else
+      do_modify_listener(listener_arn, default_actions, opts)
+    end
+  end
+
+  defp do_modify_listener(listener_arn, default_actions, opts) do
+    params =
+      flatten_query(%{
+        "ListenerArn" => listener_arn,
+        "DefaultActions" => default_actions,
+        "Port" => opts[:port],
+        "Protocol" => opts[:protocol],
+        "SslPolicy" => opts[:ssl_policy],
+        "Certificates" => opts[:certificates]
+      })
+
+    with {:ok, op} <- build_operation("ModifyListener", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_modify_listener(body)}
+    end
+  end
+
   # ---------------------------------------------------------------------------
   # Request building
   # ---------------------------------------------------------------------------
@@ -915,30 +1003,7 @@ defmodule AwsSdk.ElasticLoadBalancingV2 do
   def parse_describe_listeners(body) do
     result =
       xpath(body, ~x"//DescribeListenersResult"e,
-        listeners: [
-          ~x"./Listeners/member"l,
-          listener_arn: ~x"./ListenerArn/text()"s,
-          load_balancer_arn: ~x"./LoadBalancerArn/text()"s,
-          port: ~x"./Port/text()"oi,
-          protocol: ~x"./Protocol/text()"s,
-          ssl_policy: ~x"./SslPolicy/text()"os,
-          alpn_policy: ~x"./AlpnPolicy/member/text()"sl,
-          certificates: [
-            ~x"./Certificates/member"l,
-            # `IsDefault` is documented as omitted from DescribeListeners
-            # output, so it is not parsed here.
-            certificate_arn: ~x"./CertificateArn/text()"os
-          ],
-          mutual_authentication: [
-            ~x"./MutualAuthentication"o,
-            mode: ~x"./Mode/text()"os,
-            trust_store_arn: ~x"./TrustStoreArn/text()"os,
-            ignore_client_certificate_expiry: ~x"./IgnoreClientCertificateExpiry/text()"os,
-            trust_store_association_status: ~x"./TrustStoreAssociationStatus/text()"os,
-            advertise_trust_store_ca_names: ~x"./AdvertiseTrustStoreCaNames/text()"os
-          ],
-          default_actions: [~x"./DefaultActions/member"l | action_fields()]
-        ],
+        listeners: [~x"./Listeners/member"l | listener_fields()],
         next_marker: ~x"./NextMarker/text()"s
       )
 
@@ -946,6 +1011,44 @@ defmodule AwsSdk.ElasticLoadBalancingV2 do
       listeners: result.listeners,
       next_marker: nilify(result.next_marker)
     }
+  end
+
+  @doc false
+  def parse_modify_listener(body) do
+    result =
+      xpath(body, ~x"//ModifyListenerResult"e,
+        listeners: [~x"./Listeners/member"l | listener_fields()]
+      )
+
+    %{listeners: result.listeners}
+  end
+
+  # Shared by DescribeListeners and ModifyListener — both return
+  # <Listeners><member>.
+  defp listener_fields do
+    [
+      listener_arn: ~x"./ListenerArn/text()"s,
+      load_balancer_arn: ~x"./LoadBalancerArn/text()"s,
+      port: ~x"./Port/text()"oi,
+      protocol: ~x"./Protocol/text()"s,
+      ssl_policy: ~x"./SslPolicy/text()"os,
+      alpn_policy: ~x"./AlpnPolicy/member/text()"sl,
+      certificates: [
+        ~x"./Certificates/member"l,
+        # `IsDefault` is documented as omitted from DescribeListeners
+        # output, so it is not parsed here.
+        certificate_arn: ~x"./CertificateArn/text()"os
+      ],
+      mutual_authentication: [
+        ~x"./MutualAuthentication"o,
+        mode: ~x"./Mode/text()"os,
+        trust_store_arn: ~x"./TrustStoreArn/text()"os,
+        ignore_client_certificate_expiry: ~x"./IgnoreClientCertificateExpiry/text()"os,
+        trust_store_association_status: ~x"./TrustStoreAssociationStatus/text()"os,
+        advertise_trust_store_ca_names: ~x"./AdvertiseTrustStoreCaNames/text()"os
+      ],
+      default_actions: [~x"./DefaultActions/member"l | action_fields()]
+    ]
   end
 
   # Shared by DescribeRules and ModifyRule — both return <Rules><member>.
@@ -1195,6 +1298,11 @@ defmodule AwsSdk.ElasticLoadBalancingV2 do
       as: :describe_rules_response
 
     @doc false
+    defdelegate sandbox_modify_listener_response(listener_arn, default_actions, opts),
+      to: AwsSdk.ElasticLoadBalancingV2.Sandbox,
+      as: :modify_listener_response
+
+    @doc false
     defdelegate sandbox_describe_rules_by_arns_response(rule_arns, opts),
       to: AwsSdk.ElasticLoadBalancingV2.Sandbox,
       as: :describe_rules_by_arns_response
@@ -1230,6 +1338,7 @@ defmodule AwsSdk.ElasticLoadBalancingV2 do
     defp sandbox_describe_rules_response(_a, _o), do: raise(@sandbox_unavailable)
     defp sandbox_describe_rules_by_arns_response(_a, _o), do: raise(@sandbox_unavailable)
     defp sandbox_modify_rule_response(_r, _a, _o), do: raise(@sandbox_unavailable)
+    defp sandbox_modify_listener_response(_l, _a, _o), do: raise(@sandbox_unavailable)
 
     defp sandbox_describe_target_groups_by_arns_response(_target_group_arns, _opts),
       do: raise("sandbox not available")

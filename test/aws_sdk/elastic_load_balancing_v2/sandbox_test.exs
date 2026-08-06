@@ -219,4 +219,20 @@ defmodule AwsSdk.ElasticLoadBalancingV2.SandboxTest do
                )
     end
   end
+
+  describe "modify_listener/3" do
+    test "keys off the listener arn" do
+      Sandbox.set_modify_listener_responses([
+        {"arn:listener/1",
+         fn -> {:ok, %{listeners: [%{listener_arn: "arn:listener/1", port: 443}]}} end}
+      ])
+
+      assert {:ok, %{listeners: [%{listener_arn: "arn:listener/1"}]}} =
+               ElasticLoadBalancingV2.modify_listener(
+                 "arn:listener/1",
+                 [%{type: "fixed-response", fixed_response_config: %{status_code: "503"}}],
+                 sandbox: [enabled: true]
+               )
+    end
+  end
 end
