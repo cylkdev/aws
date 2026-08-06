@@ -2066,6 +2066,593 @@ defmodule AwsSdk.EC2 do
   end
 
   # ---------------------------------------------------------------------------
+  # Reachability Analyzer
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Creates a Reachability Analyzer path between a source and a destination.
+
+  `destination` is positional even though AWS marks it optional (the
+  alternative is `FilterAtDestination`), because a reachability check
+  always names both endpoints.
+
+  `ClientToken` is required by AWS for idempotency; one is generated per
+  call unless `:client_token` is supplied.
+
+  ## Arguments
+
+    * `source` - Source resource ID or ARN (instance, ENI, IGW, ...).
+    * `destination` - Destination resource ID or ARN.
+    * `protocol` - `"tcp"` or `"udp"`.
+
+  ## Options
+
+    * `:destination_port` - Destination port to analyze.
+    * `:source_ip`, `:destination_ip` - Override IPs within the resources.
+    * `:client_token` - Idempotency token (auto-generated when omitted).
+
+  ## Examples
+
+      AwsSdk.EC2.create_network_insights_path("i-0aaa", "i-0bbb", "tcp", destination_port: 443)
+      #=> {:ok,
+      #=>  %{
+      #=>    network_insights_path: %{
+      #=>      network_insights_path_id: "nip-0abc",
+      #=>      network_insights_path_arn: "arn:aws:ec2:us-east-1:123456789012:network-insights-path/nip-0abc",
+      #=>      created_date: "2026-08-05T12:00:00Z",
+      #=>      source: "i-0aaa",
+      #=>      destination: "i-0bbb",
+      #=>      source_arn: "arn:aws:ec2:us-east-1:123456789012:instance/i-0aaa",
+      #=>      destination_arn: "arn:aws:ec2:us-east-1:123456789012:instance/i-0bbb",
+      #=>      source_ip: "",
+      #=>      destination_ip: "",
+      #=>      protocol: "tcp",
+      #=>      destination_port: 443,
+      #=>      tag_set: []
+      #=>    }
+      #=>  }}
+  """
+  @spec create_network_insights_path(
+          source :: String.t(),
+          destination :: String.t(),
+          protocol :: String.t(),
+          opts :: keyword()
+        ) :: {:ok, %{network_insights_path: map()}} | {:error, term()}
+  def create_network_insights_path(source, destination, protocol, opts \\ [])
+      when is_binary(source) and is_binary(destination) and is_binary(protocol) do
+    if sandbox?(opts) do
+      sandbox_create_network_insights_path_response(source, destination, protocol, opts)
+    else
+      do_create_network_insights_path(source, destination, protocol, opts)
+    end
+  end
+
+  defp do_create_network_insights_path(source, destination, protocol, opts) do
+    params =
+      %{
+        "Source" => source,
+        "Destination" => destination,
+        "Protocol" => protocol,
+        "ClientToken" => client_token(opts)
+      }
+      |> maybe_put("DestinationPort", opts[:destination_port])
+      |> maybe_put("SourceIp", opts[:source_ip])
+      |> maybe_put("DestinationIp", opts[:destination_ip])
+
+    with {:ok, op} <- build_operation("CreateNetworkInsightsPath", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_create_network_insights_path(body)}
+    end
+  end
+
+  @doc false
+  def parse_create_network_insights_path_for_test(xml),
+    do: parse_create_network_insights_path(xml)
+
+  defp parse_create_network_insights_path(body) do
+    %{
+      network_insights_path:
+        xpath(body, ~x"//networkInsightsPath"e,
+          network_insights_path_id: ~x"./networkInsightsPathId/text()"s,
+          network_insights_path_arn: ~x"./networkInsightsPathArn/text()"os,
+          created_date: ~x"./createdDate/text()"os,
+          source: ~x"./source/text()"os,
+          destination: ~x"./destination/text()"os,
+          source_arn: ~x"./sourceArn/text()"os,
+          destination_arn: ~x"./destinationArn/text()"os,
+          source_ip: ~x"./sourceIp/text()"os,
+          destination_ip: ~x"./destinationIp/text()"os,
+          protocol: ~x"./protocol/text()"os,
+          destination_port: ~x"./destinationPort/text()"oi,
+          filter_at_source: [~x"./filterAtSource"o | path_filter_fields()],
+          filter_at_destination: [~x"./filterAtDestination"o | path_filter_fields()],
+          tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
+        )
+    }
+  end
+
+  # PathFilter, shared by filterAtSource and filterAtDestination.
+  defp path_filter_fields do
+    [
+      source_address: ~x"./sourceAddress/text()"os,
+      source_port_range: [
+        ~x"./sourcePortRange"o,
+        from_port: ~x"./fromPort/text()"oi,
+        to_port: ~x"./toPort/text()"oi
+      ],
+      destination_address: ~x"./destinationAddress/text()"os,
+      destination_port_range: [
+        ~x"./destinationPortRange"o,
+        from_port: ~x"./fromPort/text()"oi,
+        to_port: ~x"./toPort/text()"oi
+      ]
+    ]
+  end
+
+  @doc """
+  Starts analysing a Reachability Analyzer path.
+
+  `ClientToken` is auto-generated unless `:client_token` is supplied.
+
+  ## Examples
+
+      AwsSdk.EC2.start_network_insights_analysis("nip-0abc")
+      #=> {:ok,
+      #=>  %{
+      #=>    network_insights_analysis: %{
+      #=>      network_insights_analysis_id: "nia-0abc",
+      #=>      network_insights_analysis_arn: "arn:aws:ec2:us-east-1:123456789012:network-insights-analysis/nia-0abc",
+      #=>      network_insights_path_id: "nip-0abc",
+      #=>      start_date: "2026-08-05T12:00:00Z",
+      #=>      status: "running",
+      #=>      status_message: "",
+      #=>      network_path_found: nil
+      #=>    }
+      #=>  }}
+
+  Poll with `describe_network_insights_analyses/1` until `:status` is
+  `"succeeded"` (or `"failed"`), then read `:network_path_found` and
+  `:explanation_set`.
+  """
+  @spec start_network_insights_analysis(path_id :: String.t(), opts :: keyword()) ::
+          {:ok, %{network_insights_analysis: map()}} | {:error, term()}
+  def start_network_insights_analysis(path_id, opts \\ []) when is_binary(path_id) do
+    if sandbox?(opts) do
+      sandbox_start_network_insights_analysis_response(path_id, opts)
+    else
+      do_start_network_insights_analysis(path_id, opts)
+    end
+  end
+
+  defp do_start_network_insights_analysis(path_id, opts) do
+    params = %{"NetworkInsightsPathId" => path_id, "ClientToken" => client_token(opts)}
+
+    with {:ok, op} <- build_operation("StartNetworkInsightsAnalysis", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_start_network_insights_analysis(body)}
+    end
+  end
+
+  @doc false
+  def parse_start_network_insights_analysis_for_test(xml),
+    do: parse_start_network_insights_analysis(xml)
+
+  defp parse_start_network_insights_analysis(body) do
+    result =
+      xpath(body, ~x"//StartNetworkInsightsAnalysisResponse"e,
+        network_insights_analysis: [
+          ~x"./networkInsightsAnalysis"o | network_insights_analysis_fields()
+        ]
+      )
+
+    %{network_insights_analysis: coerce_network_path_found(result.network_insights_analysis)}
+  end
+
+  @doc """
+  Describes Reachability Analyzer analyses.
+
+  The polling loop: call with `:analysis_ids` until `:status` is
+  `"succeeded"`, then branch on `:network_path_found` and report
+  `:explanation_set` when the path was not found.
+
+  ## Options
+
+    * `:analysis_ids` - List of analysis IDs, encoded as `NetworkInsightsAnalysisId.N`.
+    * `:path_id` - Restrict to analyses of one path (`NetworkInsightsPathId`).
+    * `:filters` - List of `%{name:, values:}` filters.
+    * `:next_token`, `:max_results` - Pagination.
+
+  ## Examples
+
+      AwsSdk.EC2.describe_network_insights_analyses(analysis_ids: ["nia-0abc"])
+      #=> {:ok,
+      #=>  %{
+      #=>    network_insights_analysis_set: [
+      #=>      %{
+      #=>        network_insights_analysis_id: "nia-0abc",
+      #=>        network_insights_path_id: "nip-0abc",
+      #=>        start_date: "2026-08-05T12:00:00Z",
+      #=>        status: "succeeded",
+      #=>        status_message: "",
+      #=>        warning_message: "",
+      #=>        network_path_found: false,
+      #=>        explanation_set: [
+      #=>          %{
+      #=>            direction: "ingress",
+      #=>            explanation_code: "ENI_SG_RULES_MISMATCH",
+      #=>            network_interface: %{id: "eni-1", arn: "...", name: ""},
+      #=>            security_groups: [%{id: "sg-1", arn: "", name: ""}],
+      #=>            port: 443
+      #=>          }
+      #=>        ],
+      #=>        forward_path_component_set: [],
+      #=>        return_path_component_set: [],
+      #=>        tag_set: []
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  Only the commonly-read members are shown; the parser returns every
+  documented member of the response.
+  """
+  @spec describe_network_insights_analyses(opts :: keyword()) ::
+          {:ok, %{network_insights_analysis_set: list(map()), next_token: String.t() | nil}}
+          | {:error, term()}
+  def describe_network_insights_analyses(opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_describe_network_insights_analyses_response(opts)
+    else
+      do_describe_network_insights_analyses(opts)
+    end
+  end
+
+  defp do_describe_network_insights_analyses(opts) do
+    params =
+      %{}
+      |> put_member_list("NetworkInsightsAnalysisId", opts[:analysis_ids] || [])
+      |> maybe_put("NetworkInsightsPathId", opts[:path_id])
+      |> put_filters(opts[:filters] || [])
+      |> maybe_put("NextToken", opts[:next_token])
+      |> maybe_put("MaxResults", opts[:max_results])
+
+    with {:ok, op} <- build_operation("DescribeNetworkInsightsAnalyses", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_network_insights_analyses(body)}
+    end
+  end
+
+  @doc false
+  def parse_describe_network_insights_analyses_for_test(xml),
+    do: parse_describe_network_insights_analyses(xml)
+
+  defp parse_describe_network_insights_analyses(body) do
+    result =
+      xpath(body, ~x"//DescribeNetworkInsightsAnalysesResponse"e,
+        network_insights_analysis_set: [
+          ~x"./networkInsightsAnalysisSet/item"l | network_insights_analysis_fields()
+        ]
+      )
+
+    %{
+      network_insights_analysis_set:
+        Enum.map(result.network_insights_analysis_set, &coerce_network_path_found/1),
+      next_token: xpath(body, ~x"//DescribeNetworkInsightsAnalysesResponse/nextToken/text()"os)
+    }
+  end
+
+  @doc """
+  Deletes a Reachability Analyzer path. Any analyses of the path must be
+  deleted first (AWS rejects the call otherwise).
+
+  ## Examples
+
+      AwsSdk.EC2.delete_network_insights_path("nip-0abc")
+      #=> {:ok, %{network_insights_path_id: "nip-0abc"}}
+  """
+  @spec delete_network_insights_path(path_id :: String.t(), opts :: keyword()) ::
+          {:ok, %{network_insights_path_id: String.t()}} | {:error, term()}
+  def delete_network_insights_path(path_id, opts \\ []) when is_binary(path_id) do
+    if sandbox?(opts) do
+      sandbox_delete_network_insights_path_response(path_id, opts)
+    else
+      do_delete_network_insights_path(path_id, opts)
+    end
+  end
+
+  defp do_delete_network_insights_path(path_id, opts) do
+    params = %{"NetworkInsightsPathId" => path_id}
+
+    with {:ok, op} <- build_operation("DeleteNetworkInsightsPath", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_delete_network_insights_path(body)}
+    end
+  end
+
+  @doc false
+  def parse_delete_network_insights_path_for_test(xml),
+    do: parse_delete_network_insights_path(xml)
+
+  defp parse_delete_network_insights_path(body) do
+    %{
+      network_insights_path_id:
+        xpath(body, ~x"//DeleteNetworkInsightsPathResponse/networkInsightsPathId/text()"s)
+    }
+  end
+
+  # NetworkInsightsAnalysis, shared by Start and Describe (both return the
+  # same structure). networkPathFound is coerced afterwards because it is
+  # the field callers branch on.
+  defp network_insights_analysis_fields do
+    [
+      network_insights_analysis_id: ~x"./networkInsightsAnalysisId/text()"s,
+      network_insights_analysis_arn: ~x"./networkInsightsAnalysisArn/text()"os,
+      network_insights_path_id: ~x"./networkInsightsPathId/text()"os,
+      additional_account_set: ~x"./additionalAccountSet/item/text()"sl,
+      filter_in_arn_set: ~x"./filterInArnSet/item/text()"sl,
+      filter_out_arn_set: ~x"./filterOutArnSet/item/text()"sl,
+      start_date: ~x"./startDate/text()"os,
+      status: ~x"./status/text()"os,
+      status_message: ~x"./statusMessage/text()"os,
+      warning_message: ~x"./warningMessage/text()"os,
+      network_path_found: ~x"./networkPathFound/text()"os,
+      forward_path_component_set: [~x"./forwardPathComponentSet/item"l | path_component_fields()],
+      return_path_component_set: [~x"./returnPathComponentSet/item"l | path_component_fields()],
+      explanation_set: [~x"./explanationSet/item"l | explanation_fields()],
+      alternate_path_hint_set: [
+        ~x"./alternatePathHintSet/item"l,
+        component_id: ~x"./componentId/text()"os,
+        component_arn: ~x"./componentArn/text()"os
+      ],
+      suggested_account_set: ~x"./suggestedAccountSet/item/text()"sl,
+      tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
+    ]
+  end
+
+  defp coerce_network_path_found(nil), do: nil
+
+  # A running analysis has no networkPathFound yet; keep it nil rather than
+  # coercing the absent element to false, so callers can tell "not finished"
+  # from "unreachable".
+  defp coerce_network_path_found(%{network_path_found: found} = analysis)
+       when found in [nil, ""] do
+    %{analysis | network_path_found: nil}
+  end
+
+  defp coerce_network_path_found(%{network_path_found: value} = analysis) do
+    %{analysis | network_path_found: value === "true"}
+  end
+
+  # AnalysisComponent — the {id, arn, name} triple AWS uses for every
+  # referenced resource in an analysis.
+  defp analysis_component_fields do
+    [id: ~x"./id/text()"os, arn: ~x"./arn/text()"os, name: ~x"./name/text()"os]
+  end
+
+  # PathComponent (one hop of the analysed path).
+  defp path_component_fields do
+    [
+      sequence_number: ~x"./sequenceNumber/text()"oi,
+      acl_rule: [~x"./aclRule"o | analysis_acl_rule_fields()],
+      attached_to: [~x"./attachedTo"o | analysis_component_fields()],
+      component: [~x"./component"o | analysis_component_fields()],
+      destination_vpc: [~x"./destinationVpc"o | analysis_component_fields()],
+      source_vpc: [~x"./sourceVpc"o | analysis_component_fields()],
+      subnet: [~x"./subnet"o | analysis_component_fields()],
+      vpc: [~x"./vpc"o | analysis_component_fields()],
+      transit_gateway: [~x"./transitGateway"o | analysis_component_fields()],
+      elastic_load_balancer_listener: [
+        ~x"./elasticLoadBalancerListener"o | analysis_component_fields()
+      ],
+      outbound_header: [~x"./outboundHeader"o | analysis_packet_header_fields()],
+      inbound_header: [~x"./inboundHeader"o | analysis_packet_header_fields()],
+      route_table_route: [~x"./routeTableRoute"o | analysis_route_table_route_fields()],
+      transit_gateway_route_table_route: [
+        ~x"./transitGatewayRouteTableRoute"o,
+        destination_cidr: ~x"./destinationCidr/text()"os,
+        state: ~x"./state/text()"os,
+        route_origin: ~x"./routeOrigin/text()"os,
+        prefix_list_id: ~x"./prefixListId/text()"os,
+        attachment_id: ~x"./attachmentId/text()"os,
+        resource_id: ~x"./resourceId/text()"os,
+        resource_type: ~x"./resourceType/text()"os
+      ],
+      security_group_rule: [~x"./securityGroupRule"o | analysis_security_group_rule_fields()],
+      additional_detail_set: [
+        ~x"./additionalDetailSet/item"l,
+        additional_detail_type: ~x"./additionalDetailType/text()"os,
+        component: [~x"./component"o | analysis_component_fields()]
+      ],
+      explanation_set: [~x"./explanationSet/item"l | explanation_fields()],
+      firewall_stateless_rule: [~x"./firewallStatelessRule"o | firewall_stateless_rule_fields()],
+      firewall_stateful_rule: [~x"./firewallStatefulRule"o | firewall_stateful_rule_fields()],
+      service_name: ~x"./serviceName/text()"os
+    ]
+  end
+
+  # AnalysisPacketHeader.
+  defp analysis_packet_header_fields do
+    [
+      protocol: ~x"./protocol/text()"os,
+      source_addresses: ~x"./sourceAddressSet/item/text()"sl,
+      destination_addresses: ~x"./destinationAddressSet/item/text()"sl,
+      source_port_ranges: [
+        ~x"./sourcePortRangeSet/item"l,
+        from: ~x"./from/text()"oi,
+        to: ~x"./to/text()"oi
+      ],
+      destination_port_ranges: [
+        ~x"./destinationPortRangeSet/item"l,
+        from: ~x"./from/text()"oi,
+        to: ~x"./to/text()"oi
+      ]
+    ]
+  end
+
+  # AnalysisAclRule.
+  defp analysis_acl_rule_fields do
+    [
+      cidr: ~x"./cidr/text()"os,
+      egress: ~x"./egress/text()"os,
+      protocol: ~x"./protocol/text()"os,
+      rule_action: ~x"./ruleAction/text()"os,
+      rule_number: ~x"./ruleNumber/text()"oi,
+      port_range: [~x"./portRange"o, from: ~x"./from/text()"oi, to: ~x"./to/text()"oi]
+    ]
+  end
+
+  # AnalysisRouteTableRoute.
+  defp analysis_route_table_route_fields do
+    [
+      destination_cidr: ~x"./destinationCidr/text()"os,
+      destination_prefix_list_id: ~x"./destinationPrefixListId/text()"os,
+      egress_only_internet_gateway_id: ~x"./egressOnlyInternetGatewayId/text()"os,
+      gateway_id: ~x"./gatewayId/text()"os,
+      instance_id: ~x"./instanceId/text()"os,
+      nat_gateway_id: ~x"./natGatewayId/text()"os,
+      network_interface_id: ~x"./networkInterfaceId/text()"os,
+      origin: ~x"./origin/text()"os,
+      transit_gateway_id: ~x"./transitGatewayId/text()"os,
+      vpc_peering_connection_id: ~x"./vpcPeeringConnectionId/text()"os,
+      state: ~x"./state/text()"os,
+      carrier_gateway_id: ~x"./carrierGatewayId/text()"os,
+      core_network_arn: ~x"./coreNetworkArn/text()"os,
+      local_gateway_id: ~x"./localGatewayId/text()"os
+    ]
+  end
+
+  # AnalysisSecurityGroupRule.
+  defp analysis_security_group_rule_fields do
+    [
+      cidr: ~x"./cidr/text()"os,
+      direction: ~x"./direction/text()"os,
+      security_group_id: ~x"./securityGroupId/text()"os,
+      port_range: [~x"./portRange"o, from: ~x"./from/text()"oi, to: ~x"./to/text()"oi],
+      prefix_list_id: ~x"./prefixListId/text()"os,
+      protocol: ~x"./protocol/text()"os
+    ]
+  end
+
+  # Explanation — the structure Reachability Analyzer uses to say why a
+  # path is (un)reachable. Every member is an AnalysisComponent, a list of
+  # them, or a scalar.
+  defp explanation_fields do
+    [
+      direction: ~x"./direction/text()"os,
+      explanation_code: ~x"./explanationCode/text()"os,
+      state: ~x"./state/text()"os,
+      address: ~x"./address/text()"os,
+      addresses: ~x"./addressSet/item/text()"sl,
+      cidrs: ~x"./cidrSet/item/text()"sl,
+      packet_field: ~x"./packetField/text()"os,
+      missing_component: ~x"./missingComponent/text()"os,
+      port: ~x"./port/text()"oi,
+      port_ranges: [~x"./portRangeSet/item"l, from: ~x"./from/text()"oi, to: ~x"./to/text()"oi],
+      protocols: ~x"./protocolSet/item/text()"sl,
+      load_balancer_arn: ~x"./loadBalancerArn/text()"os,
+      load_balancer_listener_port: ~x"./loadBalancerListenerPort/text()"oi,
+      load_balancer_target_port: ~x"./loadBalancerTargetPort/text()"oi,
+      component_account: ~x"./componentAccount/text()"os,
+      component_region: ~x"./componentRegion/text()"os,
+      acl: [~x"./acl"o | analysis_component_fields()],
+      acl_rule: [~x"./aclRule"o | analysis_acl_rule_fields()],
+      attached_to: [~x"./attachedTo"o | analysis_component_fields()],
+      availability_zones: ~x"./availabilityZoneSet/item/text()"sl,
+      component: [~x"./component"o | analysis_component_fields()],
+      customer_gateway: [~x"./customerGateway"o | analysis_component_fields()],
+      destination: [~x"./destination"o | analysis_component_fields()],
+      destination_vpc: [~x"./destinationVpc"o | analysis_component_fields()],
+      source_vpc: [~x"./sourceVpc"o | analysis_component_fields()],
+      ingress_route_table: [~x"./ingressRouteTable"o | analysis_component_fields()],
+      internet_gateway: [~x"./internetGateway"o | analysis_component_fields()],
+      classic_load_balancer_listener: [
+        ~x"./classicLoadBalancerListener"o,
+        load_balancer_port: ~x"./loadBalancerPort/text()"oi,
+        instance_port: ~x"./instancePort/text()"oi
+      ],
+      load_balancer_target: [
+        ~x"./loadBalancerTarget"o,
+        address: ~x"./address/text()"os,
+        availability_zone: ~x"./availabilityZone/text()"os,
+        instance: [~x"./instance"o | analysis_component_fields()],
+        port: ~x"./port/text()"oi
+      ],
+      load_balancer_target_group: [~x"./loadBalancerTargetGroup"o | analysis_component_fields()],
+      load_balancer_target_groups: [
+        ~x"./loadBalancerTargetGroupSet/item"l | analysis_component_fields()
+      ],
+      elastic_load_balancer_listener: [
+        ~x"./elasticLoadBalancerListener"o | analysis_component_fields()
+      ],
+      nat_gateway: [~x"./natGateway"o | analysis_component_fields()],
+      network_interface: [~x"./networkInterface"o | analysis_component_fields()],
+      vpc_peering_connection: [~x"./vpcPeeringConnection"o | analysis_component_fields()],
+      prefix_list: [~x"./prefixList"o | analysis_component_fields()],
+      route_table: [~x"./routeTable"o | analysis_component_fields()],
+      route_table_route: [~x"./routeTableRoute"o | analysis_route_table_route_fields()],
+      security_group: [~x"./securityGroup"o | analysis_component_fields()],
+      security_group_rule: [~x"./securityGroupRule"o | analysis_security_group_rule_fields()],
+      security_groups: [~x"./securityGroupSet/item"l | analysis_component_fields()],
+      subnet: [~x"./subnet"o | analysis_component_fields()],
+      subnet_route_table: [~x"./subnetRouteTable"o | analysis_component_fields()],
+      vpc: [~x"./vpc"o | analysis_component_fields()],
+      vpn_connection: [~x"./vpnConnection"o | analysis_component_fields()],
+      vpn_gateway: [~x"./vpnGateway"o | analysis_component_fields()],
+      transit_gateway: [~x"./transitGateway"o | analysis_component_fields()],
+      transit_gateway_attachment: [~x"./transitGatewayAttachment"o | analysis_component_fields()],
+      transit_gateway_route_table: [~x"./transitGatewayRouteTable"o | analysis_component_fields()],
+      vpc_endpoint: [~x"./vpcEndpoint"o | analysis_component_fields()],
+      availability_zone_ids: ~x"./availabilityZoneIdSet/item/text()"sl,
+      firewall_stateless_rule: [~x"./firewallStatelessRule"o | firewall_stateless_rule_fields()],
+      firewall_stateful_rule: [~x"./firewallStatefulRule"o | firewall_stateful_rule_fields()]
+    ]
+  end
+
+  # FirewallStatelessRule.
+  defp firewall_stateless_rule_fields do
+    [
+      rule_group_arn: ~x"./ruleGroupArn/text()"os,
+      sources: ~x"./sourceSet/item/text()"sl,
+      destinations: ~x"./destinationSet/item/text()"sl,
+      source_ports: [~x"./sourcePortSet/item"l, from: ~x"./from/text()"oi, to: ~x"./to/text()"oi],
+      destination_ports: [
+        ~x"./destinationPortSet/item"l,
+        from: ~x"./from/text()"oi,
+        to: ~x"./to/text()"oi
+      ],
+      protocols: ~x"./protocolSet/item/text()"sl,
+      rule_action: ~x"./ruleAction/text()"os,
+      priority: ~x"./priority/text()"oi
+    ]
+  end
+
+  # FirewallStatefulRule.
+  defp firewall_stateful_rule_fields do
+    [
+      rule_group_arn: ~x"./ruleGroupArn/text()"os,
+      sources: ~x"./sourceSet/item/text()"sl,
+      destinations: ~x"./destinationSet/item/text()"sl,
+      source_ports: [~x"./sourcePortSet/item"l, from: ~x"./from/text()"oi, to: ~x"./to/text()"oi],
+      destination_ports: [
+        ~x"./destinationPortSet/item"l,
+        from: ~x"./from/text()"oi,
+        to: ~x"./to/text()"oi
+      ],
+      protocol: ~x"./protocol/text()"os,
+      rule_action: ~x"./ruleAction/text()"os,
+      direction: ~x"./direction/text()"os
+    ]
+  end
+
+  # ClientToken is a wire-required idempotency token AWS's own SDKs
+  # auto-generate (botocore marks it idempotencyToken); nothing else in
+  # this library generates one, so it is generated here with :crypto,
+  # which the library already depends on (S3's Content-MD5 hashing).
+  defp client_token(opts) do
+    opts[:client_token] || Base.encode16(:crypto.strong_rand_bytes(16), case: :lower)
+  end
+
+  # ---------------------------------------------------------------------------
   # Images and snapshots
   # ---------------------------------------------------------------------------
 
@@ -3212,6 +3799,31 @@ defmodule AwsSdk.EC2 do
     defdelegate sandbox_describe_iam_instance_profile_associations_response(opts),
       to: AwsSdk.EC2.Sandbox,
       as: :describe_iam_instance_profile_associations_response
+
+    @doc false
+    defdelegate sandbox_create_network_insights_path_response(
+                  source,
+                  destination,
+                  protocol,
+                  opts
+                ),
+                to: AwsSdk.EC2.Sandbox,
+                as: :create_network_insights_path_response
+
+    @doc false
+    defdelegate sandbox_start_network_insights_analysis_response(path_id, opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :start_network_insights_analysis_response
+
+    @doc false
+    defdelegate sandbox_describe_network_insights_analyses_response(opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :describe_network_insights_analyses_response
+
+    @doc false
+    defdelegate sandbox_delete_network_insights_path_response(path_id, opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :delete_network_insights_path_response
   else
     defp sandbox_disabled?, do: true
 
@@ -3262,6 +3874,18 @@ defmodule AwsSdk.EC2 do
     defp sandbox_describe_instance_status_response(_), do: raise("sandbox not available")
 
     defp sandbox_describe_iam_instance_profile_associations_response(_),
+      do: raise("sandbox not available")
+
+    defp sandbox_create_network_insights_path_response(_, _, _, _),
+      do: raise("sandbox not available")
+
+    defp sandbox_start_network_insights_analysis_response(_, _),
+      do: raise("sandbox not available")
+
+    defp sandbox_describe_network_insights_analyses_response(_),
+      do: raise("sandbox not available")
+
+    defp sandbox_delete_network_insights_path_response(_, _),
       do: raise("sandbox not available")
   end
 

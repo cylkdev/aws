@@ -968,4 +968,103 @@ defmodule AwsSdk.ConformanceTest do
     assert assoc.state == "associated"
     assert parsed.next_token == "tok"
   end
+
+  test "CreateNetworkInsightsPath keeps the full path shape" do
+    xml = """
+    <CreateNetworkInsightsPathResponse><networkInsightsPath>
+    <networkInsightsPathId>nip-1</networkInsightsPathId>
+    <networkInsightsPathArn>arn:aws:ec2:us-east-1:1:network-insights-path/nip-1</networkInsightsPathArn>
+    <createdDate>2026-08-05T12:00:00Z</createdDate>
+    <source>i-1</source><destination>i-2</destination>
+    <sourceArn>arn:aws:ec2:us-east-1:1:instance/i-1</sourceArn>
+    <destinationArn>arn:aws:ec2:us-east-1:1:instance/i-2</destinationArn>
+    <protocol>tcp</protocol><destinationPort>443</destinationPort>
+    <tagSet/></networkInsightsPath></CreateNetworkInsightsPathResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_create_network_insights_path_for_test(xml)
+
+    path = parsed.network_insights_path
+    assert path.network_insights_path_id == "nip-1"
+    assert path.source == "i-1"
+    assert path.destination == "i-2"
+    assert path.protocol == "tcp"
+    assert path.destination_port == 443
+  end
+
+  test "StartNetworkInsightsAnalysis keeps the initial analysis state" do
+    xml = """
+    <StartNetworkInsightsAnalysisResponse><networkInsightsAnalysis>
+    <networkInsightsAnalysisId>nia-1</networkInsightsAnalysisId>
+    <networkInsightsAnalysisArn>arn:aws:ec2:us-east-1:1:network-insights-analysis/nia-1</networkInsightsAnalysisArn>
+    <networkInsightsPathId>nip-1</networkInsightsPathId>
+    <startDate>2026-08-05T12:00:00Z</startDate>
+    <status>running</status>
+    </networkInsightsAnalysis></StartNetworkInsightsAnalysisResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_start_network_insights_analysis_for_test(xml)
+
+    analysis = parsed.network_insights_analysis
+    assert analysis.network_insights_analysis_id == "nia-1"
+    assert analysis.status == "running"
+    # A running analysis has no verdict yet: nil, not false.
+    assert analysis.network_path_found == nil
+  end
+
+  test "DescribeNetworkInsightsAnalyses keeps status, path-found flag, and explanations" do
+    xml = """
+    <DescribeNetworkInsightsAnalysesResponse><networkInsightsAnalysisSet><item>
+    <networkInsightsAnalysisId>nia-1</networkInsightsAnalysisId>
+    <networkInsightsPathId>nip-1</networkInsightsPathId>
+    <startDate>2026-08-05T12:00:00Z</startDate>
+    <status>succeeded</status><networkPathFound>false</networkPathFound>
+    <explanationSet><item>
+    <direction>ingress</direction><explanationCode>ENI_SG_RULES_MISMATCH</explanationCode>
+    <networkInterface><id>eni-1</id><arn>arn:aws:ec2:us-east-1:1:network-interface/eni-1</arn></networkInterface>
+    <securityGroupSet><item><id>sg-1</id></item></securityGroupSet>
+    <port>443</port>
+    </item></explanationSet>
+    <forwardPathComponentSet><item>
+    <sequenceNumber>1</sequenceNumber>
+    <component><id>i-1</id><name>web</name></component>
+    <subnet><id>subnet-1</id></subnet>
+    <outboundHeader><protocol>6</protocol>
+    <sourceAddressSet><item>10.0.1.5/32</item></sourceAddressSet>
+    <destinationAddressSet><item>10.0.2.9/32</item></destinationAddressSet>
+    <destinationPortRangeSet><item><from>443</from><to>443</to></item></destinationPortRangeSet>
+    </outboundHeader>
+    </item></forwardPathComponentSet>
+    </item></networkInsightsAnalysisSet></DescribeNetworkInsightsAnalysesResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_describe_network_insights_analyses_for_test(xml)
+
+    assert [analysis] = parsed.network_insights_analysis_set
+    assert analysis.status == "succeeded"
+    assert analysis.network_path_found == false
+    assert [explanation] = analysis.explanation_set
+    assert explanation.explanation_code == "ENI_SG_RULES_MISMATCH"
+    assert explanation.network_interface.id == "eni-1"
+    assert explanation.security_groups == [%{id: "sg-1", arn: "", name: ""}]
+    assert explanation.port == 443
+    assert [hop] = analysis.forward_path_component_set
+    assert hop.sequence_number == 1
+    assert hop.component.id == "i-1"
+    assert hop.outbound_header.destination_port_ranges == [%{from: 443, to: 443}]
+    assert hop.outbound_header.source_addresses == ["10.0.1.5/32"]
+    assert parsed.next_token == ""
+  end
+
+  test "DeleteNetworkInsightsPath returns the deleted path id" do
+    xml = """
+    <DeleteNetworkInsightsPathResponse>
+    <networkInsightsPathId>nip-1</networkInsightsPathId>
+    </DeleteNetworkInsightsPathResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_delete_network_insights_path_for_test(xml)
+
+    assert parsed.network_insights_path_id == "nip-1"
+  end
 end

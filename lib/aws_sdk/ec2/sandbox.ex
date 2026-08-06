@@ -506,5 +506,101 @@ if Code.ensure_loaded?(SandboxRegistry) do
         AwsSdk.Sandbox.normalize_no_key(tuples)
       )
     end
+
+    def create_network_insights_path_response(source, destination, protocol, opts) do
+      examples = AwsSdk.Sandbox.doc_examples([:source, :destination, :protocol])
+
+      func =
+        AwsSdk.Sandbox.find!(
+          @registry,
+          __MODULE__,
+          :create_network_insights_path,
+          source,
+          examples
+        )
+
+      AwsSdk.Sandbox.apply_func(func, [source, destination, protocol, opts], examples)
+    end
+
+    def set_create_network_insights_path_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :create_network_insights_path,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
+
+    def start_network_insights_analysis_response(path_id, opts) do
+      examples = AwsSdk.Sandbox.doc_examples([:path_id])
+
+      func =
+        AwsSdk.Sandbox.find!(
+          @registry,
+          __MODULE__,
+          :start_network_insights_analysis,
+          path_id,
+          examples
+        )
+
+      AwsSdk.Sandbox.apply_func(func, [path_id, opts], examples)
+    end
+
+    def set_start_network_insights_analysis_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :start_network_insights_analysis,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
+
+    def describe_network_insights_analyses_response(opts) do
+      examples = AwsSdk.Sandbox.doc_examples([])
+
+      func =
+        AwsSdk.Sandbox.find!(
+          @registry,
+          __MODULE__,
+          :describe_network_insights_analyses,
+          "*",
+          examples
+        )
+
+      AwsSdk.Sandbox.apply_func(func, [opts], examples)
+    end
+
+    def set_describe_network_insights_analyses_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :describe_network_insights_analyses,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
+
+    def delete_network_insights_path_response(path_id, opts) do
+      examples = AwsSdk.Sandbox.doc_examples([:path_id])
+
+      func =
+        AwsSdk.Sandbox.find!(
+          @registry,
+          __MODULE__,
+          :delete_network_insights_path,
+          path_id,
+          examples
+        )
+
+      AwsSdk.Sandbox.apply_func(func, [path_id, opts], examples)
+    end
+
+    def set_delete_network_insights_path_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :delete_network_insights_path,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
   end
 end

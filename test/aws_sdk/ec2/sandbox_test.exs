@@ -403,4 +403,69 @@ defmodule AwsSdk.EC2.SandboxTest do
                EC2.describe_iam_instance_profile_associations(sandbox: [enabled: true])
     end
   end
+
+  describe "create_network_insights_path/4" do
+    test "keys off the source" do
+      Sandbox.set_create_network_insights_path_responses([
+        {"i-1", fn -> {:ok, %{network_insights_path: %{network_insights_path_id: "nip-1"}}} end}
+      ])
+
+      assert {:ok, %{network_insights_path: %{network_insights_path_id: "nip-1"}}} =
+               EC2.create_network_insights_path("i-1", "i-2", "tcp",
+                 destination_port: 443,
+                 sandbox: [enabled: true]
+               )
+    end
+  end
+
+  describe "start_network_insights_analysis/2" do
+    test "keys off the path id" do
+      Sandbox.set_start_network_insights_analysis_responses([
+        {"nip-1",
+         fn ->
+           {:ok,
+            %{
+              network_insights_analysis: %{
+                network_insights_analysis_id: "nia-1",
+                status: "running"
+              }
+            }}
+         end}
+      ])
+
+      assert {:ok, %{network_insights_analysis: %{status: "running"}}} =
+               EC2.start_network_insights_analysis("nip-1", sandbox: [enabled: true])
+    end
+  end
+
+  describe "describe_network_insights_analyses/1" do
+    test "returns the registered analyses" do
+      Sandbox.set_describe_network_insights_analyses_responses([
+        fn ->
+          {:ok,
+           %{
+             network_insights_analysis_set: [%{status: "succeeded", network_path_found: true}],
+             next_token: nil
+           }}
+        end
+      ])
+
+      assert {:ok, %{network_insights_analysis_set: [%{network_path_found: true}]}} =
+               EC2.describe_network_insights_analyses(
+                 analysis_ids: ["nia-1"],
+                 sandbox: [enabled: true]
+               )
+    end
+  end
+
+  describe "delete_network_insights_path/2" do
+    test "keys off the path id" do
+      Sandbox.set_delete_network_insights_path_responses([
+        {"nip-1", fn -> {:ok, %{network_insights_path_id: "nip-1"}} end}
+      ])
+
+      assert {:ok, %{network_insights_path_id: "nip-1"}} =
+               EC2.delete_network_insights_path("nip-1", sandbox: [enabled: true])
+    end
+  end
 end
