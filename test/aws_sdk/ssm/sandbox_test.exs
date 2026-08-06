@@ -113,4 +113,43 @@ defmodule AwsSdk.SSM.SandboxTest do
               }} = SSM.describe_instance_information(sandbox: [enabled: true])
     end
   end
+
+  describe "send_command/3" do
+    test "returns the registered command" do
+      Sandbox.set_send_command_responses([
+        fn ->
+          {:ok,
+           %{
+             command: %{
+               command_id: "cmd-123",
+               document_name: "AWS-RunShellScript",
+               instance_ids: ["i-1"],
+               status: "Pending"
+             }
+           }}
+        end
+      ])
+
+      assert {:ok, %{command: %{command_id: "cmd-123"}}} =
+               SSM.send_command(["i-1"], "AWS-RunShellScript",
+                 parameters: %{"commands" => ["uptime"]},
+                 sandbox: [enabled: true]
+               )
+    end
+  end
+
+  describe "send_command_by_targets/3" do
+    test "returns the registered command" do
+      Sandbox.set_send_command_by_targets_responses([
+        fn -> {:ok, %{command: %{command_id: "cmd-456", status: "Pending"}}} end
+      ])
+
+      assert {:ok, %{command: %{command_id: "cmd-456"}}} =
+               SSM.send_command_by_targets(
+                 [%{key: "tag:Role", values: ["web"]}],
+                 "AWS-RunShellScript",
+                 sandbox: [enabled: true]
+               )
+    end
+  end
 end

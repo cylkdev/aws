@@ -473,6 +473,156 @@ defmodule AwsSdk.SSM do
   end
 
   # ---------------------------------------------------------------------------
+  # Run Command
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Runs a command on the specified managed nodes.
+
+  ## Arguments
+
+    * `instance_ids` - A list of 1-50 managed node IDs.
+    * `document_name` - The SSM document to run (e.g. `"AWS-RunShellScript"`).
+    * `opts` - Options:
+      * `:parameters` - Map of document parameters, e.g.
+        `%{"commands" => ["uptime"]}`.
+      * `:comment` - User-specified information about the command.
+      * `:timeout_seconds` - Seconds to wait for a node to begin running
+        the command (30-2592000).
+      * `:document_version` - Document version (`"$DEFAULT"`, `"$LATEST"`,
+        or a version number string).
+      * `:output_s3_bucket_name`, `:output_s3_key_prefix` - Where to store
+        full command output.
+      * `:cloud_watch_output_config` - Map with PascalCase keys, e.g.
+        `%{"CloudWatchOutputEnabled" => true}`.
+      * `:max_concurrency`, `:max_errors` - Rate controls.
+      * `:service_role_arn`, `:notification_config` - SNS notifications.
+
+  ## Examples
+
+      AwsSdk.SSM.send_command(["i-1234567890abcdef0"], "AWS-RunShellScript",
+        parameters: %{"commands" => ["systemctl restart app"]}
+      )
+      #=> {:ok,
+      #=>  %{
+      #=>    command: %{
+      #=>      command_id: "0831e1a8-4c47-4c74-8f2a-EXAMPLE",
+      #=>      document_name: "AWS-RunShellScript",
+      #=>      instance_ids: ["i-1234567890abcdef0"],
+      #=>      status: "Pending",
+      #=>      status_details: "Pending",
+      #=>      requested_date_time: 1.7e9,
+      #=>      expires_after: 1.7e9,
+      #=>      parameters: %{commands: ["systemctl restart app"]},
+      #=>      output_s3_bucket_name: "",
+      #=>      output_s3_key_prefix: ""
+      #=>    }
+      #=>  }}
+
+  Poll the result with `get_command_invocation/3` using `:command_id`.
+  To target by tags or resource groups instead of explicit instance IDs,
+  use `send_command_by_targets/3`.
+  """
+  @spec send_command(instance_ids :: [String.t()], document_name :: String.t(), opts :: keyword()) ::
+          {:ok, %{command: map()}} | {:error, term()}
+  def send_command([_ | _] = instance_ids, document_name, opts \\ [])
+      when is_binary(document_name) do
+    if sandbox?(opts) do
+      sandbox_send_command_response(instance_ids, document_name, opts)
+    else
+      do_send_command(instance_ids, document_name, opts)
+    end
+  end
+
+  defp do_send_command(instance_ids, document_name, opts) do
+    data =
+      %{"InstanceIds" => instance_ids, "DocumentName" => document_name}
+      |> maybe_put("Parameters", opts[:parameters])
+      |> maybe_put("Comment", opts[:comment])
+      |> maybe_put("TimeoutSeconds", opts[:timeout_seconds])
+      |> maybe_put("DocumentVersion", opts[:document_version])
+      |> maybe_put("DocumentHash", opts[:document_hash])
+      |> maybe_put("DocumentHashType", opts[:document_hash_type])
+      |> maybe_put("OutputS3BucketName", opts[:output_s3_bucket_name])
+      |> maybe_put("OutputS3KeyPrefix", opts[:output_s3_key_prefix])
+      |> maybe_put("CloudWatchOutputConfig", opts[:cloud_watch_output_config])
+      |> maybe_put("MaxConcurrency", opts[:max_concurrency])
+      |> maybe_put("MaxErrors", opts[:max_errors])
+      |> maybe_put("ServiceRoleArn", opts[:service_role_arn])
+      |> maybe_put("NotificationConfig", opts[:notification_config])
+
+    with {:ok, op} <- build_operation("SendCommand", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
+  end
+
+  @doc """
+  Runs a command on nodes selected by targets (tag or resource-group
+  criteria) instead of explicit instance IDs.
+
+  AWS `SendCommand` accepts exactly one of `InstanceIds` or `Targets`;
+  this is the `Targets` form of `send_command/3`.
+
+  ## Arguments
+
+    * `targets` - List of `%{key:, values:}` maps, e.g.
+      `[%{key: "tag:Role", values: ["web"]}]` — encoded to the wire's
+      `Key`/`Values`, like EC2's `%{name:, values:}` filters.
+    * `document_name` - The SSM document to run.
+    * `opts` - Same options as `send_command/3`.
+
+  ## Examples
+
+      AwsSdk.SSM.send_command_by_targets(
+        [%{key: "tag:Role", values: ["web"]}],
+        "AWS-RunShellScript",
+        parameters: %{"commands" => ["uptime"]}
+      )
+      #=> {:ok, %{command: %{command_id: "0831e1a8-...", status: "Pending"}}}
+  """
+  @spec send_command_by_targets(
+          targets :: [map()],
+          document_name :: String.t(),
+          opts :: keyword()
+        ) ::
+          {:ok, %{command: map()}} | {:error, term()}
+  def send_command_by_targets([_ | _] = targets, document_name, opts \\ [])
+      when is_binary(document_name) do
+    if sandbox?(opts) do
+      sandbox_send_command_by_targets_response(targets, document_name, opts)
+    else
+      do_send_command_by_targets(targets, document_name, opts)
+    end
+  end
+
+  defp do_send_command_by_targets(targets, document_name, opts) do
+    wire_targets =
+      Enum.map(targets, fn %{key: key, values: values} -> %{"Key" => key, "Values" => values} end)
+
+    data =
+      %{"Targets" => wire_targets, "DocumentName" => document_name}
+      |> maybe_put("Parameters", opts[:parameters])
+      |> maybe_put("Comment", opts[:comment])
+      |> maybe_put("TimeoutSeconds", opts[:timeout_seconds])
+      |> maybe_put("DocumentVersion", opts[:document_version])
+      |> maybe_put("DocumentHash", opts[:document_hash])
+      |> maybe_put("DocumentHashType", opts[:document_hash_type])
+      |> maybe_put("OutputS3BucketName", opts[:output_s3_bucket_name])
+      |> maybe_put("OutputS3KeyPrefix", opts[:output_s3_key_prefix])
+      |> maybe_put("CloudWatchOutputConfig", opts[:cloud_watch_output_config])
+      |> maybe_put("MaxConcurrency", opts[:max_concurrency])
+      |> maybe_put("MaxErrors", opts[:max_errors])
+      |> maybe_put("ServiceRoleArn", opts[:service_role_arn])
+      |> maybe_put("NotificationConfig", opts[:notification_config])
+
+    with {:ok, op} <- build_operation("SendCommand", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Private helpers
   # ---------------------------------------------------------------------------
 
@@ -583,6 +733,16 @@ defmodule AwsSdk.SSM do
     defdelegate sandbox_describe_instance_information_response(opts),
       to: AwsSdk.SSM.Sandbox,
       as: :describe_instance_information_response
+
+    @doc false
+    defdelegate sandbox_send_command_response(instance_ids, document_name, opts),
+      to: AwsSdk.SSM.Sandbox,
+      as: :send_command_response
+
+    @doc false
+    defdelegate sandbox_send_command_by_targets_response(targets, document_name, opts),
+      to: AwsSdk.SSM.Sandbox,
+      as: :send_command_by_targets_response
   else
     defp sandbox_disabled?, do: true
 
@@ -594,6 +754,8 @@ defmodule AwsSdk.SSM do
     defp sandbox_delete_parameters_response(_, _), do: raise("sandbox not available")
     defp sandbox_describe_parameters_response(_), do: raise("sandbox not available")
     defp sandbox_describe_instance_information_response(_), do: raise("sandbox not available")
+    defp sandbox_send_command_response(_, _, _), do: raise("sandbox not available")
+    defp sandbox_send_command_by_targets_response(_, _, _), do: raise("sandbox not available")
   end
 
   # ---------------------------------------------------------------------------

@@ -134,5 +134,35 @@ if Code.ensure_loaded?(SandboxRegistry) do
         AwsSdk.Sandbox.normalize_no_key(tuples)
       )
     end
+
+    def send_command_response(instance_ids, document_name, opts) do
+      examples = AwsSdk.Sandbox.doc_examples([:instance_ids, :document_name])
+      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :send_command, "*", examples)
+      AwsSdk.Sandbox.apply_func(func, [instance_ids, document_name, opts], examples)
+    end
+
+    def set_send_command_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :send_command,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
+
+    def send_command_by_targets_response(targets, document_name, opts) do
+      examples = AwsSdk.Sandbox.doc_examples([:targets, :document_name])
+      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :send_command_by_targets, "*", examples)
+      AwsSdk.Sandbox.apply_func(func, [targets, document_name, opts], examples)
+    end
+
+    def set_send_command_by_targets_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :send_command_by_targets,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
   end
 end
