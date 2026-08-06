@@ -3,7 +3,7 @@ defmodule AwsSdk.Operation do
   Pure-data request descriptor for a single AWS API call.
 
   One struct serves every service. A facade builds a populated
-  `AwsSdk.Operation` and hands it to `AwsSdk.Client.execute/1`: the body is
+  `AwsSdk.Operation` and hands it to `AwsSdk.Client.request/1`: the body is
   already encoded, the headers are already populated, the URL is already
   composed.
 

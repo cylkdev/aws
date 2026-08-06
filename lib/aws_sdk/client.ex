@@ -16,7 +16,8 @@ defmodule AwsSdk.Client do
       `:organizations`, `:identity_center`).
 
   Callers build a populated Operation struct in their service facade
-  (`AwsSdk.EventBridge`, `AwsSdk.S3`, …) and hand it to `execute/1`. The
+  (`AwsSdk.EventBridge`, `AwsSdk.S3`, …) and hand it to `request/1`,
+  which wraps `execute/1` (the raw transport seam) with error mapping. The
   struct is the whole contract between facade and dispatcher: body
   is already encoded, headers are already populated, URL is already
   composed.
@@ -138,10 +139,10 @@ defmodule AwsSdk.Client do
 
   This is the library's single status-code contract — 3xx →
   `bad_request`, 4xx → `not_found`, 5xx → `service_unavailable`, transport
-  errors → `internal_server_error` — moved verbatim from the per-service
-  `deserialize_response/3` helpers it replaces. Success passes
-  `execute/1`'s response map (`:status_code`, `:headers`, `:body`, and the
-  streaming variants) through untouched. For HTTP failures, `details`
+  errors → `internal_server_error`. The 4xx/5xx/transport mappings align
+  with prior per-service helpers; 3xx handling is now uniform. Success
+  passes `execute/1`'s response map (`:status_code`, `:headers`, `:body`,
+  and the streaming variants) through untouched. For HTTP failures, `details`
   carries the original `:status` code alongside `:response` so callers can
   special-case specific statuses without losing the shared mapping.
   """
