@@ -14,7 +14,7 @@ defmodule AwsSdk.EC2 do
   The scope of this module is deliberately narrow: security groups,
   VPC/subnet discovery, instance and tag lookup, launch template reads,
   and AMI/snapshot lifecycle — the operations needed by the callers of
-  this library. Instances are described but never launched or terminated
+  this library. Instances are described and terminated but never launched
   here; launch templates are read but never created or modified; the
   image operations exist to retire AMIs a build pipeline has
   superseded. Each public function mirrors the wrapper
@@ -1081,6 +1081,72 @@ defmodule AwsSdk.EC2 do
   end
 
   # ---------------------------------------------------------------------------
+  # Instance lifecycle
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Terminates the specified instances.
+
+  ## Arguments
+
+    * `instance_ids` - List of instance IDs, encoded as `InstanceId.N`.
+
+  ## Examples
+
+      AwsSdk.EC2.terminate_instances(["i-1234567890abcdef0"])
+      #=> {:ok,
+      #=>  %{
+      #=>    instances_set: [
+      #=>      %{
+      #=>        instance_id: "i-1234567890abcdef0",
+      #=>        current_state: %{code: 32, name: "shutting-down"},
+      #=>        previous_state: %{code: 16, name: "running"}
+      #=>      }
+      #=>    ]
+      #=>  }}
+  """
+  @spec terminate_instances(instance_ids :: [String.t()], opts :: keyword()) ::
+          {:ok, %{instances_set: list(map())}} | {:error, term()}
+  def terminate_instances([_ | _] = instance_ids, opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_terminate_instances_response(instance_ids, opts)
+    else
+      do_terminate_instances(instance_ids, opts)
+    end
+  end
+
+  defp do_terminate_instances(instance_ids, opts) do
+    params = put_member_list(%{}, "InstanceId", instance_ids)
+
+    with {:ok, op} <- build_operation("TerminateInstances", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_terminate_instances(body)}
+    end
+  end
+
+  @doc false
+  def parse_terminate_instances_for_test(xml), do: parse_terminate_instances(xml)
+
+  defp parse_terminate_instances(body) do
+    %{
+      instances_set:
+        xpath(body, ~x"//instancesSet/item"l,
+          instance_id: ~x"./instanceId/text()"s,
+          current_state: [
+            ~x"./currentState"o,
+            code: ~x"./code/text()"oi,
+            name: ~x"./name/text()"os
+          ],
+          previous_state: [
+            ~x"./previousState"o,
+            code: ~x"./code/text()"oi,
+            name: ~x"./name/text()"os
+          ]
+        )
+    }
+  end
+
+  # ---------------------------------------------------------------------------
   # Images and snapshots
   # ---------------------------------------------------------------------------
 
@@ -2062,6 +2128,11 @@ defmodule AwsSdk.EC2 do
     defdelegate sandbox_delete_snapshot_response(snapshot_id, opts),
       to: AwsSdk.EC2.Sandbox,
       as: :delete_snapshot_response
+
+    @doc false
+    defdelegate sandbox_terminate_instances_response(instance_ids, opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :terminate_instances_response
   else
     defp sandbox_disabled?, do: true
 
@@ -2094,6 +2165,7 @@ defmodule AwsSdk.EC2 do
     defp sandbox_describe_images_response(_), do: raise("sandbox not available")
     defp sandbox_deregister_image_response(_, _), do: raise("sandbox not available")
     defp sandbox_delete_snapshot_response(_, _), do: raise("sandbox not available")
+    defp sandbox_terminate_instances_response(_, _), do: raise("sandbox not available")
   end
 
   # ---------------------------------------------------------------------------

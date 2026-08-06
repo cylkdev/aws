@@ -644,4 +644,25 @@ defmodule AwsSdk.ConformanceTest do
     assert ebs_backed.ebs.snapshot_id == "snap-1"
     assert instance_store.ebs == nil
   end
+
+  test "TerminateInstances keeps both states and integer state codes" do
+    xml = """
+    <TerminateInstancesResponse><instancesSet>
+    <item><instanceId>i-1</instanceId>
+    <currentState><code>32</code><name>shutting-down</name></currentState>
+    <previousState><code>16</code><name>running</name></previousState></item>
+    <item><instanceId>i-2</instanceId>
+    <currentState><code>48</code><name>terminated</name></currentState>
+    <previousState><code>64</code><name>stopping</name></previousState></item>
+    </instancesSet></TerminateInstancesResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_terminate_instances_for_test(xml)
+
+    assert [one, two] = parsed.instances_set
+    assert one.instance_id == "i-1"
+    assert one.current_state == %{code: 32, name: "shutting-down"}
+    assert one.previous_state == %{code: 16, name: "running"}
+    assert two.current_state.name == "terminated"
+  end
 end

@@ -323,5 +323,20 @@ if Code.ensure_loaded?(SandboxRegistry) do
         AwsSdk.Sandbox.normalize_no_key(tuples)
       )
     end
+
+    def terminate_instances_response(instance_ids, opts) do
+      examples = AwsSdk.Sandbox.doc_examples([:instance_ids])
+      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :terminate_instances, "*", examples)
+      AwsSdk.Sandbox.apply_func(func, [instance_ids, opts], examples)
+    end
+
+    def set_terminate_instances_responses(tuples) do
+      AwsSdk.Sandbox.set_responses(
+        @registry,
+        __MODULE__,
+        :terminate_instances,
+        AwsSdk.Sandbox.normalize_no_key(tuples)
+      )
+    end
   end
 end

@@ -256,4 +256,26 @@ defmodule AwsSdk.EC2.SandboxTest do
                )
     end
   end
+
+  describe "terminate_instances/2" do
+    test "returns the registered state changes" do
+      Sandbox.set_terminate_instances_responses([
+        fn ->
+          {:ok,
+           %{
+             instances_set: [
+               %{
+                 instance_id: "i-1",
+                 current_state: %{code: 32, name: "shutting-down"},
+                 previous_state: %{code: 16, name: "running"}
+               }
+             ]
+           }}
+        end
+      ])
+
+      assert {:ok, %{instances_set: [%{instance_id: "i-1"}]}} =
+               EC2.terminate_instances(["i-1"], sandbox: [enabled: true])
+    end
+  end
 end
