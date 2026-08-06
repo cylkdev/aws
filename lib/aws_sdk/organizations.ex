@@ -113,11 +113,10 @@ defmodule AwsSdk.Organizations do
   defp do_create_organization(opts) do
     data = maybe_put(%{}, "FeatureSet", opts[:feature_set])
 
-    "CreateOrganization"
-    |> perform(data, opts)
-    |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
-    end)
+    with {:ok, op} <- build_operation("CreateOrganization", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -160,11 +159,15 @@ defmodule AwsSdk.Organizations do
   end
 
   defp do_create_organizational_unit(parent_id, name, opts) do
-    "CreateOrganizationalUnit"
-    |> perform(%{"ParentId" => parent_id, "Name" => name}, opts)
-    |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
-    end)
+    with {:ok, op} <-
+           build_operation(
+             "CreateOrganizationalUnit",
+             %{"ParentId" => parent_id, "Name" => name},
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -218,11 +221,10 @@ defmodule AwsSdk.Organizations do
         opts[:iam_user_access_to_billing]
       )
 
-    "CreateAccount"
-    |> perform(data, opts)
-    |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
-    end)
+    with {:ok, op} <- build_operation("CreateAccount", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -273,11 +275,15 @@ defmodule AwsSdk.Organizations do
   end
 
   defp do_describe_create_account_status(request_id, opts) do
-    "DescribeCreateAccountStatus"
-    |> perform(%{"CreateAccountRequestId" => request_id}, opts)
-    |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
-    end)
+    with {:ok, op} <-
+           build_operation(
+             "DescribeCreateAccountStatus",
+             %{"CreateAccountRequestId" => request_id},
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -317,18 +323,16 @@ defmodule AwsSdk.Organizations do
   end
 
   defp do_move_account(account_id, source_parent_id, destination_parent_id, opts) do
-    "MoveAccount"
-    |> perform(
-      %{
-        "AccountId" => account_id,
-        "SourceParentId" => source_parent_id,
-        "DestinationParentId" => destination_parent_id
-      },
-      opts
-    )
-    |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
-    end)
+    data = %{
+      "AccountId" => account_id,
+      "SourceParentId" => source_parent_id,
+      "DestinationParentId" => destination_parent_id
+    }
+
+    with {:ok, op} <- build_operation("MoveAccount", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -356,11 +360,10 @@ defmodule AwsSdk.Organizations do
   end
 
   defp do_delete_organization(opts) do
-    "DeleteOrganization"
-    |> perform(%{}, opts)
-    |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
-    end)
+    with {:ok, op} <- build_operation("DeleteOrganization", %{}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -390,11 +393,11 @@ defmodule AwsSdk.Organizations do
   end
 
   defp do_delete_organizational_unit(ou_id, opts) do
-    "DeleteOrganizationalUnit"
-    |> perform(%{"OrganizationalUnitId" => ou_id}, opts)
-    |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
-    end)
+    with {:ok, op} <-
+           build_operation("DeleteOrganizationalUnit", %{"OrganizationalUnitId" => ou_id}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -428,11 +431,10 @@ defmodule AwsSdk.Organizations do
   end
 
   defp do_close_account(account_id, opts) do
-    "CloseAccount"
-    |> perform(%{"AccountId" => account_id}, opts)
-    |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
-    end)
+    with {:ok, op} <- build_operation("CloseAccount", %{"AccountId" => account_id}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -476,14 +478,12 @@ defmodule AwsSdk.Organizations do
   end
 
   defp do_register_delegated_administrator(account_id, service_principal, opts) do
-    "RegisterDelegatedAdministrator"
-    |> perform(
-      %{"AccountId" => account_id, "ServicePrincipal" => service_principal},
-      opts
-    )
-    |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
-    end)
+    data = %{"AccountId" => account_id, "ServicePrincipal" => service_principal}
+
+    with {:ok, op} <- build_operation("RegisterDelegatedAdministrator", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -516,11 +516,15 @@ defmodule AwsSdk.Organizations do
   end
 
   defp do_enable_aws_service_access(service_principal, opts) do
-    "EnableAWSServiceAccess"
-    |> perform(%{"ServicePrincipal" => service_principal}, opts)
-    |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
-    end)
+    with {:ok, op} <-
+           build_operation(
+             "EnableAWSServiceAccess",
+             %{"ServicePrincipal" => service_principal},
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -556,11 +560,10 @@ defmodule AwsSdk.Organizations do
   end
 
   defp do_describe_organization(opts) do
-    "DescribeOrganization"
-    |> perform(%{}, opts)
-    |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
-    end)
+    with {:ok, op} <- build_operation("DescribeOrganization", %{}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -633,11 +636,10 @@ defmodule AwsSdk.Organizations do
       |> maybe_put("NextToken", opts[:next_token])
       |> maybe_put("MaxResults", opts[:max_results])
 
-    "ListRoots"
-    |> perform(data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("ListRoots", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -688,11 +690,10 @@ defmodule AwsSdk.Organizations do
       |> maybe_put("NextToken", opts[:next_token])
       |> maybe_put("MaxResults", opts[:max_results])
 
-    "ListOrganizationalUnitsForParent"
-    |> perform(data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("ListOrganizationalUnitsForParent", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -743,11 +744,10 @@ defmodule AwsSdk.Organizations do
       |> maybe_put("NextToken", opts[:next_token])
       |> maybe_put("MaxResults", opts[:max_results])
 
-    "ListAccounts"
-    |> perform(data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("ListAccounts", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -801,11 +801,10 @@ defmodule AwsSdk.Organizations do
       |> maybe_put("NextToken", opts[:next_token])
       |> maybe_put("MaxResults", opts[:max_results])
 
-    "ListDelegatedAdministrators"
-    |> perform(data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("ListDelegatedAdministrators", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -848,11 +847,10 @@ defmodule AwsSdk.Organizations do
       |> maybe_put("NextToken", opts[:next_token])
       |> maybe_put("MaxResults", opts[:max_results])
 
-    "ListAWSServiceAccessForOrganization"
-    |> perform(data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("ListAWSServiceAccessForOrganization", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -893,11 +891,10 @@ defmodule AwsSdk.Organizations do
       |> maybe_put("NextToken", opts[:next_token])
       |> maybe_put("MaxResults", opts[:max_results])
 
-    "ListParents"
-    |> perform(data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("ListParents", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -942,11 +939,10 @@ defmodule AwsSdk.Organizations do
   end
 
   defp do_describe_account(account_id, opts) do
-    "DescribeAccount"
-    |> perform(%{"AccountId" => account_id}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("DescribeAccount", %{"AccountId" => account_id}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -983,11 +979,11 @@ defmodule AwsSdk.Organizations do
   end
 
   defp do_describe_organizational_unit(ou_id, opts) do
-    "DescribeOrganizationalUnit"
-    |> perform(%{"OrganizationalUnitId" => ou_id}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <-
+           build_operation("DescribeOrganizationalUnit", %{"OrganizationalUnitId" => ou_id}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -1026,11 +1022,12 @@ defmodule AwsSdk.Organizations do
   end
 
   defp do_update_organizational_unit(ou_id, name, opts) do
-    "UpdateOrganizationalUnit"
-    |> perform(%{"OrganizationalUnitId" => ou_id, "Name" => name}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    data = %{"OrganizationalUnitId" => ou_id, "Name" => name}
+
+    with {:ok, op} <- build_operation("UpdateOrganizationalUnit", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -1058,11 +1055,15 @@ defmodule AwsSdk.Organizations do
   end
 
   defp do_disable_aws_service_access(service_principal, opts) do
-    "DisableAWSServiceAccess"
-    |> perform(%{"ServicePrincipal" => service_principal}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <-
+           build_operation(
+             "DisableAWSServiceAccess",
+             %{"ServicePrincipal" => service_principal},
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -1097,14 +1098,12 @@ defmodule AwsSdk.Organizations do
   end
 
   defp do_deregister_delegated_administrator(account_id, service_principal, opts) do
-    "DeregisterDelegatedAdministrator"
-    |> perform(
-      %{"AccountId" => account_id, "ServicePrincipal" => service_principal},
-      opts
-    )
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    data = %{"AccountId" => account_id, "ServicePrincipal" => service_principal}
+
+    with {:ok, op} <- build_operation("DeregisterDelegatedAdministrator", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -1157,11 +1156,10 @@ defmodule AwsSdk.Organizations do
       |> maybe_put("NextToken", opts[:next_token])
       |> maybe_put("MaxResults", opts[:max_results])
 
-    "ListChildren"
-    |> perform(data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation("ListChildren", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -1207,23 +1205,8 @@ defmodule AwsSdk.Organizations do
     end
   end
 
-  defp perform(action, data, opts) do
-    with {:ok, op} <- build_operation(action, data, opts) do
-      op
-      |> Client.execute()
-      |> decode_response()
-    end
-  end
-
   defp encode_body(data) when map_size(data) === 0, do: "{}"
   defp encode_body(data), do: data |> :json.encode() |> IO.iodata_to_binary()
-
-  defp decode_response({:ok, %{body: body}}), do: {:ok, decode_body(body)}
-
-  defp decode_response({:error, {:http_error, status, body}}),
-    do: {:error, {:http_error, status, decode_body(body)}}
-
-  defp decode_response({:error, _reason} = err), do: err
 
   defp decode_body(""), do: %{}
 
@@ -1435,29 +1418,6 @@ defmodule AwsSdk.Organizations do
         :error -> acc
       end
     end)
-  end
-
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 
   # One global endpoint per partition. A caller in GovCloud must still reach
