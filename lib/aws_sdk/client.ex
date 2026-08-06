@@ -134,6 +134,37 @@ defmodule AwsSdk.Client do
   end
 
   @doc """
+  Executes a signed operation and maps failures to `ErrorMessage` errors.
+
+  This is the library's single status-code contract — 3xx →
+  `bad_request`, 4xx → `not_found`, 5xx → `service_unavailable`, transport
+  errors → `internal_server_error` — moved verbatim from the per-service
+  `deserialize_response/3` helpers it replaces. Success passes
+  `execute/1`'s response map (`:status_code`, `:headers`, `:body`, and the
+  streaming variants) through untouched.
+  """
+  @spec request(struct) :: {:ok, map} | {:error, ErrorMessage.t()}
+  def request(%_{} = op) do
+    case execute(op) do
+      {:ok, response} ->
+        {:ok, response}
+
+      {:error, {:http_error, status_code, response}} when status_code in 300..399 ->
+        {:error, ErrorMessage.bad_request("redirect not followed.", %{response: response})}
+
+      {:error, {:http_error, status_code, response}} when status_code in 400..499 ->
+        {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
+
+      {:error, {:http_error, status_code, response}} when status_code >= 500 ->
+        {:error,
+         ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
+
+      {:error, reason} ->
+        {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
+    end
+  end
+
+  @doc """
   Resolves the endpoint / credentials / region map for a service.
 
   `namespace` picks the per-service opts key (e.g. `:s3`, `:events`)
