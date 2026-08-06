@@ -27,15 +27,23 @@ def request(%_{} = op) do
     {:ok, response} ->
       {:ok, response}
 
-    {:error, {:http_error, status, response}} when status in 300..399 ->
-      {:error, ErrorMessage.bad_request("redirect not followed.", %{response: response})}
-
-    {:error, {:http_error, status, response}} when status in 400..499 ->
-      {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-
-    {:error, {:http_error, status, response}} when status >= 500 ->
+    {:error, {:http_error, status_code, response}} when status_code in 300..399 ->
       {:error,
-       ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
+       ErrorMessage.bad_request("redirect not followed.", %{
+         status: status_code,
+         response: response
+       })}
+
+    {:error, {:http_error, status_code, response}} when status_code in 400..499 ->
+      {:error,
+       ErrorMessage.not_found("resource not found.", %{status: status_code, response: response})}
+
+    {:error, {:http_error, status_code, response}} when status_code >= 500 ->
+      {:error,
+       ErrorMessage.service_unavailable("service temporarily unavailable", %{
+         status: status_code,
+         response: response
+       })}
 
     {:error, reason} ->
       {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
@@ -46,6 +54,7 @@ end
 - The error clauses are moved **verbatim** from the modules'
   `deserialize_response/3` — same `ErrorMessage` constructors, same
   messages, same detail maps. Behavior-compatible by construction.
+- Amended during implementation (owner ruling): the three HTTP-error clauses add `status: status_code` to their details maps, so callers that need status-specific handling (S3's 409/412 → `conflict` special cases) match the mapped `ErrorMessage` instead of duplicating the mapping. The transport clause is unchanged.
 - S3's `deserialize_response` carries one clause the others lack:
   3xx → `ErrorMessage.bad_request("redirect not followed.", ...)`.
   `Client.request/1` includes it, making the contract uniform: 3xx →

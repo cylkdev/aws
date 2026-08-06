@@ -22,7 +22,7 @@ Each service (`AwsSdk.S3`, `AwsSdk.EventBridge`, `AwsSdk.Logs`, `AwsSdk.IAM`, `A
 
 - **Every input AWS requires for an operation is a positional argument.** `opts` (always last, always `\\ []`) carries only optional inputs plus credentials, region, endpoint overrides, and the sandbox flag. Requiredness is enforced by pattern match / guard on the function head (`when is_binary(arn)`), never by a runtime `require_opts!`-style check on the keyword list. When AWS requires *one of* two mutually exclusive inputs, expose two distinct named functions rather than one polymorphic head — e.g. `AwsSdk.ElasticLoadBalancingV2.describe_rules/2` (by listener ARN) vs `describe_rules_by_arns/2` (by rule ARNs), which send different wire params.
 - Public functions check `sandbox?/1` first; if true, delegate to the `Sandbox` module
-- Otherwise call `do_*` private functions that dispatch through the service's `Client` module, then pipe through `deserialize_response/3`
+- Otherwise call `do_*` private functions, each an explicit pipeline: `with {:ok, op} <- build_operation(...), {:ok, %{body: body}} <- Client.request(op) do ...` — no per-module dispatch or response-mapping helpers
 - Every service's `Client` module is a thin wrapper over `AwsSdk.Client`, the shared dispatcher that owns SigV4 signing, HTTP dispatch (`AwsSdk.HTTP`), credential/endpoint/sandbox resolution, and status-code branching. Per-service clients contribute only the protocol-specific pieces: body encoding (JSON / form-urlencoded / passthrough), request headers (X-Amz-Target for JSON 1.1; Action+Version for Query; per-operation for REST/XML), and URL composition (only S3 needs custom addressing). There is no ExAws integration.
 - Wire protocols per service (these are AWS's protocols, not this library's choice — see each module's `@moduledoc` for the authoritative botocore model reference):
   - JSON 1.1: `AwsSdk.EventBridge`, `AwsSdk.Logs`, `AwsSdk.IdentityCenter` (both `sso-admin` and `identitystore`), `AwsSdk.Organizations`
@@ -68,7 +68,7 @@ Response deserialization is delegated to `ExUtils.Serializer.deserialize/1` (fro
 
 ### Error handling
 
-`AwsSdk.Error` delegates to the `ErrorMessage` library. HTTP 4xx → `not_found`, 5xx → `service_unavailable`, other failures → `internal_server_error`. The adapter is configurable via `config :aws_sdk, :error_message_adapter`.
+`AwsSdk.Error` delegates to the `ErrorMessage` library. `AwsSdk.Client.request/1` owns the status-code contract: 3xx → `bad_request`, HTTP 4xx → `not_found`, 5xx → `service_unavailable`, other failures → `internal_server_error`; HTTP failures carry the numeric status in the error details (`details.status`). The adapter is configurable via `config :aws_sdk, :error_message_adapter`.
 
 ### Configuration
 
