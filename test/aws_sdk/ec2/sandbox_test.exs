@@ -356,4 +356,17 @@ defmodule AwsSdk.EC2.SandboxTest do
                EC2.describe_snapshots(owner_ids: ["self"], sandbox: [enabled: true])
     end
   end
+
+  describe "describe_network_interfaces/1" do
+    test "returns the registered interfaces" do
+      Sandbox.set_describe_network_interfaces_responses([
+        fn ->
+          {:ok, %{network_interface_set: [%{network_interface_id: "eni-1"}], next_token: nil}}
+        end
+      ])
+
+      assert {:ok, %{network_interface_set: [%{network_interface_id: "eni-1"}]}} =
+               EC2.describe_network_interfaces(sandbox: [enabled: true])
+    end
+  end
 end

@@ -855,4 +855,58 @@ defmodule AwsSdk.ConformanceTest do
     assert snap.tag_set == [%{key: "Name", value: "web"}]
     assert parsed.next_token == "tok"
   end
+
+  test "DescribeNetworkInterfaces keeps attachment, association, and groups" do
+    xml = """
+    <DescribeNetworkInterfacesResponse><networkInterfaceSet><item>
+    <networkInterfaceId>eni-1</networkInterfaceId><subnetId>subnet-1</subnetId>
+    <vpcId>vpc-1</vpcId><availabilityZone>us-east-1a</availabilityZone>
+    <description>web eni</description><ownerId>123456789012</ownerId>
+    <status>in-use</status><macAddress>0a:bb</macAddress>
+    <privateIpAddress>10.0.1.5</privateIpAddress>
+    <privateDnsName>ip-10-0-1-5.ec2.internal</privateDnsName>
+    <sourceDestCheck>true</sourceDestCheck><interfaceType>interface</interfaceType>
+    <requesterManaged>false</requesterManaged>
+    <groupSet><item><groupId>sg-1</groupId><groupName>web</groupName></item></groupSet>
+    <attachment><attachmentId>eni-attach-1</attachmentId><instanceId>i-1</instanceId>
+    <instanceOwnerId>123456789012</instanceOwnerId><deviceIndex>0</deviceIndex>
+    <status>attached</status><attachTime>2026-01-01T00:00:00Z</attachTime>
+    <deleteOnTermination>true</deleteOnTermination></attachment>
+    <association><publicIp>3.3.3.3</publicIp><publicDnsName>ec2-3-3-3-3.compute-1.amazonaws.com</publicDnsName>
+    <ipOwnerId>amazon</ipOwnerId></association>
+    <privateIpAddressesSet><item><privateIpAddress>10.0.1.5</privateIpAddress>
+    <primary>true</primary></item></privateIpAddressesSet>
+    <tagSet/>
+    </item></networkInterfaceSet></DescribeNetworkInterfacesResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_describe_network_interfaces_for_test(xml)
+
+    assert [eni] = parsed.network_interface_set
+    assert eni.network_interface_id == "eni-1"
+    assert eni.status == "in-use"
+    assert eni.group_set == [%{group_id: "sg-1", group_name: "web"}]
+    assert eni.attachment.instance_id == "i-1"
+    assert eni.attachment.device_index == 0
+    assert eni.association.public_ip == "3.3.3.3"
+    assert [primary_ip] = eni.private_ip_addresses_set
+    # `primary` is a nested boolean, left as the wire string per the module's
+    # convention (only the named top-level flags are coerced).
+    assert primary_ip.primary == "true"
+    assert parsed.next_token == ""
+  end
+
+  test "DescribeNetworkInterfaces yields nil for a detached interface's attachment" do
+    xml = """
+    <DescribeNetworkInterfacesResponse><networkInterfaceSet><item>
+    <networkInterfaceId>eni-2</networkInterfaceId><status>available</status>
+    </item></networkInterfaceSet></DescribeNetworkInterfacesResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_describe_network_interfaces_for_test(xml)
+
+    assert [eni] = parsed.network_interface_set
+    assert eni.attachment == nil
+    assert eni.association == nil
+  end
 end

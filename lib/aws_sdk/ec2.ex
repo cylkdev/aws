@@ -1438,6 +1438,182 @@ defmodule AwsSdk.EC2 do
     }
   end
 
+  @doc """
+  Describes network interfaces.
+
+  The `group-id` filter answers "is this security group attached to
+  anything", which is what makes a security group safe to delete.
+
+  ## Options
+
+    * `:network_interface_ids` - List of ENI IDs, encoded as `NetworkInterfaceId.N`.
+    * `:filters` - List of `%{name:, values:}` filters (e.g.
+      `%{name: "group-id", values: ["sg-1"]}`).
+    * `:next_token`, `:max_results` - Pagination.
+
+  ## Examples
+
+      AwsSdk.EC2.describe_network_interfaces(filters: [%{name: "group-id", values: ["sg-0abc"]}])
+      #=> {:ok,
+      #=>  %{
+      #=>    network_interface_set: [
+      #=>      %{
+      #=>        network_interface_id: "eni-0abc",
+      #=>        subnet_id: "subnet-1",
+      #=>        vpc_id: "vpc-1",
+      #=>        availability_zone: "us-east-1a",
+      #=>        description: "",
+      #=>        owner_id: "123456789012",
+      #=>        requester_id: "",
+      #=>        requester_managed: false,
+      #=>        status: "in-use",
+      #=>        mac_address: "0a:bb:cc:dd:ee:ff",
+      #=>        private_ip_address: "10.0.1.5",
+      #=>        private_dns_name: "ip-10-0-1-5.ec2.internal",
+      #=>        source_dest_check: true,
+      #=>        interface_type: "interface",
+      #=>        group_set: [%{group_id: "sg-0abc", group_name: "web"}],
+      #=>        attachment: %{
+      #=>          attachment_id: "eni-attach-1",
+      #=>          instance_id: "i-1",
+      #=>          instance_owner_id: "123456789012",
+      #=>          device_index: 0,
+      #=>          status: "attached",
+      #=>          attach_time: "2026-01-01T00:00:00Z",
+      #=>          delete_on_termination: "true"
+      #=>        },
+      #=>        association: nil,
+      #=>        private_ip_addresses_set: [
+      #=>          %{private_ip_address: "10.0.1.5", primary: "true", association: nil}
+      #=>        ],
+      #=>        ipv6_addresses_set: [],
+      #=>        tag_set: []
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+
+  A detached interface parses `:attachment` and `:association` as `nil`
+  rather than maps of empty strings.
+  """
+  @spec describe_network_interfaces(opts :: keyword()) ::
+          {:ok, %{network_interface_set: list(map()), next_token: String.t() | nil}}
+          | {:error, term()}
+  def describe_network_interfaces(opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_describe_network_interfaces_response(opts)
+    else
+      do_describe_network_interfaces(opts)
+    end
+  end
+
+  defp do_describe_network_interfaces(opts) do
+    params =
+      %{}
+      |> put_member_list("NetworkInterfaceId", opts[:network_interface_ids] || [])
+      |> put_filters(opts[:filters] || [])
+      |> maybe_put("NextToken", opts[:next_token])
+      |> maybe_put("MaxResults", opts[:max_results])
+
+    with {:ok, op} <- build_operation("DescribeNetworkInterfaces", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_network_interfaces(body)}
+    end
+  end
+
+  @doc false
+  def parse_describe_network_interfaces_for_test(xml), do: parse_describe_network_interfaces(xml)
+
+  defp parse_describe_network_interfaces(body) do
+    enis =
+      xpath(body, ~x"//networkInterfaceSet/item"l,
+        network_interface_id: ~x"./networkInterfaceId/text()"s,
+        subnet_id: ~x"./subnetId/text()"os,
+        vpc_id: ~x"./vpcId/text()"os,
+        availability_zone: ~x"./availabilityZone/text()"os,
+        description: ~x"./description/text()"os,
+        owner_id: ~x"./ownerId/text()"os,
+        requester_id: ~x"./requesterId/text()"os,
+        requester_managed: ~x"./requesterManaged/text()"s,
+        status: ~x"./status/text()"os,
+        mac_address: ~x"./macAddress/text()"os,
+        private_ip_address: ~x"./privateIpAddress/text()"os,
+        private_dns_name: ~x"./privateDnsName/text()"os,
+        source_dest_check: ~x"./sourceDestCheck/text()"s,
+        interface_type: ~x"./interfaceType/text()"os,
+        outpost_arn: ~x"./outpostArn/text()"os,
+        deny_all_igw_traffic: ~x"./denyAllIgwTraffic/text()"os,
+        ipv6_native: ~x"./ipv6Native/text()"os,
+        ipv6_address: ~x"./ipv6Address/text()"os,
+        operator: [
+          ~x"./operator"o,
+          managed: ~x"./managed/text()"os,
+          principal: ~x"./principal/text()"os
+        ],
+        connection_tracking_configuration: [
+          ~x"./connectionTrackingConfiguration"o,
+          tcp_established_timeout: ~x"./tcpEstablishedTimeout/text()"oi,
+          udp_stream_timeout: ~x"./udpStreamTimeout/text()"oi,
+          udp_timeout: ~x"./udpTimeout/text()"oi
+        ],
+        ipv4_prefix_set: [~x"./ipv4PrefixSet/item"l, ipv4_prefix: ~x"./ipv4Prefix/text()"os],
+        ipv6_prefix_set: [~x"./ipv6PrefixSet/item"l, ipv6_prefix: ~x"./ipv6Prefix/text()"os],
+        group_set: [
+          ~x"./groupSet/item"l,
+          group_id: ~x"./groupId/text()"os,
+          group_name: ~x"./groupName/text()"os
+        ],
+        attachment: [
+          ~x"./attachment"o,
+          attachment_id: ~x"./attachmentId/text()"os,
+          instance_id: ~x"./instanceId/text()"os,
+          instance_owner_id: ~x"./instanceOwnerId/text()"os,
+          device_index: ~x"./deviceIndex/text()"oi,
+          network_card_index: ~x"./networkCardIndex/text()"oi,
+          status: ~x"./status/text()"os,
+          attach_time: ~x"./attachTime/text()"os,
+          delete_on_termination: ~x"./deleteOnTermination/text()"os
+        ],
+        association: [
+          ~x"./association"o,
+          public_ip: ~x"./publicIp/text()"os,
+          public_dns_name: ~x"./publicDnsName/text()"os,
+          ip_owner_id: ~x"./ipOwnerId/text()"os,
+          allocation_id: ~x"./allocationId/text()"os,
+          association_id: ~x"./associationId/text()"os,
+          carrier_ip: ~x"./carrierIp/text()"os,
+          customer_owned_ip: ~x"./customerOwnedIp/text()"os
+        ],
+        private_ip_addresses_set: [
+          ~x"./privateIpAddressesSet/item"l,
+          private_ip_address: ~x"./privateIpAddress/text()"os,
+          private_dns_name: ~x"./privateDnsName/text()"os,
+          primary: ~x"./primary/text()"os,
+          association: [
+            ~x"./association"o,
+            public_ip: ~x"./publicIp/text()"os,
+            public_dns_name: ~x"./publicDnsName/text()"os,
+            ip_owner_id: ~x"./ipOwnerId/text()"os
+          ]
+        ],
+        ipv6_addresses_set: [
+          ~x"./ipv6AddressesSet/item"l,
+          ipv6_address: ~x"./ipv6Address/text()"os,
+          is_primary_ipv6: ~x"./isPrimaryIpv6/text()"os
+        ],
+        tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
+      )
+
+    %{
+      network_interface_set: Enum.map(enis, &coerce_network_interface/1),
+      next_token: xpath(body, ~x"//DescribeNetworkInterfacesResponse/nextToken/text()"os)
+    }
+  end
+
+  defp coerce_network_interface(%{requester_managed: managed, source_dest_check: check} = eni) do
+    %{eni | requester_managed: managed === "true", source_dest_check: check === "true"}
+  end
+
   # ---------------------------------------------------------------------------
   # Key pairs
   # ---------------------------------------------------------------------------
@@ -2821,6 +2997,11 @@ defmodule AwsSdk.EC2 do
     defdelegate sandbox_describe_snapshots_response(opts),
       to: AwsSdk.EC2.Sandbox,
       as: :describe_snapshots_response
+
+    @doc false
+    defdelegate sandbox_describe_network_interfaces_response(opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :describe_network_interfaces_response
   else
     defp sandbox_disabled?, do: true
 
@@ -2864,6 +3045,9 @@ defmodule AwsSdk.EC2 do
       do: raise("sandbox not available")
 
     defp sandbox_describe_snapshots_response(_), do: raise("sandbox not available")
+
+    defp sandbox_describe_network_interfaces_response(_),
+      do: raise("sandbox not available")
   end
 
   # ---------------------------------------------------------------------------
