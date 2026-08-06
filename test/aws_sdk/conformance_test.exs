@@ -690,4 +690,42 @@ defmodule AwsSdk.ConformanceTest do
 
     assert parsed.output == nil
   end
+
+  test "DescribeNetworkAcls keeps entries, associations, and the default flag" do
+    xml = """
+    <DescribeNetworkAclsResponse><networkAclSet><item>
+    <networkAclId>acl-1</networkAclId><vpcId>vpc-1</vpcId>
+    <default>true</default><ownerId>123456789012</ownerId>
+    <entrySet>
+    <item><ruleNumber>100</ruleNumber><protocol>6</protocol><ruleAction>allow</ruleAction>
+    <egress>false</egress><cidrBlock>0.0.0.0/0</cidrBlock>
+    <portRange><from>443</from><to>443</to></portRange></item>
+    <item><ruleNumber>32767</ruleNumber><protocol>-1</protocol><ruleAction>deny</ruleAction>
+    <egress>false</egress><cidrBlock>0.0.0.0/0</cidrBlock></item>
+    </entrySet>
+    <associationSet><item>
+    <networkAclAssociationId>aclassoc-1</networkAclAssociationId>
+    <networkAclId>acl-1</networkAclId><subnetId>subnet-1</subnetId>
+    </item></associationSet>
+    <tagSet><item><key>Name</key><value>main</value></item></tagSet>
+    </item></networkAclSet>
+    <nextToken>tok</nextToken></DescribeNetworkAclsResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_describe_network_acls_for_test(xml)
+
+    assert [acl] = parsed.network_acl_set
+    assert acl.network_acl_id == "acl-1"
+    assert acl.default == true
+    assert [https, deny_all] = acl.entry_set
+    assert https.rule_number == 100
+    assert https.egress == false
+    assert https.port_range == %{from: 443, to: 443}
+    # An entry without a portRange must yield nil, not a map of empty strings.
+    assert deny_all.port_range == nil
+    assert [assoc] = acl.association_set
+    assert assoc.subnet_id == "subnet-1"
+    assert acl.tag_set == [%{key: "Name", value: "main"}]
+    assert parsed.next_token == "tok"
+  end
 end

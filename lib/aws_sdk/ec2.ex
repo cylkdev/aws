@@ -644,6 +644,129 @@ defmodule AwsSdk.EC2 do
   end
 
   @doc """
+  Describes network ACLs.
+
+  ## Options
+
+    * `:network_acl_ids` - List of ACL IDs, encoded as `NetworkAclId.N`.
+    * `:filters` - List of `%{name:, values:}` filters (e.g.
+      `%{name: "vpc-id", values: ["vpc-1"]}`).
+    * `:next_token`, `:max_results` - Pagination.
+
+  ## Examples
+
+      AwsSdk.EC2.describe_network_acls(filters: [%{name: "vpc-id", values: ["vpc-0abc"]}])
+      #=> {:ok,
+      #=>  %{
+      #=>    network_acl_set: [
+      #=>      %{
+      #=>        network_acl_id: "acl-0abc",
+      #=>        vpc_id: "vpc-0abc",
+      #=>        default: true,
+      #=>        owner_id: "123456789012",
+      #=>        entry_set: [
+      #=>          %{
+      #=>            rule_number: 100,
+      #=>            protocol: "-1",
+      #=>            rule_action: "allow",
+      #=>            egress: false,
+      #=>            cidr_block: "0.0.0.0/0",
+      #=>            ipv6_cidr_block: nil,
+      #=>            icmp_type_code: nil,
+      #=>            port_range: nil
+      #=>          }
+      #=>        ],
+      #=>        association_set: [
+      #=>          %{
+      #=>            network_acl_association_id: "aclassoc-1",
+      #=>            network_acl_id: "acl-0abc",
+      #=>            subnet_id: "subnet-1"
+      #=>          }
+      #=>        ],
+      #=>        tag_set: []
+      #=>      }
+      #=>    ],
+      #=>    next_token: nil
+      #=>  }}
+  """
+  @spec describe_network_acls(opts :: keyword()) ::
+          {:ok, %{network_acl_set: list(map()), next_token: String.t() | nil}} | {:error, term()}
+  def describe_network_acls(opts \\ []) do
+    if sandbox?(opts) do
+      sandbox_describe_network_acls_response(opts)
+    else
+      do_describe_network_acls(opts)
+    end
+  end
+
+  defp do_describe_network_acls(opts) do
+    params =
+      %{}
+      |> put_member_list("NetworkAclId", opts[:network_acl_ids] || [])
+      |> put_filters(opts[:filters] || [])
+      |> maybe_put("NextToken", opts[:next_token])
+      |> maybe_put("MaxResults", opts[:max_results])
+
+    with {:ok, op} <- build_operation("DescribeNetworkAcls", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_network_acls(body)}
+    end
+  end
+
+  @doc false
+  def parse_describe_network_acls_for_test(xml), do: parse_describe_network_acls(xml)
+
+  defp parse_describe_network_acls(body) do
+    acls =
+      xpath(body, ~x"//networkAclSet/item"l,
+        network_acl_id: ~x"./networkAclId/text()"s,
+        vpc_id: ~x"./vpcId/text()"os,
+        default: ~x"./default/text()"s,
+        owner_id: ~x"./ownerId/text()"os,
+        entry_set: [
+          ~x"./entrySet/item"l,
+          rule_number: ~x"./ruleNumber/text()"oi,
+          # protocol is "-1" or an IANA number; AWS types it as a string.
+          protocol: ~x"./protocol/text()"os,
+          rule_action: ~x"./ruleAction/text()"os,
+          egress: ~x"./egress/text()"s,
+          cidr_block: ~x"./cidrBlock/text()"os,
+          ipv6_cidr_block: ~x"./ipv6CidrBlock/text()"os,
+          icmp_type_code: [
+            ~x"./icmpTypeCode"o,
+            code: ~x"./code/text()"oi,
+            type: ~x"./type/text()"oi
+          ],
+          port_range: [~x"./portRange"o, from: ~x"./from/text()"oi, to: ~x"./to/text()"oi]
+        ],
+        association_set: [
+          ~x"./associationSet/item"l,
+          network_acl_association_id: ~x"./networkAclAssociationId/text()"s,
+          network_acl_id: ~x"./networkAclId/text()"os,
+          subnet_id: ~x"./subnetId/text()"os
+        ],
+        tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
+      )
+
+    %{
+      network_acl_set: Enum.map(acls, &coerce_network_acl/1),
+      next_token: xpath(body, ~x"//DescribeNetworkAclsResponse/nextToken/text()"os)
+    }
+  end
+
+  defp coerce_network_acl(%{default: default, entry_set: entries} = acl) do
+    %{
+      acl
+      | default: default === "true",
+        entry_set: Enum.map(entries, &coerce_network_acl_entry/1)
+    }
+  end
+
+  defp coerce_network_acl_entry(%{egress: egress} = entry) do
+    %{entry | egress: egress === "true"}
+  end
+
+  @doc """
   Describes one or more subnets.
 
   ## Options
@@ -2214,6 +2337,11 @@ defmodule AwsSdk.EC2 do
     defdelegate sandbox_get_console_output_response(instance_id, opts),
       to: AwsSdk.EC2.Sandbox,
       as: :get_console_output_response
+
+    @doc false
+    defdelegate sandbox_describe_network_acls_response(opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :describe_network_acls_response
   else
     defp sandbox_disabled?, do: true
 
@@ -2248,6 +2376,7 @@ defmodule AwsSdk.EC2 do
     defp sandbox_delete_snapshot_response(_, _), do: raise("sandbox not available")
     defp sandbox_terminate_instances_response(_, _), do: raise("sandbox not available")
     defp sandbox_get_console_output_response(_, _), do: raise("sandbox not available")
+    defp sandbox_describe_network_acls_response(_), do: raise("sandbox not available")
   end
 
   # ---------------------------------------------------------------------------

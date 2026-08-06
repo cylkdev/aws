@@ -289,4 +289,15 @@ defmodule AwsSdk.EC2.SandboxTest do
                EC2.get_console_output("i-1", sandbox: [enabled: true])
     end
   end
+
+  describe "describe_network_acls/1" do
+    test "returns the registered ACLs" do
+      Sandbox.set_describe_network_acls_responses([
+        fn -> {:ok, %{network_acl_set: [%{network_acl_id: "acl-1"}], next_token: nil}} end
+      ])
+
+      assert {:ok, %{network_acl_set: [%{network_acl_id: "acl-1"}]}} =
+               EC2.describe_network_acls(sandbox: [enabled: true])
+    end
+  end
 end
