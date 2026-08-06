@@ -1792,29 +1792,43 @@ defmodule AwsSdk.S3 do
       |> maybe_put_query("continuation-token", opts[:continuation_token])
       |> maybe_put_query("bucket-region", opts[:bucket_region])
 
-    :get
-    |> s3_request(nil, nil, Keyword.put(opts, :query, query))
-    |> deserialize_response(opts, fn %{body: body} ->
-      XMLParser.parse_list_buckets(body)
-    end)
+    with {:ok, op} <- build_operation(:get, nil, nil, Keyword.put(opts, :query, query)),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, XMLParser.parse_list_buckets(body)}
+    end
   end
 
   defp do_create_bucket(bucket, opts) do
     region = opts[:region] || Config.region() || "us-east-1"
     body = create_bucket_body(region)
 
-    case s3_request(:put, bucket, nil, Keyword.put(opts, :body, body)) do
-      {:error, {:http_error, 409, resp}} ->
-        {:error,
-         ErrorMessage.conflict(
-           "bucket already exists",
-           %{bucket: bucket, region: region, response: resp}
-         )}
+    with {:ok, op} <- build_operation(:put, bucket, nil, Keyword.put(opts, :body, body)) do
+      case Client.execute(op) do
+        {:error, {:http_error, 409, resp}} ->
+          {:error,
+           ErrorMessage.conflict(
+             "bucket already exists",
+             %{bucket: bucket, region: region, response: resp}
+           )}
 
-      result ->
-        deserialize_response(result, opts, fn %{headers: headers} ->
-          deserialize_headers(headers, opts)
-        end)
+        {:ok, %{headers: headers}} ->
+          {:ok, deserialize_headers(headers, opts)}
+
+        {:error, {:http_error, status_code, response}} when status_code in 300..399 ->
+          {:error, ErrorMessage.bad_request("redirect not followed.", %{response: response})}
+
+        {:error, {:http_error, status_code, response}} when status_code in 400..499 ->
+          {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
+
+        {:error, {:http_error, status_code, response}} when status_code >= 500 ->
+          {:error,
+           ErrorMessage.service_unavailable("service temporarily unavailable", %{
+             response: response
+           })}
+
+        {:error, reason} ->
+          {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
+      end
     end
   end
 
@@ -1825,75 +1839,87 @@ defmodule AwsSdk.S3 do
   end
 
   defp do_delete_bucket(bucket, opts) do
-    :delete
-    |> s3_request(bucket, nil, opts)
-    |> deserialize_response(opts, fn %{headers: headers} ->
-      deserialize_headers(headers, opts)
-    end)
+    with {:ok, op} <- build_operation(:delete, bucket, nil, opts),
+         {:ok, %{headers: headers}} <- Client.request(op) do
+      {:ok, deserialize_headers(headers, opts)}
+    end
   end
 
   defp do_head_bucket(bucket, opts) do
-    :head
-    |> s3_request(bucket, nil, opts)
-    |> deserialize_response(opts, fn %{headers: headers} ->
-      deserialize_headers(headers, opts)
-    end)
+    with {:ok, op} <- build_operation(:head, bucket, nil, opts),
+         {:ok, %{headers: headers}} <- Client.request(op) do
+      {:ok, deserialize_headers(headers, opts)}
+    end
   end
 
   defp do_put_object(bucket, key, body, opts) do
     headers = opts |> object_headers() |> maybe_add_if_none_match(opts)
     if_none_match? = Keyword.get(opts, :if_none_match, false)
 
-    case s3_request(:put, bucket, key, put_opts(opts, body: body, headers: headers)) do
-      {:error, {:http_error, 412, resp}} when if_none_match? ->
-        {:error,
-         ErrorMessage.conflict(
-           "object already exists",
-           %{bucket: bucket, key: key, response: resp}
-         )}
+    with {:ok, op} <-
+           build_operation(:put, bucket, key, put_opts(opts, body: body, headers: headers)) do
+      case Client.execute(op) do
+        {:error, {:http_error, 412, resp}} when if_none_match? ->
+          {:error,
+           ErrorMessage.conflict(
+             "object already exists",
+             %{bucket: bucket, key: key, response: resp}
+           )}
 
-      result ->
-        deserialize_response(result, opts, fn %{headers: headers} ->
-          deserialize_headers(headers, opts)
-        end)
+        {:ok, %{headers: headers}} ->
+          {:ok, deserialize_headers(headers, opts)}
+
+        {:error, {:http_error, status_code, response}} when status_code in 300..399 ->
+          {:error, ErrorMessage.bad_request("redirect not followed.", %{response: response})}
+
+        {:error, {:http_error, status_code, response}} when status_code in 400..499 ->
+          {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
+
+        {:error, {:http_error, status_code, response}} when status_code >= 500 ->
+          {:error,
+           ErrorMessage.service_unavailable("service temporarily unavailable", %{
+             response: response
+           })}
+
+        {:error, reason} ->
+          {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
+      end
     end
   end
 
   defp do_head_object(bucket, key, opts) do
-    :head
-    |> s3_request(bucket, key, opts)
-    |> deserialize_response(opts, fn %{headers: headers} ->
-      deserialize_headers(headers, opts)
-    end)
+    with {:ok, op} <- build_operation(:head, bucket, key, opts),
+         {:ok, %{headers: headers}} <- Client.request(op) do
+      {:ok, deserialize_headers(headers, opts)}
+    end
   end
 
   defp do_delete_object(bucket, key, opts) do
-    :delete
-    |> s3_request(bucket, key, opts)
-    |> deserialize_response(opts, fn %{body: body} -> body end)
+    with {:ok, op} <- build_operation(:delete, bucket, key, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, body}
+    end
   end
 
   defp do_get_object(bucket, key, opts) do
     decode_json? = Keyword.get(opts, :decode_json, false)
 
-    :get
-    |> s3_request(bucket, key, opts)
-    |> deserialize_response(opts, fn %{body: body} ->
-      if decode_json?, do: Jason.decode!(body), else: body
-    end)
+    with {:ok, op} <- build_operation(:get, bucket, key, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, if(decode_json?, do: Jason.decode!(body), else: body)}
+    end
   end
 
   defp do_list_objects(bucket, opts) do
     query = list_objects_query(opts)
 
-    :get
-    |> s3_request(bucket, nil, Keyword.put(opts, :query, query))
     # Returning only `:contents` discarded `is_truncated` and
     # `next_continuation_token`, so a caller silently received at most one
     # page with no way to tell there were more.
-    |> deserialize_response(opts, fn %{body: body} ->
-      XMLParser.parse_list_objects(body)
-    end)
+    with {:ok, op} <- build_operation(:get, bucket, nil, Keyword.put(opts, :query, query)),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, XMLParser.parse_list_objects(body)}
+    end
   end
 
   defp list_objects_query(opts) do
@@ -1910,11 +1936,19 @@ defmodule AwsSdk.S3 do
   defp do_copy_object(dest_bucket, dest_key, src_bucket, src_key, opts) do
     headers = [{"x-amz-copy-source", copy_source(src_bucket, src_key)}]
 
-    :put
-    |> s3_request(dest_bucket, dest_key, put_opts(opts, body: "", headers: headers))
-    |> deserialize_response(opts, fn %{body: body} ->
-      XMLParser.parse_copy_object_result(body)
-    end)
+    with {:ok, op} <-
+           build_operation(
+             :put,
+             dest_bucket,
+             dest_key,
+             put_opts(opts, body: "", headers: headers)
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      case XMLParser.parse_copy_object_result(body) do
+        {:error, _} = error -> error
+        result -> {:ok, result}
+      end
+    end
   end
 
   defp do_presign(bucket, http_method, key, opts) do
@@ -1985,15 +2019,16 @@ defmodule AwsSdk.S3 do
     expires = resolve_expires(opts[:expires])
     headers = object_headers(opts) ++ maybe_expires_header(expires)
 
-    :post
-    |> s3_request(
-      bucket,
-      key,
-      put_opts(opts, query: %{"uploads" => ""}, body: "", headers: headers)
-    )
-    |> deserialize_response(opts, fn %{body: body} ->
-      XMLParser.parse_initiate_multipart(body)
-    end)
+    with {:ok, op} <-
+           build_operation(
+             :post,
+             bucket,
+             key,
+             put_opts(opts, query: %{"uploads" => ""}, body: "", headers: headers)
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, XMLParser.parse_initiate_multipart(body)}
+    end
   end
 
   # `Expires` is object cache-expiry metadata and is optional to AWS; send
@@ -2009,31 +2044,34 @@ defmodule AwsSdk.S3 do
   end
 
   defp do_abort_multipart_upload(bucket, key, upload_id, opts) do
-    :delete
-    |> s3_request(bucket, key, Keyword.put(opts, :query, %{"uploadId" => upload_id}))
-    |> deserialize_response(opts, fn %{headers: headers} ->
-      deserialize_headers(headers, opts)
-    end)
+    with {:ok, op} <-
+           build_operation(
+             :delete,
+             bucket,
+             key,
+             Keyword.put(opts, :query, %{"uploadId" => upload_id})
+           ),
+         {:ok, %{headers: headers}} <- Client.request(op) do
+      {:ok, deserialize_headers(headers, opts)}
+    end
   end
 
   defp do_upload_part(bucket, key, upload_id, part_number, body, opts) do
     query = %{"uploadId" => upload_id, "partNumber" => to_string(part_number)}
 
-    :put
-    |> s3_request(bucket, key, put_opts(opts, query: query, body: body))
-    |> deserialize_response(opts, fn %{headers: headers} ->
-      deserialize_headers(headers, opts)
-    end)
+    with {:ok, op} <- build_operation(:put, bucket, key, put_opts(opts, query: query, body: body)),
+         {:ok, %{headers: headers}} <- Client.request(op) do
+      {:ok, deserialize_headers(headers, opts)}
+    end
   end
 
   defp do_list_parts(bucket, key, upload_id, part_number_marker, opts) do
     query = maybe_put_query(%{"uploadId" => upload_id}, "part-number-marker", part_number_marker)
 
-    :get
-    |> s3_request(bucket, key, Keyword.put(opts, :query, query))
-    |> deserialize_response(opts, fn %{body: body} ->
-      XMLParser.parse_list_parts(body)
-    end)
+    with {:ok, op} <- build_operation(:get, bucket, key, Keyword.put(opts, :query, query)),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, XMLParser.parse_list_parts(body)}
+    end
   end
 
   defp do_copy_part(
@@ -2053,15 +2091,16 @@ defmodule AwsSdk.S3 do
       {"x-amz-copy-source-range", range_header(src_range)}
     ]
 
-    :put
-    |> s3_request(
-      dest_bucket,
-      dest_key,
-      put_opts(opts, query: query, body: "", headers: headers)
-    )
-    |> deserialize_response(opts, fn %{body: body} ->
-      XMLParser.parse_copy_part(body)
-    end)
+    with {:ok, op} <-
+           build_operation(
+             :put,
+             dest_bucket,
+             dest_key,
+             put_opts(opts, query: query, body: "", headers: headers)
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, XMLParser.parse_copy_part(body)}
+    end
   end
 
   defp do_copy_parts(
@@ -2169,12 +2208,19 @@ defmodule AwsSdk.S3 do
       query = %{"uploadId" => upload_id}
       headers = [{"content-type", "application/xml"}]
 
-      :post
-      |> s3_request(bucket, key, put_opts(opts, query: query, body: xml, headers: headers))
-      |> deserialize_response(
-        opts,
-        &deserialize_completed_multipart(&1, bucket, key, upload_id, opts)
-      )
+      with {:ok, op} <-
+             build_operation(
+               :post,
+               bucket,
+               key,
+               put_opts(opts, query: query, body: xml, headers: headers)
+             ),
+           {:ok, response} <- Client.request(op) do
+        case deserialize_completed_multipart(response, bucket, key, upload_id, opts) do
+          {:error, _} = error -> error
+          result -> {:ok, result}
+        end
+      end
     end
   end
 
@@ -2223,9 +2269,10 @@ defmodule AwsSdk.S3 do
   end
 
   defp get_raw_notification_xml(bucket, opts) do
-    case s3_request(:get, bucket, nil, Keyword.put(opts, :query, %{"notification" => ""})) do
-      {:ok, %{body: body}} -> {:ok, body}
-      {:error, _} = error -> normalize_notification_error(error, opts)
+    with {:ok, op} <-
+           build_operation(:get, bucket, nil, Keyword.put(opts, :query, %{"notification" => ""})),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, body}
     end
   end
 
@@ -2237,30 +2284,16 @@ defmodule AwsSdk.S3 do
       {"content-type", "application/xml"}
     ]
 
-    case s3_request(
-           :put,
-           bucket,
-           nil,
-           put_opts(opts, query: %{"notification" => ""}, body: xml, headers: headers)
-         ) do
-      {:ok, _} -> {:ok, %{}}
-      {:error, _} = error -> normalize_notification_error(error, opts)
+    with {:ok, op} <-
+           build_operation(
+             :put,
+             bucket,
+             nil,
+             put_opts(opts, query: %{"notification" => ""}, body: xml, headers: headers)
+           ),
+         {:ok, _} <- Client.request(op) do
+      {:ok, %{}}
     end
-  end
-
-  defp normalize_notification_error({:error, {:http_error, status, resp}}, _opts)
-       when status in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: resp})}
-  end
-
-  defp normalize_notification_error({:error, {:http_error, status, resp}}, _opts)
-       when status >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: resp})}
-  end
-
-  defp normalize_notification_error({:error, reason}, _opts) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 
   defp insert_event_bridge_config(xml) do
@@ -2306,11 +2339,10 @@ defmodule AwsSdk.S3 do
     headers = xml_body_headers(xml)
     request_opts = put_opts(opts, query: %{query_key => ""}, body: xml, headers: headers)
 
-    :put
-    |> s3_request(bucket, nil, request_opts)
-    |> deserialize_response(opts, fn %{headers: headers} ->
-      deserialize_headers(headers, opts)
-    end)
+    with {:ok, op} <- build_operation(:put, bucket, nil, request_opts),
+         {:ok, %{headers: response_headers}} <- Client.request(op) do
+      {:ok, deserialize_headers(response_headers, opts)}
+    end
   end
 
   defp xml_body_headers(xml) do
@@ -2575,14 +2607,6 @@ defmodule AwsSdk.S3 do
       service: @service,
       now: DateTime.utc_now()
     }
-  end
-
-  # -- Operation build + dispatch ---------------------------------------------
-
-  defp s3_request(method, bucket, key, opts) do
-    with {:ok, op} <- build_operation(method, bucket, key, opts) do
-      Client.execute(op)
-    end
   end
 
   # ---------------------------------------------------------------------------
@@ -3372,33 +3396,5 @@ defmodule AwsSdk.S3 do
         :error -> acc
       end
     end)
-  end
-
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 300..399 do
-    {:error, ErrorMessage.bad_request("redirect not followed.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 end
