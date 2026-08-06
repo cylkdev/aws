@@ -224,9 +224,10 @@ defmodule AwsSdk.ElasticLoadBalancingV2 do
       })
       |> flatten_query()
 
-    "DescribeTargetGroups"
-    |> perform(params, opts)
-    |> deserialize_response(opts, &parse_describe_target_groups/1)
+    with {:ok, op} <- build_operation("DescribeTargetGroups", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_target_groups(body)}
+    end
   end
 
   @doc """
@@ -294,9 +295,10 @@ defmodule AwsSdk.ElasticLoadBalancingV2 do
         "Targets" => opts[:targets]
       })
 
-    "DescribeTargetHealth"
-    |> perform(params, opts)
-    |> deserialize_response(opts, &parse_describe_target_health/1)
+    with {:ok, op} <- build_operation("DescribeTargetHealth", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_target_health(body)}
+    end
   end
 
   @doc """
@@ -368,9 +370,10 @@ defmodule AwsSdk.ElasticLoadBalancingV2 do
         "PageSize" => opts[:page_size]
       })
 
-    "DescribeLoadBalancers"
-    |> perform(params, opts)
-    |> deserialize_response(opts, &parse_describe_load_balancers/1)
+    with {:ok, op} <- build_operation("DescribeLoadBalancers", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_load_balancers(body)}
+    end
   end
 
   @doc """
@@ -480,9 +483,10 @@ defmodule AwsSdk.ElasticLoadBalancingV2 do
       })
       |> flatten_query()
 
-    "DescribeListeners"
-    |> perform(params, opts)
-    |> deserialize_response(opts, &parse_describe_listeners/1)
+    with {:ok, op} <- build_operation("DescribeListeners", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_listeners(body)}
+    end
   end
 
   @doc """
@@ -610,9 +614,10 @@ defmodule AwsSdk.ElasticLoadBalancingV2 do
       })
       |> flatten_query()
 
-    "DescribeRules"
-    |> perform(params, opts)
-    |> deserialize_response(opts, &parse_describe_rules/1)
+    with {:ok, op} <- build_operation("DescribeRules", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_describe_rules(body)}
+    end
   end
 
   @doc """
@@ -713,9 +718,10 @@ defmodule AwsSdk.ElasticLoadBalancingV2 do
         "Conditions" => opts[:conditions]
       })
 
-    "ModifyRule"
-    |> perform(params, opts)
-    |> deserialize_response(opts, &parse_modify_rule/1)
+    with {:ok, op} <- build_operation("ModifyRule", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_modify_rule(body)}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -745,15 +751,6 @@ defmodule AwsSdk.ElasticLoadBalancingV2 do
   end
 
   defp default_host(region), do: "elasticloadbalancing.#{region}.amazonaws.com"
-
-  defp perform(action, params, opts) do
-    with {:ok, op} <- build_operation(action, params, opts) do
-      case Client.execute(op) do
-        {:ok, %{body: body}} -> {:ok, body}
-        {:error, _} = err -> err
-      end
-    end
-  end
 
   defp encode_body(action, params) do
     params
@@ -1257,28 +1254,5 @@ defmodule AwsSdk.ElasticLoadBalancingV2 do
         :error -> acc
       end
     end)
-  end
-
-  defp deserialize_response({:ok, body}, _opts, parser) do
-    case parser.(body) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _parser)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _parser)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _parser) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 end
