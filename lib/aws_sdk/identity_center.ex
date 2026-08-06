@@ -110,10 +110,10 @@ defmodule AwsSdk.IdentityCenter do
   end
 
   defp do_list_instances(opts) do
-    perform(:sso, "ListInstances", %{}, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation(:sso, "ListInstances", %{}, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -167,10 +167,10 @@ defmodule AwsSdk.IdentityCenter do
       |> maybe_put("SessionDuration", opts[:session_duration])
       |> maybe_put("RelayState", opts[:relay_state])
 
-    perform(:sso, "CreatePermissionSet", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation(:sso, "CreatePermissionSet", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -203,18 +203,19 @@ defmodule AwsSdk.IdentityCenter do
   end
 
   defp do_delete_permission_set(instance_arn, permission_set_arn, opts) do
-    perform(
-      :sso,
-      "DeletePermissionSet",
-      %{
-        "InstanceArn" => instance_arn,
-        "PermissionSetArn" => permission_set_arn
-      },
-      opts
-    )
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <-
+           build_operation(
+             :sso,
+             "DeletePermissionSet",
+             %{
+               "InstanceArn" => instance_arn,
+               "PermissionSetArn" => permission_set_arn
+             },
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -254,10 +255,10 @@ defmodule AwsSdk.IdentityCenter do
       |> maybe_put("MaxResults", opts[:max_results])
       |> maybe_put("NextToken", opts[:next_token])
 
-    perform(:sso, "ListPermissionSets", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation(:sso, "ListPermissionSets", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -314,19 +315,20 @@ defmodule AwsSdk.IdentityCenter do
          managed_policy_arn,
          opts
        ) do
-    perform(
-      :sso,
-      "AttachManagedPolicyToPermissionSet",
-      %{
-        "InstanceArn" => instance_arn,
-        "PermissionSetArn" => permission_set_arn,
-        "ManagedPolicyArn" => managed_policy_arn
-      },
-      opts
-    )
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <-
+           build_operation(
+             :sso,
+             "AttachManagedPolicyToPermissionSet",
+             %{
+               "InstanceArn" => instance_arn,
+               "PermissionSetArn" => permission_set_arn,
+               "ManagedPolicyArn" => managed_policy_arn
+             },
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -368,18 +370,19 @@ defmodule AwsSdk.IdentityCenter do
   end
 
   defp do_describe_permission_set(instance_arn, permission_set_arn, opts) do
-    perform(
-      :sso,
-      "DescribePermissionSet",
-      %{
-        "InstanceArn" => instance_arn,
-        "PermissionSetArn" => permission_set_arn
-      },
-      opts
-    )
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <-
+           build_operation(
+             :sso,
+             "DescribePermissionSet",
+             %{
+               "InstanceArn" => instance_arn,
+               "PermissionSetArn" => permission_set_arn
+             },
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -437,17 +440,18 @@ defmodule AwsSdk.IdentityCenter do
   end
 
   defp do_get_inline_policy_for_permission_set(instance_arn, permission_set_arn, opts) do
-    perform(
-      :sso,
-      "GetInlinePolicyForPermissionSet",
-      %{
-        "InstanceArn" => instance_arn,
-        "PermissionSetArn" => permission_set_arn
-      },
-      opts
-    )
-    |> deserialize_response(opts, fn body ->
-      result = Serializer.deserialize(body, deserialize_opts(opts))
+    with {:ok, op} <-
+           build_operation(
+             :sso,
+             "GetInlinePolicyForPermissionSet",
+             %{
+               "InstanceArn" => instance_arn,
+               "PermissionSetArn" => permission_set_arn
+             },
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      result = Serializer.deserialize(decode_body(body), deserialize_opts(opts))
 
       # Decoding the policy is leaf-value decoding, not reshaping: AWS sends
       # the document as a JSON string inside a JSON response. Every other key
@@ -460,7 +464,7 @@ defmodule AwsSdk.IdentityCenter do
         end
 
       {:ok, Map.put(result, :inline_policy, decoded)}
-    end)
+    end
   end
 
   @doc """
@@ -511,10 +515,10 @@ defmodule AwsSdk.IdentityCenter do
       |> maybe_put("MaxResults", opts[:max_results])
       |> maybe_put("NextToken", opts[:next_token])
 
-    perform(:sso, "ListManagedPoliciesInPermissionSet", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation(:sso, "ListManagedPoliciesInPermissionSet", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -578,10 +582,10 @@ defmodule AwsSdk.IdentityCenter do
       |> maybe_put("MaxResults", opts[:max_results])
       |> maybe_put("NextToken", opts[:next_token])
 
-    perform(:sso, "ListAccountAssignments", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation(:sso, "ListAccountAssignments", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -622,10 +626,11 @@ defmodule AwsSdk.IdentityCenter do
       |> maybe_put("MaxResults", opts[:max_results])
       |> maybe_put("NextToken", opts[:next_token])
 
-    perform(:sso, "ListAccountsForProvisionedPermissionSet", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <-
+           build_operation(:sso, "ListAccountsForProvisionedPermissionSet", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -673,19 +678,20 @@ defmodule AwsSdk.IdentityCenter do
   end
 
   defp do_put_inline_policy_to_permission_set(instance_arn, permission_set_arn, policy, opts) do
-    perform(
-      :sso,
-      "PutInlinePolicyToPermissionSet",
-      %{
-        "InstanceArn" => instance_arn,
-        "PermissionSetArn" => permission_set_arn,
-        "InlinePolicy" => policy |> :json.encode() |> IO.iodata_to_binary()
-      },
-      opts
-    )
-    |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
-    end)
+    with {:ok, op} <-
+           build_operation(
+             :sso,
+             "PutInlinePolicyToPermissionSet",
+             %{
+               "InstanceArn" => instance_arn,
+               "PermissionSetArn" => permission_set_arn,
+               "InlinePolicy" => policy |> :json.encode() |> IO.iodata_to_binary()
+             },
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -739,19 +745,20 @@ defmodule AwsSdk.IdentityCenter do
          managed_policy_arn,
          opts
        ) do
-    perform(
-      :sso,
-      "DetachManagedPolicyFromPermissionSet",
-      %{
-        "InstanceArn" => instance_arn,
-        "PermissionSetArn" => permission_set_arn,
-        "ManagedPolicyArn" => managed_policy_arn
-      },
-      opts
-    )
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <-
+           build_operation(
+             :sso,
+             "DetachManagedPolicyFromPermissionSet",
+             %{
+               "InstanceArn" => instance_arn,
+               "PermissionSetArn" => permission_set_arn,
+               "ManagedPolicyArn" => managed_policy_arn
+             },
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -824,10 +831,10 @@ defmodule AwsSdk.IdentityCenter do
       "PrincipalId" => assignment.principal_id
     }
 
-    perform(:sso, "CreateAccountAssignment", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation(:sso, "CreateAccountAssignment", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -883,10 +890,10 @@ defmodule AwsSdk.IdentityCenter do
       "PrincipalId" => assignment.principal_id
     }
 
-    perform(:sso, "DeleteAccountAssignment", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation(:sso, "DeleteAccountAssignment", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -948,10 +955,10 @@ defmodule AwsSdk.IdentityCenter do
       |> Map.put("TargetType", opts[:target_type] || "ALL_PROVISIONED_ACCOUNTS")
       |> maybe_put("TargetId", opts[:target_id])
 
-    perform(:sso, "ProvisionPermissionSet", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation(:sso, "ProvisionPermissionSet", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -1001,10 +1008,10 @@ defmodule AwsSdk.IdentityCenter do
       |> maybe_put_name(opts[:given_name], opts[:family_name])
       |> maybe_put("Emails", normalize_emails(opts[:emails]))
 
-    perform(:identitystore, "CreateUser", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation(:identitystore, "CreateUser", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -1037,18 +1044,19 @@ defmodule AwsSdk.IdentityCenter do
   end
 
   defp do_delete_identity_store_user(identity_store_id, user_id, opts) do
-    perform(
-      :identitystore,
-      "DeleteUser",
-      %{
-        "IdentityStoreId" => identity_store_id,
-        "UserId" => user_id
-      },
-      opts
-    )
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <-
+           build_operation(
+             :identitystore,
+             "DeleteUser",
+             %{
+               "IdentityStoreId" => identity_store_id,
+               "UserId" => user_id
+             },
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -1090,15 +1098,16 @@ defmodule AwsSdk.IdentityCenter do
   end
 
   defp do_describe_identity_store_user(identity_store_id, user_id, opts) do
-    perform(
-      :identitystore,
-      "DescribeUser",
-      %{"IdentityStoreId" => identity_store_id, "UserId" => user_id},
-      opts
-    )
-    |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
-    end)
+    with {:ok, op} <-
+           build_operation(
+             :identitystore,
+             "DescribeUser",
+             %{"IdentityStoreId" => identity_store_id, "UserId" => user_id},
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -1154,10 +1163,10 @@ defmodule AwsSdk.IdentityCenter do
       "Operations" => operations
     }
 
-    perform(:identitystore, "UpdateUser", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation(:identitystore, "UpdateUser", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -1203,10 +1212,10 @@ defmodule AwsSdk.IdentityCenter do
       |> maybe_put("MaxResults", opts[:max_results])
       |> maybe_put("NextToken", opts[:next_token])
 
-    perform(:identitystore, "ListUsers", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation(:identitystore, "ListUsers", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -1252,10 +1261,10 @@ defmodule AwsSdk.IdentityCenter do
         opts[:description]
       )
 
-    perform(:identitystore, "CreateGroup", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation(:identitystore, "CreateGroup", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -1288,18 +1297,19 @@ defmodule AwsSdk.IdentityCenter do
   end
 
   defp do_delete_identity_store_group(identity_store_id, group_id, opts) do
-    perform(
-      :identitystore,
-      "DeleteGroup",
-      %{
-        "IdentityStoreId" => identity_store_id,
-        "GroupId" => group_id
-      },
-      opts
-    )
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <-
+           build_operation(
+             :identitystore,
+             "DeleteGroup",
+             %{
+               "IdentityStoreId" => identity_store_id,
+               "GroupId" => group_id
+             },
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -1339,15 +1349,16 @@ defmodule AwsSdk.IdentityCenter do
   end
 
   defp do_describe_identity_store_group(identity_store_id, group_id, opts) do
-    perform(
-      :identitystore,
-      "DescribeGroup",
-      %{"IdentityStoreId" => identity_store_id, "GroupId" => group_id},
-      opts
-    )
-    |> deserialize_response(opts, fn body ->
-      {:ok, Serializer.deserialize(body, deserialize_opts(opts))}
-    end)
+    with {:ok, op} <-
+           build_operation(
+             :identitystore,
+             "DescribeGroup",
+             %{"IdentityStoreId" => identity_store_id, "GroupId" => group_id},
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -1391,10 +1402,10 @@ defmodule AwsSdk.IdentityCenter do
       |> maybe_put("MaxResults", opts[:max_results])
       |> maybe_put("NextToken", opts[:next_token])
 
-    perform(:identitystore, "ListGroups", data, opts)
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <- build_operation(:identitystore, "ListGroups", data, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -1432,19 +1443,20 @@ defmodule AwsSdk.IdentityCenter do
   end
 
   defp do_create_group_membership(identity_store_id, group_id, user_id, opts) do
-    perform(
-      :identitystore,
-      "CreateGroupMembership",
-      %{
-        "IdentityStoreId" => identity_store_id,
-        "GroupId" => group_id,
-        "MemberId" => %{"UserId" => user_id}
-      },
-      opts
-    )
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <-
+           build_operation(
+             :identitystore,
+             "CreateGroupMembership",
+             %{
+               "IdentityStoreId" => identity_store_id,
+               "GroupId" => group_id,
+               "MemberId" => %{"UserId" => user_id}
+             },
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   @doc """
@@ -1483,18 +1495,19 @@ defmodule AwsSdk.IdentityCenter do
   end
 
   defp do_delete_group_membership(identity_store_id, membership_id, opts) do
-    perform(
-      :identitystore,
-      "DeleteGroupMembership",
-      %{
-        "IdentityStoreId" => identity_store_id,
-        "MembershipId" => membership_id
-      },
-      opts
-    )
-    |> deserialize_response(opts, fn body ->
-      Serializer.deserialize(body, deserialize_opts(opts))
-    end)
+    with {:ok, op} <-
+           build_operation(
+             :identitystore,
+             "DeleteGroupMembership",
+             %{
+               "IdentityStoreId" => identity_store_id,
+               "MembershipId" => membership_id
+             },
+             opts
+           ),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, Serializer.deserialize(decode_body(body), deserialize_opts(opts))}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -1524,14 +1537,6 @@ defmodule AwsSdk.IdentityCenter do
     )
   end
 
-  defp perform(subservice, action, data, opts) do
-    with {:ok, op} <- build_operation(subservice, action, data, opts) do
-      op
-      |> Client.execute()
-      |> decode_response()
-    end
-  end
-
   defp build_request(service, target_prefix, default_host_fn, action, data, opts) do
     with {:ok, config} <- Client.resolve_config(:identity_center, opts, default_host_fn) do
       op = %Operation{
@@ -1556,13 +1561,6 @@ defmodule AwsSdk.IdentityCenter do
 
   defp encode_body(data) when map_size(data) === 0, do: "{}"
   defp encode_body(data), do: data |> :json.encode() |> IO.iodata_to_binary()
-
-  defp decode_response({:ok, %{body: body}}), do: {:ok, decode_body(body)}
-
-  defp decode_response({:error, {:http_error, status, body}}),
-    do: {:error, {:http_error, status, decode_body(body)}}
-
-  defp decode_response({:error, _reason} = err), do: err
 
   defp decode_body(""), do: %{}
 
@@ -1860,29 +1858,6 @@ defmodule AwsSdk.IdentityCenter do
         :error -> acc
       end
     end)
-  end
-
-  defp deserialize_response({:ok, response}, _opts, func) do
-    case func.(response) do
-      {:error, _} = error -> error
-      {:ok, _} = ok -> ok
-      result -> {:ok, result}
-    end
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code in 400..499 do
-    {:error, ErrorMessage.not_found("resource not found.", %{response: response})}
-  end
-
-  defp deserialize_response({:error, {:http_error, status_code, response}}, _opts, _func)
-       when status_code >= 500 do
-    {:error,
-     ErrorMessage.service_unavailable("service temporarily unavailable", %{response: response})}
-  end
-
-  defp deserialize_response({:error, reason}, _opts, _func) do
-    {:error, ErrorMessage.internal_server_error("internal server error", %{reason: reason})}
   end
 
   # The identitystore `Email` shape members are `Value`, `Type` and `Primary`.
