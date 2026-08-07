@@ -130,6 +130,53 @@ defmodule AwsSdk.SandboxTest do
     end
   end
 
+  describe "process scoping" do
+    test "a descendant process resolves the stubs its parent registered" do
+      Sandbox.register(@registry, __MODULE__, :scoped_thing, [{"k", fn -> :mine end}])
+
+      descendant =
+        Task.async(fn ->
+          Sandbox.apply(@registry, __MODULE__, :scoped_thing, "k", opts: [])
+        end)
+
+      assert :mine = Task.await(descendant)
+    end
+
+    test "an unrelated process resolves nothing" do
+      Sandbox.register(@registry, __MODULE__, :unscoped_thing, [{"k", fn -> :mine end}])
+
+      parent = self()
+
+      # A plain spawned process carries neither $callers nor $ancestors, so
+      # SandboxRegistry cannot walk back to the registering process.
+      spawn(fn ->
+        result =
+          try do
+            Sandbox.apply(@registry, __MODULE__, :unscoped_thing, "k", opts: [])
+          rescue
+            e -> {:raised, Exception.message(e)}
+          end
+
+        send(parent, {:unrelated, result})
+      end)
+
+      assert_receive {:unrelated, {:raised, message}}, 1000
+      assert message =~ "No functions have been registered"
+    end
+  end
+
+  describe "disable/2" do
+    test "flags the process without changing what apply/5 resolves" do
+      Sandbox.register(@registry, __MODULE__, :disable_thing, [{"k", fn -> :still_here end}])
+      refute Sandbox.disabled?(@registry, __MODULE__)
+
+      Sandbox.disable(@registry, __MODULE__)
+
+      assert Sandbox.disabled?(@registry, __MODULE__)
+      assert :still_here = Sandbox.apply(@registry, __MODULE__, :disable_thing, "k", opts: [])
+    end
+  end
+
   describe "register/4" do
     test "registering a second function leaves the first in place" do
       Sandbox.register(@registry, __MODULE__, :additive_one, [{"a", fn -> :one end}])

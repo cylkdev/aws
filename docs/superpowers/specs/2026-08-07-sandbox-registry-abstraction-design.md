@@ -249,7 +249,11 @@ call that all 232 sites made, so raw entries become the only input.
 Each entry is a `{key, fun}` tuple, or a bare `fun` — shorthand for `{:*, fun}`.
 
 `key` is an exact binary compared for equality, a `Regex` matched against the
-key the operation passes, or `:*`. Registration is per-process and additive:
+key the operation passes, or `:*`. Registration is scoped to the calling
+process — and, because `SandboxRegistry.lookup/2` walks `$callers` and
+`$ancestors`, resolves from its descendants too, so code under test may spawn
+`Task`s freely. An unrelated process resolves nothing. Registration is
+additive:
 registering a second function leaves the first in place; registering the same
 `{function, key}` twice replaces the earlier stub. Returns `:ok`, sleeping
 briefly so the registration is visible before the test proceeds. Raises if the

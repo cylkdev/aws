@@ -1,34 +1,55 @@
 if Code.ensure_loaded?(SandboxRegistry) do
   defmodule AwsSdk.Sandbox do
     @moduledoc """
-    Process-scoped registry of stub functions, shared by every
-    `AwsSdk.<Service>.Sandbox` module.
+    Process-scoped registry of stub functions.
 
-    A test registers functions against its own PID; the service's sandbox
-    module looks one up and applies it in place of an HTTP call. Nothing here
-    is specific to AWS — it stores funs keyed by the function they stand in
-    for and a lookup key.
+    Stores functions against the calling process, keyed by the function they
+    stand in for and a lookup key, then applies them on demand. It holds no
+    domain knowledge: a stub is any function, and whatever it returns is
+    passed back untouched.
 
-    Each service's sandbox module holds its registry name in `@registry` and
-    writes one pair of functions per operation:
+    ## Observable behaviour
 
-        def create_user_response(name, opts) do
-          binding = [name: name, opts: opts]
+      * `register/4` associates stubs with the calling process.
+      * `apply/5` resolves one stub and calls it, returning what the stub
+        returns and raising when it cannot resolve one.
+      * Registrations accumulate. Registering a second function leaves the
+        first in place; registering the same `{function, key}` twice keeps
+        the later stub.
+      * Stubs are scoped to the process that registered them, and resolve
+        from its descendants too — anything carrying `$callers` or
+        `$ancestors`, such as a `Task` — so code under test may spawn freely.
+        An unrelated process resolves nothing.
+      * `disable/2` flags the calling process and `disabled?/2` reports that
+        flag. Neither affects what `apply/5` resolves — a caller checks
+        `disabled?/2` itself before deciding to consult the sandbox at all.
 
-          Sandbox.apply(@registry, __MODULE__, :create_user, name, binding)
-        end
+    ## Usage
 
-        def set_create_user_responses(entries) do
-          Sandbox.register(@registry, __MODULE__, :create_user, entries)
+    A module backed by this registry holds its registry name and writes one
+    pair of functions per stubbed call:
+
+        defmodule MyApp.Sandbox do
+          @registry :my_sandbox
+
+          alias AwsSdk.Sandbox
+
+          def fetch_record_response(id, opts) do
+            binding = [id: id, opts: opts]
+
+            Sandbox.apply(@registry, __MODULE__, :fetch_record, id, binding)
+          end
+
+          def set_fetch_record_responses(entries) do
+            Sandbox.register(@registry, __MODULE__, :fetch_record, entries)
+          end
         end
 
     ## Convention
 
-    Sandbox modules name their registration function
-    `set_<function>_responses/1`. This module relies on that when building the
-    setup example shown in error messages. A module that names its setter
-    otherwise still works, but its errors will point at a function that does
-    not exist.
+    The messages raised by `apply/5` name the registration function
+    `set_<function>_responses/1`. A module that names its setter otherwise
+    still works; only the suggestion in the message is wrong.
     """
 
     @state "state"
@@ -43,10 +64,31 @@ if Code.ensure_loaded?(SandboxRegistry) do
     """
     @type key :: String.t() | :*
 
-    @doc false
+    @doc """
+    Starts the registry `registry` under the calling process.
+
+    Call it once per registry, before any process registers stubs — typically
+    from `test/test_helper.exs`. Returns `{:ok, pid}`, or
+    `{:error, {:already_started, pid}}` if that name is already taken.
+
+    Every other function in this module raises if its registry was never
+    started.
+    """
+    @spec start_link(atom) :: {:ok, pid} | {:error, term}
     def start_link(registry), do: Registry.start_link(keys: @keys, name: registry)
 
-    @doc false
+    @doc """
+    Flags the calling process as opted out of the sandbox.
+
+    The flag is per-process and is stored separately from stubs, so it
+    neither removes registrations nor changes what `apply/5` resolves.
+    Callers read it through `disabled?/2` and decide for themselves whether
+    to consult the sandbox.
+
+    Returns `:ok`. Raises if `registry` was never started, naming `module` in
+    the message.
+    """
+    @spec disable(atom, module) :: :ok
     def disable(registry, module) do
       with {:error, :registry_not_started} <-
              SandboxRegistry.register(registry, @disabled, %{}, @keys) do
@@ -54,7 +96,13 @@ if Code.ensure_loaded?(SandboxRegistry) do
       end
     end
 
-    @doc false
+    @doc """
+    Reports whether the calling process was flagged by `disable/2`.
+
+    `false` for a process that never called it. Raises if `registry` was
+    never started, naming `module` in the message.
+    """
+    @spec disabled?(atom, module) :: boolean
     def disabled?(registry, module) do
       case SandboxRegistry.lookup(registry, @disabled) do
         {:ok, _} -> true
@@ -64,30 +112,23 @@ if Code.ensure_loaded?(SandboxRegistry) do
     end
 
     @doc """
-    Looks up the stub registered for `function` and applies it.
-
-    This is the entire body of a sandbox operation: resolve the function the
-    calling process registered, then call it with the operation's inputs.
+    Resolves the stub registered for `function` and applies it.
 
     ## Arguments
 
-      * `registry` — the service's registry name, held as `@registry` in each
-        `AwsSdk.<Service>.Sandbox` (e.g. `:aws_iam_sandbox`).
-      * `module` — the calling sandbox module. Diagnostic only: each service
-        owns its own registry, so the registry key is `{function, key}` and
-        `module` never participates in lookup. It exists to build the error
-        message.
-      * `function` — the operation as an atom (`:create_log_stream`). Half of
-        the registry key; a stub registered under another function never
-        matches.
-      * `key` — the other half. A binary names one call, letting a test
-        register a different result per resource; `:*` applies to every call
-        of `function`. `nil` is not valid and fails the guard.
-      * `binding` — the operation's parameters as a keyword list in
-        declaration order, `opts` last. The names build the `fn` shapes shown
-        in error messages; the values are what the stub is applied to. Write
-        this list out by hand — `Kernel.binding/0` sorts alphabetically rather
-        than by declaration order and would apply the wrong values.
+      * `registry` — the registry to read. Must already be started.
+      * `module` — diagnostic only. It never participates in lookup; it names
+        the module in raised messages.
+      * `function` — half of the lookup key. A stub registered under a
+        different `function` never matches.
+      * `key` — the other half. A binary selects one call, so one process can
+        register a different stub per subject; `:*` applies to every call of
+        `function`. `nil` is not valid and fails the guard.
+      * `binding` — a keyword list of names to values. The names appear in
+        raised messages as `fn` shapes; the values are applied to the stub, in
+        the order given. Write this list out by hand: `Kernel.binding/0`
+        returns variables sorted alphabetically rather than in declaration
+        order, which would apply the values to the wrong parameters.
 
     ## Lookup
 
@@ -106,19 +147,15 @@ if Code.ensure_loaded?(SandboxRegistry) do
     ## Return value
 
     Whatever the stub returns, unaltered — this module never inspects or wraps
-    it. Tests register the service's own shapes:
+    it.
 
-        {:ok, %{log_streams: [], next_token: nil}}
-        {:error, ErrorMessage.not_found("resource not found.", %{status: 404})}
-
-    The stub is applied at its own arity, so a test writes only the parameters
-    it cares about. Arity `0` is called with no arguments; any arity up to
-    `length(binding)` receives that many leading values.
+    The stub is applied at its own arity, so the registering process writes
+    only the parameters it cares about. Arity `0` is called with no arguments;
+    any arity up to `length(binding)` receives that many leading values.
 
     ## Raises
 
-      * the registry was never started for `module` — the message points at
-        `test_helper.exs`
+      * `registry` was never started — the message points at `test_helper.exs`
       * the calling process registered no stubs at all
       * stubs exist for this process but none match `{function, key}` — the
         message lists what was registered
@@ -127,41 +164,41 @@ if Code.ensure_loaded?(SandboxRegistry) do
 
     ## Examples
 
-        # In AwsSdk.Logs.Sandbox.
-        def create_log_stream_response(group, stream, opts) do
-          binding = [group: group, stream: stream, opts: opts]
-
-          Sandbox.apply(@registry, __MODULE__, :create_log_stream, group, binding)
-        end
-
-        # A test registers against that key:
-        AwsSdk.Logs.Sandbox.set_create_log_stream_responses([
-          {"my-group", fn -> {:ok, %{}} end}
+        AwsSdk.Sandbox.register(:my_sandbox, MyApp.Sandbox, :fetch_record, [
+          {"alpha", fn -> {:ok, %{id: "alpha"}} end}
         ])
 
-        AwsSdk.Logs.create_log_stream("my-group", "stream-a", sandbox: [enabled: true])
-        #=> {:ok, %{}}
+        AwsSdk.Sandbox.apply(:my_sandbox, MyApp.Sandbox, :fetch_record, "alpha",
+          id: "alpha",
+          opts: []
+        )
+        #=> {:ok, %{id: "alpha"}}
 
-        # A different group does not match, so the call raises rather than
-        # returning a response meant for another test.
-        AwsSdk.Logs.create_log_stream("other", "stream-a", sandbox: [enabled: true])
+    An unmatched key raises rather than falling back to another stub:
+
+        AwsSdk.Sandbox.apply(:my_sandbox, MyApp.Sandbox, :fetch_record, "beta", id: "beta", opts: [])
         #=> ** (RuntimeError) Function not found.
 
-        # A higher-arity stub receives the values in declaration order.
-        AwsSdk.Logs.Sandbox.set_create_log_stream_responses([
-          {~r/^prod-/, fn group, stream, opts -> {:ok, %{group: group, stream: stream}} end}
+    A stub of higher arity receives the binding's values in order:
+
+        AwsSdk.Sandbox.register(:my_sandbox, MyApp.Sandbox, :fetch_record, [
+          {~r/^live-/, fn id, opts -> {:ok, %{id: id, limit: opts[:limit]}} end}
         ])
 
-        AwsSdk.Logs.create_log_stream("prod-api", "stream-a", sandbox: [enabled: true])
-        #=> {:ok, %{group: "prod-api", stream: "stream-a"}}
+        AwsSdk.Sandbox.apply(:my_sandbox, MyApp.Sandbox, :fetch_record, "live-1",
+          id: "live-1",
+          opts: [limit: 5]
+        )
+        #=> {:ok, %{id: "live-1", limit: 5}}
 
-    An operation with no inputs passes `:*`:
+    A call with nothing to select on passes `:*`:
 
-        def list_users_response(opts) do
-          binding = [opts: opts]
+        AwsSdk.Sandbox.register(:my_sandbox, MyApp.Sandbox, :list_records, [
+          fn -> {:ok, []} end
+        ])
 
-          Sandbox.apply(@registry, __MODULE__, :list_users, :*, binding)
-        end
+        AwsSdk.Sandbox.apply(:my_sandbox, MyApp.Sandbox, :list_records, :*, opts: [])
+        #=> {:ok, []}
     """
     @spec apply(atom, module, atom, key, keyword) :: term
     def apply(registry, module, function, key, binding)
@@ -183,35 +220,44 @@ if Code.ensure_loaded?(SandboxRegistry) do
     Registers stub functions for `function` against the calling process.
 
     Each entry is a `{key, fun}` tuple, or a bare `fun` — shorthand for
-    `{:*, fun}`, used by operations that take no inputs.
+    `{:*, fun}`.
 
-    `key` is an exact binary compared for equality, a `Regex` matched against
-    the key the operation passes to `apply/5`, or `:*`.
+    `key` is an exact binary compared for equality against the key passed to
+    `apply/5`, a `Regex` matched against it, or `:*` to match every call.
 
-    Registration is per-process and additive: registering a second function
-    leaves the first in place; registering the same `{function, key}` twice
-    replaces the earlier stub. Returns `:ok`, sleeping briefly so the
-    registration is visible before the test proceeds. Raises if the registry
-    was never started for `module`.
+    Registrations accumulate: registering a second `function` leaves the first
+    in place, and registering the same `{function, key}` twice keeps the later
+    stub. They are scoped to the calling process and resolve from its
+    descendants as well — see the module documentation.
+
+    Returns `:ok` after a short sleep, so the registration is visible before
+    the caller proceeds. Raises if `registry` was never started, naming
+    `module` in the message.
 
     ## Examples
 
-        AwsSdk.IAM.Sandbox.set_get_user_responses([
-          {"alice", fn -> {:ok, %{user: %{user_name: "alice"}}} end},
-          {"bob", fn -> {:error, ErrorMessage.not_found("resource not found.")} end}
+    One stub per subject:
+
+        AwsSdk.Sandbox.register(:my_sandbox, MyApp.Sandbox, :fetch_record, [
+          {"alpha", fn -> {:ok, %{id: "alpha"}} end},
+          {"beta", fn -> {:error, :not_found} end}
         ])
 
-        AwsSdk.IAM.Sandbox.set_get_user_responses([
-          {~r/^svc-/, fn name -> {:ok, %{user: %{user_name: name}}} end}
+    A pattern covering a family of keys, receiving the key it matched:
+
+        AwsSdk.Sandbox.register(:my_sandbox, MyApp.Sandbox, :fetch_record, [
+          {~r/^live-/, fn id -> {:ok, %{id: id}} end}
         ])
 
-        # Applies to every call, whatever the key.
-        AwsSdk.IAM.Sandbox.set_get_user_responses([
-          {:*, fn name -> {:error, ErrorMessage.not_found("no such user", %{name: name})} end}
+    Every call, whatever the key — the two forms are equivalent:
+
+        AwsSdk.Sandbox.register(:my_sandbox, MyApp.Sandbox, :list_records, [
+          {:*, fn -> {:ok, []} end}
         ])
 
-        # No inputs — the bare form.
-        AwsSdk.IAM.Sandbox.set_list_users_responses([fn -> {:ok, %{users: []}} end])
+        AwsSdk.Sandbox.register(:my_sandbox, MyApp.Sandbox, :list_records, [
+          fn -> {:ok, []} end
+        ])
     """
     @spec register(atom, module, atom, [{key | Regex.t(), function} | function]) :: :ok
     def register(registry, module, function, entries) do
