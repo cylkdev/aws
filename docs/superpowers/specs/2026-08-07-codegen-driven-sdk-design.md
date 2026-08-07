@@ -264,10 +264,16 @@ callbacks, no `use`, nothing injected — a reader follows the call.
 
 | Module | Absorbs |
 |---|---|
-| `AwsSdk.Query.encode/2` *(exists)* | `flatten_query/1` in `auto_scaling.ex` and `elastic_load_balancing_v2.ex`; `put_member_list/3` and `put_filters/2` in `ec2.ex` |
+| `AwsSdk.Query.encode/2` *(exists)* | `put_member_list/3` and `put_filters/2` in `ec2.ex`. `auto_scaling.ex` and `elastic_load_balancing_v2.ex` already `defdelegate` to it |
 | `AwsSdk.Params` *(new)* | `maybe_put/3`, `nilify/1` |
 | `AwsSdk.Body` *(new)* | `encode_body/1`, `decode_body/1`, `deserialize_opts/1`, `@deserialize_defaults` |
-| `AwsSdk.Sandbox.enabled?/3` *(new)* | the nine byte-identical `sandbox?/1` clauses |
+| `AwsSdk.Config.sandbox_enabled?/1` *(new)* | the config half of the nine byte-identical `sandbox?/1` clauses |
+
+`sandbox_enabled?/1` lives on `AwsSdk.Config`, not on `AwsSdk.Sandbox`, because
+`SandboxRegistry` is an optional dep and `AwsSdk.Sandbox` is compiled only when
+it is present. The generated `sandbox?/1` stays a one-liner —
+`AwsSdk.Config.sandbox_enabled?(opts) and not sandbox_disabled?()` — so `and`
+short-circuits before reaching a module that may not exist in production.
 | `AwsSdk.Protocol.{Json,Query,Ec2,RestXml}` *(new)* | the nine `build_operation/3` bodies, one per protocol |
 
 `AwsSdk.Protocol.Query.build(action, params, endpoint, opts)` returns
