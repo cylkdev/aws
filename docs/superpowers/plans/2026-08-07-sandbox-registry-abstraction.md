@@ -56,7 +56,14 @@ Every operation falls into one of four shapes, determined by what goes in the `k
 
 **Shape C (7).** A list input joined: `Enum.join(list, ",")`. Four in `elastic_load_balancing_v2`, two in `logs`, one in `ec2`.
 
-**Shape E (56).** The operation takes no inputs. The key is the atom `:*`.
+**Shape E (56).** The operation keys off the atom `:*`. This is usually because it takes no inputs, but **six operations take inputs and still key off `:*`** — their inputs are not identifying, so no test can select on them. `binding` must still carry every parameter; only the key is `:*`:
+
+- `ssm.get_parameters(names, opts)`
+- `ssm.delete_parameters(names, opts)`
+- `ssm.send_command(instance_ids, document_name, opts)`
+- `ssm.send_command_by_targets(targets, document_name, opts)`
+- `ec2.terminate_instances(instance_ids, opts)`
+- `event_bridge.put_events(entries, opts)`
 
 ## The mechanical transformation
 
@@ -1365,21 +1372,9 @@ Worked example from this file:
 
 - [ ] **Step 4: Rewrite the 7 shape-E operations**
 
-These take no inputs: `get_parameters`, `delete_parameters`, `describe_parameters`, `describe_instance_information`, `send_command`, `send_command_by_targets`, `list_command_invocations`.
+These key off `:*`: `get_parameters`, `delete_parameters`, `describe_parameters`, `describe_instance_information`, `send_command`, `send_command_by_targets`, `list_command_invocations`.
 
-```elixir
-def <op>_response(opts) do
-  binding = [opts: opts]
-
-  Sandbox.apply(@registry, __MODULE__, :<op>, :*, binding)
-end
-
-def set_<op>_responses(entries) do
-  Sandbox.register(@registry, __MODULE__, :<op>, entries)
-end
-```
-
-Worked example:
+Three take no inputs:
 
 ```elixir
     def describe_parameters_response(opts) do
@@ -1390,6 +1385,30 @@ Worked example:
 
     def set_describe_parameters_responses(entries) do
       Sandbox.register(@registry, __MODULE__, :describe_parameters, entries)
+    end
+```
+
+Four **do** take inputs and still key off `:*`. Their inputs are not identifying, so no test can select on them — but `binding` must still carry every parameter or the stub is applied to the wrong values:
+
+```elixir
+    def get_parameters_response(names, opts) do
+      binding = [names: names, opts: opts]
+
+      Sandbox.apply(@registry, __MODULE__, :get_parameters, :*, binding)
+    end
+
+    def set_get_parameters_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :get_parameters, entries)
+    end
+
+    def send_command_response(instance_ids, document_name, opts) do
+      binding = [instance_ids: instance_ids, document_name: document_name, opts: opts]
+
+      Sandbox.apply(@registry, __MODULE__, :send_command, :*, binding)
+    end
+
+    def set_send_command_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :send_command, entries)
     end
 ```
 
@@ -1502,7 +1521,23 @@ The existing test at `test/aws_sdk/ec2/sandbox_test.exs:133` registers `{"i-1", 
 
 - [ ] **Step 5: Rewrite the 19 shape-E operations**
 
-These take no inputs: `describe_security_groups`, `delete_security_group`, `describe_vpcs`, `describe_subnets`, `describe_instances`, `describe_images`, `describe_tags`, `describe_launch_templates`, `describe_launch_template_versions`, `terminate_instances`, `describe_network_acls`, `describe_route_tables`, `describe_key_pairs`, `describe_security_group_rules`, `describe_snapshots`, `describe_network_interfaces`, `describe_instance_status`, `describe_iam_instance_profile_associations`, `describe_network_insights_analyses`.
+These key off `:*`: `describe_security_groups`, `delete_security_group`, `describe_vpcs`, `describe_subnets`, `describe_instances`, `describe_images`, `describe_tags`, `describe_launch_templates`, `describe_launch_template_versions`, `terminate_instances`, `describe_network_acls`, `describe_route_tables`, `describe_key_pairs`, `describe_security_group_rules`, `describe_snapshots`, `describe_network_interfaces`, `describe_instance_status`, `describe_iam_instance_profile_associations`, `describe_network_insights_analyses`.
+
+All but one take no inputs. **`terminate_instances(instance_ids, opts)` does take an input** and still keys off `:*` — keep `instance_ids` in the binding:
+
+```elixir
+    def terminate_instances_response(instance_ids, opts) do
+      binding = [instance_ids: instance_ids, opts: opts]
+
+      Sandbox.apply(@registry, __MODULE__, :terminate_instances, :*, binding)
+    end
+
+    def set_terminate_instances_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :terminate_instances, entries)
+    end
+```
+
+For the other eighteen:
 
 ```elixir
 def <op>_response(opts) do
@@ -1633,7 +1668,23 @@ Worked examples from this file, including a five-parameter operation:
 
 - [ ] **Step 4: Rewrite the 5 shape-E operations**
 
-These take no inputs: `list_rules`, `list_connections`, `list_api_destinations`, `list_event_buses`, `put_events`.
+These key off `:*`: `list_rules`, `list_connections`, `list_api_destinations`, `list_event_buses`, `put_events`.
+
+Four take no inputs. **`put_events(entries, opts)` does take an input** and still keys off `:*` — keep it in the binding. Note its parameter is named `entries`, which collides with the `entries` parameter name used by `set_*_responses`; they are in different functions, so this is fine, but do not rename either:
+
+```elixir
+    def put_events_response(entries, opts) do
+      binding = [entries: entries, opts: opts]
+
+      Sandbox.apply(@registry, __MODULE__, :put_events, :*, binding)
+    end
+
+    def set_put_events_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :put_events, entries)
+    end
+```
+
+For the other four:
 
 ```elixir
 def <op>_response(opts) do

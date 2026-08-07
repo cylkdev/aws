@@ -4,198 +4,134 @@ if Code.ensure_loaded?(SandboxRegistry) do
 
     @registry :aws_ssm_sandbox
 
-    def start_link, do: AwsSdk.Sandbox.start_link(@registry)
+    alias AwsSdk.Sandbox
+
+    def start_link, do: Sandbox.start_link(@registry)
 
     @spec disable_aws_ssm_sandbox(map) :: :ok
-    def disable_aws_ssm_sandbox(_context), do: AwsSdk.Sandbox.disable(@registry, __MODULE__)
+    def disable_aws_ssm_sandbox(_context), do: Sandbox.disable(@registry, __MODULE__)
 
     @spec sandbox_disabled? :: boolean
-    def sandbox_disabled?, do: AwsSdk.Sandbox.disabled?(@registry, __MODULE__)
+    def sandbox_disabled?, do: Sandbox.disabled?(@registry, __MODULE__)
 
     def get_parameter_response(name, opts) do
-      examples = AwsSdk.Sandbox.doc_examples([:name])
-      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :get_parameter, name, examples)
-      AwsSdk.Sandbox.apply_func(func, [name, opts], examples)
+      binding = [name: name, opts: opts]
+
+      Sandbox.apply(@registry, __MODULE__, :get_parameter, name, binding)
     end
 
-    def set_get_parameter_responses(tuples) do
-      AwsSdk.Sandbox.set_responses(
-        @registry,
-        __MODULE__,
-        :get_parameter,
-        AwsSdk.Sandbox.normalize_no_key(tuples)
-      )
+    def set_get_parameter_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :get_parameter, entries)
     end
 
     def get_parameters_response(names, opts) do
-      examples = AwsSdk.Sandbox.doc_examples([:names])
-      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :get_parameters, "*", examples)
-      AwsSdk.Sandbox.apply_func(func, [names, opts], examples)
+      binding = [names: names, opts: opts]
+
+      Sandbox.apply(@registry, __MODULE__, :get_parameters, :*, binding)
     end
 
-    def set_get_parameters_responses(tuples) do
-      AwsSdk.Sandbox.set_responses(
-        @registry,
-        __MODULE__,
-        :get_parameters,
-        AwsSdk.Sandbox.normalize_no_key(tuples)
-      )
+    def set_get_parameters_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :get_parameters, entries)
     end
 
     def get_parameters_by_path_response(path, opts) do
-      examples = AwsSdk.Sandbox.doc_examples([:path])
-      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :get_parameters_by_path, path, examples)
-      AwsSdk.Sandbox.apply_func(func, [path, opts], examples)
+      binding = [path: path, opts: opts]
+
+      Sandbox.apply(@registry, __MODULE__, :get_parameters_by_path, path, binding)
     end
 
-    def set_get_parameters_by_path_responses(tuples) do
-      AwsSdk.Sandbox.set_responses(
-        @registry,
-        __MODULE__,
-        :get_parameters_by_path,
-        AwsSdk.Sandbox.normalize_no_key(tuples)
-      )
+    def set_get_parameters_by_path_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :get_parameters_by_path, entries)
     end
 
     def put_parameter_response(name, value, opts) do
-      examples = AwsSdk.Sandbox.doc_examples([:name, :value])
-      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :put_parameter, name, examples)
-      AwsSdk.Sandbox.apply_func(func, [name, value, opts], examples)
+      binding = [name: name, value: value, opts: opts]
+
+      Sandbox.apply(@registry, __MODULE__, :put_parameter, name, binding)
     end
 
-    def set_put_parameter_responses(tuples) do
-      AwsSdk.Sandbox.set_responses(
-        @registry,
-        __MODULE__,
-        :put_parameter,
-        AwsSdk.Sandbox.normalize_no_key(tuples)
-      )
+    def set_put_parameter_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :put_parameter, entries)
     end
 
     def delete_parameter_response(name, opts) do
-      examples = AwsSdk.Sandbox.doc_examples([:name])
-      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :delete_parameter, name, examples)
-      AwsSdk.Sandbox.apply_func(func, [name, opts], examples)
+      binding = [name: name, opts: opts]
+
+      Sandbox.apply(@registry, __MODULE__, :delete_parameter, name, binding)
     end
 
-    def set_delete_parameter_responses(tuples) do
-      AwsSdk.Sandbox.set_responses(
-        @registry,
-        __MODULE__,
-        :delete_parameter,
-        AwsSdk.Sandbox.normalize_no_key(tuples)
-      )
+    def set_delete_parameter_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :delete_parameter, entries)
     end
 
     def delete_parameters_response(names, opts) do
-      examples = AwsSdk.Sandbox.doc_examples([:names])
-      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :delete_parameters, "*", examples)
-      AwsSdk.Sandbox.apply_func(func, [names, opts], examples)
+      binding = [names: names, opts: opts]
+
+      Sandbox.apply(@registry, __MODULE__, :delete_parameters, :*, binding)
     end
 
-    def set_delete_parameters_responses(tuples) do
-      AwsSdk.Sandbox.set_responses(
-        @registry,
-        __MODULE__,
-        :delete_parameters,
-        AwsSdk.Sandbox.normalize_no_key(tuples)
-      )
+    def set_delete_parameters_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :delete_parameters, entries)
     end
 
     def describe_parameters_response(opts) do
-      examples = AwsSdk.Sandbox.doc_examples([])
-      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :describe_parameters, "*", examples)
-      AwsSdk.Sandbox.apply_func(func, [opts], examples)
+      binding = [opts: opts]
+
+      Sandbox.apply(@registry, __MODULE__, :describe_parameters, :*, binding)
     end
 
-    def set_describe_parameters_responses(tuples) do
-      AwsSdk.Sandbox.set_responses(
-        @registry,
-        __MODULE__,
-        :describe_parameters,
-        AwsSdk.Sandbox.normalize_no_key(tuples)
-      )
+    def set_describe_parameters_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :describe_parameters, entries)
     end
 
     def describe_instance_information_response(opts) do
-      examples = AwsSdk.Sandbox.doc_examples([])
+      binding = [opts: opts]
 
-      func =
-        AwsSdk.Sandbox.find!(@registry, __MODULE__, :describe_instance_information, "*", examples)
-
-      AwsSdk.Sandbox.apply_func(func, [opts], examples)
+      Sandbox.apply(@registry, __MODULE__, :describe_instance_information, :*, binding)
     end
 
-    def set_describe_instance_information_responses(tuples) do
-      AwsSdk.Sandbox.set_responses(
-        @registry,
-        __MODULE__,
-        :describe_instance_information,
-        AwsSdk.Sandbox.normalize_no_key(tuples)
-      )
+    def set_describe_instance_information_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :describe_instance_information, entries)
     end
 
     def send_command_response(instance_ids, document_name, opts) do
-      examples = AwsSdk.Sandbox.doc_examples([:instance_ids, :document_name])
-      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :send_command, "*", examples)
-      AwsSdk.Sandbox.apply_func(func, [instance_ids, document_name, opts], examples)
+      binding = [instance_ids: instance_ids, document_name: document_name, opts: opts]
+
+      Sandbox.apply(@registry, __MODULE__, :send_command, :*, binding)
     end
 
-    def set_send_command_responses(tuples) do
-      AwsSdk.Sandbox.set_responses(
-        @registry,
-        __MODULE__,
-        :send_command,
-        AwsSdk.Sandbox.normalize_no_key(tuples)
-      )
+    def set_send_command_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :send_command, entries)
     end
 
     def send_command_by_targets_response(targets, document_name, opts) do
-      examples = AwsSdk.Sandbox.doc_examples([:targets, :document_name])
-      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :send_command_by_targets, "*", examples)
-      AwsSdk.Sandbox.apply_func(func, [targets, document_name, opts], examples)
+      binding = [targets: targets, document_name: document_name, opts: opts]
+
+      Sandbox.apply(@registry, __MODULE__, :send_command_by_targets, :*, binding)
     end
 
-    def set_send_command_by_targets_responses(tuples) do
-      AwsSdk.Sandbox.set_responses(
-        @registry,
-        __MODULE__,
-        :send_command_by_targets,
-        AwsSdk.Sandbox.normalize_no_key(tuples)
-      )
+    def set_send_command_by_targets_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :send_command_by_targets, entries)
     end
 
     def get_command_invocation_response(command_id, instance_id, opts) do
-      examples = AwsSdk.Sandbox.doc_examples([:command_id, :instance_id])
+      binding = [command_id: command_id, instance_id: instance_id, opts: opts]
 
-      func =
-        AwsSdk.Sandbox.find!(@registry, __MODULE__, :get_command_invocation, command_id, examples)
-
-      AwsSdk.Sandbox.apply_func(func, [command_id, instance_id, opts], examples)
+      Sandbox.apply(@registry, __MODULE__, :get_command_invocation, command_id, binding)
     end
 
-    def set_get_command_invocation_responses(tuples) do
-      AwsSdk.Sandbox.set_responses(
-        @registry,
-        __MODULE__,
-        :get_command_invocation,
-        AwsSdk.Sandbox.normalize_no_key(tuples)
-      )
+    def set_get_command_invocation_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :get_command_invocation, entries)
     end
 
     def list_command_invocations_response(opts) do
-      examples = AwsSdk.Sandbox.doc_examples([])
-      func = AwsSdk.Sandbox.find!(@registry, __MODULE__, :list_command_invocations, "*", examples)
-      AwsSdk.Sandbox.apply_func(func, [opts], examples)
+      binding = [opts: opts]
+
+      Sandbox.apply(@registry, __MODULE__, :list_command_invocations, :*, binding)
     end
 
-    def set_list_command_invocations_responses(tuples) do
-      AwsSdk.Sandbox.set_responses(
-        @registry,
-        __MODULE__,
-        :list_command_invocations,
-        AwsSdk.Sandbox.normalize_no_key(tuples)
-      )
+    def set_list_command_invocations_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :list_command_invocations, entries)
     end
   end
 end
