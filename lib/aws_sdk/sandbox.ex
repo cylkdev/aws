@@ -232,50 +232,6 @@ if Code.ensure_loaded?(SandboxRegistry) do
     end
 
     # -------------------------------------------------------------------------
-    # Deprecated primitives — retained until every sandbox module is migrated
-    # to apply/5 and register/4, then deleted.
-    # -------------------------------------------------------------------------
-
-    @doc false
-    def set_responses(registry, module, action, tuples) do
-      register(registry, module, action, tuples)
-    end
-
-    @doc false
-    def normalize_no_key(items) do
-      Enum.map(items, fn
-        {_key, _func} = tuple -> tuple
-        func when is_function(func) -> {"*", func}
-      end)
-    end
-
-    @doc false
-    def find!(registry, module, action, name, doc_examples) do
-      fetch!(registry, module, action, name, doc_examples)
-    end
-
-    @doc false
-    def apply_func(func, args, doc_examples) do
-      arity = :erlang.fun_info(func)[:arity]
-
-      case arity do
-        0 -> func.()
-        n when n <= length(args) -> Kernel.apply(func, Enum.take(args, n))
-        _ -> raise_unsupported_arity(func, doc_examples)
-      end
-    end
-
-    @doc false
-    def doc_examples(arg_names) do
-      full = Enum.map_join(arg_names ++ [:opts], ", ", &to_string/1)
-
-      case arg_names do
-        [] -> ["fn -> ... end", "fn opts -> ... end"]
-        [first | _] -> ["fn -> ... end", "fn #{first} -> ... end", "fn #{full} -> ... end"]
-      end
-    end
-
-    # -------------------------------------------------------------------------
     # Lookup
     # -------------------------------------------------------------------------
 
