@@ -1,4 +1,4 @@
-# AwsSdk Codegen, Phases 0–2 Implementation Plan
+# AwsSdk Codegen, Phases 0–2 and the `aws_gen` Split — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -19,11 +19,33 @@ ExUtils.Serializer, SandboxRegistry (optional dep, `:dev`/`:test`).
 
 **Spec:** `docs/superpowers/specs/2026-08-07-codegen-driven-sdk-design.md`
 
-**Scope:** Phases 0–2 of the spec. Phase 3 (rolling the remaining eight services
-onto the generator) and Phase 4 (S3, the request sub-language, and generated
-presign entry points) are follow-on plans. This plan ends with exactly one
-generated service in the tree, which is what makes the approach reviewable before
-it is applied 200 operations wide.
+**End state — two apps.** The generator and the SDK are separate projects, in the
+same relationship as `aws-beam/aws-codegen` and `aws-beam/aws-elixir`:
+
+| App | Contains | Ships to hex |
+|---|---|---|
+| `aws_gen` | `models/`, `priv/specs/`, `priv/templates/`, `AwsGen.*`, the mix tasks | no |
+| `aws_sdk` | the runtime (`AwsSdk.Client`, `.Signer`, `.Protocol.*`, `.Sandbox`, …) and the **generated** service modules | yes |
+
+`aws_gen` depends on `aws_sdk` and writes into a checkout of it. `aws_sdk` never
+depends on `aws_gen`, so there is no cycle and no consumer of the hex package
+carries generator code, Smithy models, or EEx templates.
+
+Tasks 1–16 build the generator **inside** `aws_sdk`, so the whole thing stays one
+`mix test` while it is being proven. Task 17 extracts it once it works. Two rules
+during Tasks 1–16 keep that extraction mechanical rather than a judgement call:
+
+- Nothing under `AwsSdk.Codegen.*` may be called at runtime. `AwsSdk.Coerce`
+  (Task 9) is runtime and is named accordingly.
+- Nothing outside `AwsSdk.Codegen.*` and `lib/mix/tasks/aws_sdk.{gen,scaffold,models.refresh}.ex`
+  may reference the generator.
+
+**Scope:** Phases 0–2 of the spec, plus the app split. Phase 3 (rolling the
+remaining eight services onto the generator) and Phase 4 (S3, the request
+sub-language, and generated presign entry points) are follow-on plans, and both
+run in `aws_gen` once Task 17 lands. This plan ends with exactly one generated
+service, which is what makes the approach reviewable before it is applied 200
+operations wide.
 
 ## Global Constraints
 
@@ -2253,7 +2275,7 @@ defmodule AwsSdk.Codegen.XpathTest do
     src = source(response)
 
     assert src =~ ~s|enabled: ~x"./Enabled/text()"os|
-    assert src =~ "AwsSdk.Codegen.Coerce.boolean(result.enabled)"
+    assert src =~ "AwsSdk.Coerce.boolean(result.enabled)"
   end
 
   test "a timestamp extracts as os and is coerced" do
@@ -2265,7 +2287,7 @@ defmodule AwsSdk.Codegen.XpathTest do
     src = source(response)
 
     assert src =~ ~s|created: ~x"./Created/text()"os|
-    assert src =~ "AwsSdk.Codegen.Coerce.datetime(result.created)"
+    assert src =~ "AwsSdk.Coerce.datetime(result.created)"
   end
 
   test "the emitted source is valid, formatted Elixir" do
@@ -2303,15 +2325,18 @@ end
 Run: `mix test test/aws_sdk/codegen/xpath_test.exs`
 Expected: FAIL — `AwsSdk.Codegen.Xpath.parser/2 is undefined`
 
-- [ ] **Step 3: Create `AwsSdk.Codegen.Coerce`**
+- [ ] **Step 3: Create `AwsSdk.Coerce`**
 
-The coercion functions are called by generated code at runtime, so they live in
-`lib/` and ship — despite the `Codegen` namespace, which is chosen so a reader of
-generated source can see where the call came from.
+The coercion functions are called by generated code at runtime, so they ship with
+`aws_sdk` and are deliberately **not** under `AwsSdk.Codegen.*`. That namespace
+holds the generator, which Task 17 moves to a separate `aws_gen` app; the
+invariant that makes that move mechanical is *nothing under `AwsSdk.Codegen.*` is
+ever called at runtime*. `AwsSdk.Coerce` is the one piece that would have broken
+it.
 
 ```elixir
-# lib/aws_sdk/codegen/coerce.ex
-defmodule AwsSdk.Codegen.Coerce do
+# lib/aws_sdk/coerce.ex
+defmodule AwsSdk.Coerce do
   @moduledoc """
   Leaf-value coercions applied to extracted XML values.
 
@@ -2326,13 +2351,13 @@ defmodule AwsSdk.Codegen.Coerce do
   """
 
   @doc """
-      iex> AwsSdk.Codegen.Coerce.boolean("true")
+      iex> AwsSdk.Coerce.boolean("true")
       true
 
-      iex> AwsSdk.Codegen.Coerce.boolean("")
+      iex> AwsSdk.Coerce.boolean("")
       nil
 
-      iex> AwsSdk.Codegen.Coerce.boolean("yes")
+      iex> AwsSdk.Coerce.boolean("yes")
       "yes"
   """
   @spec boolean(term) :: boolean | nil | term
@@ -2343,10 +2368,10 @@ defmodule AwsSdk.Codegen.Coerce do
   def boolean(other), do: other
 
   @doc """
-      iex> AwsSdk.Codegen.Coerce.datetime("2026-01-01T00:00:00Z")
+      iex> AwsSdk.Coerce.datetime("2026-01-01T00:00:00Z")
       ~U[2026-01-01 00:00:00Z]
 
-      iex> AwsSdk.Codegen.Coerce.datetime("")
+      iex> AwsSdk.Coerce.datetime("")
       nil
   """
   @spec datetime(term) :: DateTime.t() | nil | term
@@ -2363,10 +2388,10 @@ defmodule AwsSdk.Codegen.Coerce do
   def datetime(other), do: other
 
   @doc """
-      iex> AwsSdk.Codegen.Coerce.json(~s({"a":1}))
+      iex> AwsSdk.Coerce.json(~s({"a":1}))
       %{"a" => 1}
 
-      iex> AwsSdk.Codegen.Coerce.json("")
+      iex> AwsSdk.Coerce.json("")
       nil
   """
   @spec json(term) :: map | nil | term
@@ -2403,13 +2428,13 @@ Expected: PASS, 10 tests
 - [ ] **Step 6: Run the doctests**
 
 Run: `mix test --only doctest` (or `mix test test/aws_sdk/codegen` if the project
-has no doctest tag; add `doctest AwsSdk.Codegen.Coerce` to a test module)
+has no doctest tag; add `doctest AwsSdk.Coerce` to a test module)
 Expected: PASS
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add lib/aws_sdk/codegen/xpath.ex lib/aws_sdk/codegen/coerce.ex test/aws_sdk/codegen/xpath_test.exs
+git add lib/aws_sdk/codegen/xpath.ex lib/aws_sdk/coerce.ex test/aws_sdk/codegen/xpath_test.exs
 git commit -m "feat: compile AwsSdk.Codegen.Field lists into parser source"
 ```
 
@@ -3416,24 +3441,274 @@ git commit -m "feat: add mix aws_sdk.scaffold and --report-uncurated"
 
 ---
 
+### Task 17: Extract the generator into `aws_gen`
+
+Splits the two apps. Everything here is a move plus a rename — no behaviour
+changes, and the generated output must be byte-identical before and after. If it
+is not, something in Tasks 1–16 violated one of the two rules in the header and
+that coupling is the real finding.
+
+Do this **after** Task 16 and not before. The generator is only worth extracting
+once it is proven against a real service, and keeping it in one repo until then
+means one `mix test` rather than a two-repo dance for every iteration.
+
+**Files:**
+- Create: a sibling `aws_gen` repository
+- Move: `lib/aws_sdk/codegen/` → `aws_gen/lib/aws_gen/`
+- Move: `lib/mix/tasks/aws_sdk.{gen,scaffold,models.refresh}.ex` → `aws_gen/lib/mix/tasks/`
+- Move: `models/`, `priv/specs/`, `priv/templates/` → `aws_gen/`
+- Move: `test/aws_sdk/codegen/`, `test/mix/tasks/` → `aws_gen/test/`
+- Delete: nothing from `aws_sdk` except the moved paths
+- Modify: `mix.exs` in both apps
+
+**Interfaces:**
+- Consumes: everything from Tasks 1–16
+- Produces:
+  - `AwsGen.{Service,Operation,Argument,Option,Field,Request,Response,Model,Xpath,Docs,Renderer}`
+  - `mix aws_gen.build [service] [--check] [--report-uncurated] [--out PATH]`
+  - `mix aws_gen.scaffold <service> <Action>`
+  - `mix aws_gen.models.refresh [service]`
+
+- [ ] **Step 1: Record the baseline**
+
+Before moving anything, capture what the generator currently emits, so Step 6 can
+prove the move changed nothing:
+
+```bash
+mkdir -p /tmp/aws_gen_baseline
+cp lib/aws_sdk/auto_scaling.ex lib/aws_sdk/auto_scaling/sandbox.ex /tmp/aws_gen_baseline/
+mix aws_sdk.gen --check && echo "baseline clean"
+```
+
+Expected: `baseline clean`
+
+- [ ] **Step 2: Verify the two rules hold before moving**
+
+```bash
+grep -rn "AwsSdk\.Codegen" lib/ --include=*.ex | grep -v "^lib/aws_sdk/codegen/" | grep -v "^lib/mix/tasks/aws_sdk\."
+```
+
+Expected: no output. Any hit is runtime code reaching into the generator and must
+be resolved before the move — either the module belongs in `aws_sdk` (like
+`AwsSdk.Coerce`) or the call is wrong.
+
+```bash
+grep -rn "AwsSdk\.Codegen" lib/aws_sdk/auto_scaling.ex lib/aws_sdk/auto_scaling/sandbox.ex
+```
+
+Expected: no output. Generated code must not reference the generator that wrote
+it — that is the whole point of emitting literal source.
+
+- [ ] **Step 3: Create the `aws_gen` project**
+
+```bash
+cd .. && mix new aws_gen --module AwsGen && cd aws_gen && git init
+```
+
+`aws_gen/mix.exs`:
+
+```elixir
+defmodule AwsGen.MixProject do
+  use Mix.Project
+
+  def project do
+    [
+      app: :aws_gen,
+      version: "0.1.0",
+      elixir: "~> 1.15",
+      elixirc_paths: elixirc_paths(Mix.env()),
+      deps: deps()
+    ]
+  end
+
+  def application, do: [extra_applications: [:logger, :eex]]
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_env), do: ["lib"]
+
+  defp deps do
+    [
+      {:aws_sdk, path: "../aws_sdk"},
+      {:recase, "~> 0.5"}
+    ]
+  end
+end
+```
+
+`aws_gen` depends on `aws_sdk` because the specs and the renderer reference
+`%AwsSdk.Endpoint{}` — the struct that generated modules emit. One struct serves
+both, per Task 2. The dependency runs generator → SDK and never the other way.
+
+Read `aws_sdk/mix.exs` for the actual `:recase` version constraint and match it
+rather than the `~> 0.5` above.
+
+- [ ] **Step 4: Move the files and rename the namespace**
+
+```bash
+cd ../aws_sdk
+git mv lib/aws_sdk/codegen ../aws_gen/lib/aws_gen
+git mv models ../aws_gen/models
+git mv priv/specs ../aws_gen/priv/specs
+git mv priv/templates ../aws_gen/priv/templates
+git mv test/aws_sdk/codegen ../aws_gen/test/aws_gen
+git mv test/mix/tasks ../aws_gen/test/mix/tasks
+git mv lib/mix/tasks/aws_sdk.gen.ex ../aws_gen/lib/mix/tasks/aws_gen.build.ex
+git mv lib/mix/tasks/aws_sdk.scaffold.ex ../aws_gen/lib/mix/tasks/aws_gen.scaffold.ex
+git mv lib/mix/tasks/aws_sdk.models.refresh.ex ../aws_gen/lib/mix/tasks/aws_gen.models_refresh.ex
+git mv lib/aws_sdk/codegen.ex ../aws_gen/lib/aws_gen.ex
+```
+
+Then in `aws_gen`:
+
+```bash
+cd ../aws_gen
+grep -rl "AwsSdk\.Codegen" lib test | xargs sed -i '' 's/AwsSdk\.Codegen/AwsGen/g'
+grep -rl "Mix\.Tasks\.AwsSdk\.Gen" lib test | xargs sed -i '' 's/Mix\.Tasks\.AwsSdk\.Gen/Mix.Tasks.AwsGen.Build/g'
+grep -rl "Mix\.Tasks\.AwsSdk\.Scaffold" lib test | xargs sed -i '' 's/Mix\.Tasks\.AwsSdk\.Scaffold/Mix.Tasks.AwsGen.Scaffold/g'
+grep -rl "Mix\.Tasks\.AwsSdk\.Models\.Refresh" lib test | xargs sed -i '' 's/Mix\.Tasks\.AwsSdk\.Models\.Refresh/Mix.Tasks.AwsGen.ModelsRefresh/g'
+```
+
+Then fix by hand what `sed` cannot: `AwsSdk.Coerce` must **not** have been
+renamed (it lives in `aws_sdk` and generated code calls it), and the `@shortdoc`
+/ `@moduledoc` text in each mix task still says `mix aws_sdk.gen`.
+
+```bash
+grep -rn "AwsGen.Coerce" lib test
+```
+
+Expected: no output. If there is any, the `sed` caught a string it should not
+have — `AwsSdk.Coerce` was never under the `Codegen` namespace, so this should be
+clean, and a hit means Task 9's rename was not applied.
+
+- [ ] **Step 5: Add the output path**
+
+The generator now writes into a different project, so `--out` replaces the
+implicit `lib/`. In `Mix.Tasks.AwsGen.Build`:
+
+```elixir
+  @default_out "../aws_sdk"
+
+  defp out_path(opts), do: opts[:out] || @default_out
+```
+
+Every path the renderer writes becomes
+`Path.join(out_path(opts), "lib/aws_sdk/#{service}.ex")`. Add `out: :string` to
+the `OptionParser.parse!/2` strict list. `--check` reads from the same place.
+
+- [ ] **Step 6: Prove the move changed nothing**
+
+```bash
+cd ../aws_gen
+mix deps.get && mix compile --warnings-as-errors && mix test
+mix aws_gen.build auto_scaling --out ../aws_sdk
+cd ../aws_sdk && git diff --stat lib/aws_sdk/auto_scaling.ex lib/aws_sdk/auto_scaling/sandbox.ex
+diff lib/aws_sdk/auto_scaling.ex /tmp/aws_gen_baseline/auto_scaling.ex
+diff lib/aws_sdk/auto_scaling/sandbox.ex /tmp/aws_gen_baseline/sandbox.ex
+```
+
+Expected: `git diff --stat` empty, both `diff`s silent. Byte-identical output is
+the acceptance test for this task. Any difference means the move was not pure and
+must be understood before proceeding.
+
+- [ ] **Step 7: Confirm `aws_sdk` stands alone**
+
+```bash
+cd ../aws_sdk
+grep -rn "AwsSdk\.Codegen\|AwsGen" lib/ test/ mix.exs
+```
+
+Expected: no output.
+
+```bash
+mix deps.get && mix compile --warnings-as-errors && mix test
+```
+
+Expected: PASS. Remove the `:codegen` tag from any remaining test — those tests
+moved to `aws_gen` in Step 4, so nothing in `aws_sdk` should reference it.
+
+```bash
+mix hex.build --unpack -o /tmp/awssdk_pkg && ls /tmp/awssdk_pkg /tmp/awssdk_pkg/priv
+```
+
+Expected: no `models`, no `priv/specs`, no `priv/templates`, no
+`lib/aws_sdk/codegen`. The `:files` list from Task 6 Step 3 no longer needs to
+exclude `models` — it is gone from the repo — but leaving the explicit list is
+correct and harmless.
+
+- [ ] **Step 8: Move the `--check` CI job**
+
+`mix aws_gen.build --check` needs both checkouts, so it belongs in `aws_gen`'s
+CI, not `aws_sdk`'s. Add a workflow step that checks out `aws_sdk` as a sibling
+directory and runs it. Remove any `--check` step from `aws_sdk`'s CI, which can
+no longer run it.
+
+If `aws_sdk` CI must still catch a hand-edit to a generated file, the cheap local
+substitute is a grep for the generated header on files that should have it — note
+that as a follow-up rather than building it here.
+
+- [ ] **Step 9: Document the split in both READMEs**
+
+`aws_sdk/README.md` gains a short section:
+
+```markdown
+## Generated code
+
+The service modules under `lib/aws_sdk/` are generated by
+[`aws_gen`](../aws_gen) and carry a `# Generated by ... — do not edit` header.
+Edit the spec in `aws_gen/priv/specs/` and regenerate; a hand-edit here is
+overwritten on the next run.
+```
+
+`aws_gen/README.md` states what it is, the two inputs (`models/` and
+`priv/specs/`), the three mix tasks, and that `aws_sdk` must be checked out as a
+sibling directory.
+
+- [ ] **Step 10: Commit both repositories**
+
+```bash
+cd ../aws_gen
+git add -A
+git commit -m "feat: extract the AwsSdk generator into aws_gen
+
+Moved from aws_sdk with AwsSdk.Codegen.* renamed to AwsGen.*. Generated
+output is byte-identical; this commit changes no behaviour."
+
+cd ../aws_sdk
+git add -A
+git commit -m "refactor: move the generator out to aws_gen
+
+aws_sdk now contains only the runtime and the generated service modules.
+Models, specs, templates and codegen modules live in the sibling aws_gen
+project."
+```
+
+---
+
 ## Done when
 
+- The generator lives in `aws_gen` and `grep -rn "AwsGen" lib/ test/` in
+  `aws_sdk` returns nothing.
+- `mix aws_gen.build auto_scaling --out ../aws_sdk` reproduces the committed
+  files byte-for-byte.
+- `mix hex.build` on `aws_sdk` produces a package with no models, specs,
+  templates or codegen modules.
 - No service module defines `build_operation/3`, `maybe_put/3`, `nilify/1`,
   `encode_body/*`, `decode_body/1`, `apply_overrides/2`, `deserialize_opts/1`,
   `put_member_list/3` or `put_filters/2`.
 - `lib/aws_sdk/auto_scaling.ex` and `lib/aws_sdk/auto_scaling/sandbox.ex` carry
-  the generated header and reproduce from `mix aws_sdk.gen auto_scaling`.
-- `mix aws_sdk.gen --check` passes.
-- `mix test` passes with no `:codegen` exclusion, and the AutoScaling sandbox
-  tests are unchanged from before this plan.
+  the generated header.
+- `mix aws_gen.build --check` passes from the `aws_gen` checkout, and runs in
+  `aws_gen`'s CI.
+- `mix test` passes in both repositories with no `:codegen` exclusion, and the
+  AutoScaling sandbox tests are unchanged from before this plan.
 - `CHANGELOG.md` records the three coercion changes and the newly-returned
   members by name.
 
 ## Not in this plan
 
-- Phase 3: the remaining eight services. Each is a spec file plus a triage pass;
-  `mix aws_sdk.scaffold` and `--report-uncurated` from Task 16 are what make that
-  tractable.
+- Phase 3: the remaining eight services, done from `aws_gen` after Task 17. Each
+  is a spec file plus a triage pass; `mix aws_gen.scaffold` and
+  `--report-uncurated` from Task 16 are what make that tractable.
 - Phase 4: S3 — the `:uri`/`:query`/`:header` parameter locations,
   `addressing: :virtual_host`, `body: :xml` request rendering replacing
   `AwsSdk.S3.XMLBuilder`, and generated presign entry points.

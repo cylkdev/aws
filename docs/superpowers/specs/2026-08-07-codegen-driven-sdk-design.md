@@ -31,6 +31,13 @@ description of the operation plus the AWS service model.
 5. **S3 is in scope**, including a request sub-language for per-operation URLs,
    verbs, and parameter locations.
 6. **Structs over tuples** throughout the codegen data model.
+7. **Two apps.** The generator ships as `aws_gen`; `aws_sdk` holds the runtime
+   and the generated service modules. `aws_gen` depends on `aws_sdk` and writes
+   into a checkout of it; `aws_sdk` never depends on `aws_gen`. Same relationship
+   as `aws-beam/aws-codegen` to `aws-beam/aws-elixir`. No consumer of the
+   published `aws_sdk` package carries generator code, Smithy models, or
+   templates. The generator is built inside `aws_sdk` first and extracted once
+   proven — see Task 17 of the implementation plan.
 
 ## Data model
 
