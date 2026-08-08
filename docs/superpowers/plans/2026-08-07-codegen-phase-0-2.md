@@ -2558,15 +2558,23 @@ Redact account IDs to `123456789012` and keep ARNs syntactically valid.
 
 - [ ] **Step 3: Expose the parsers for test**
 
-`lib/aws_sdk/auto_scaling.ex` already has
-`def parse_describe_auto_scaling_groups_for_test/1`. Add the same one-line
-`@doc false` wrapper for each other parser under test, following that exact
-existing pattern:
+Make each parser under test `@doc false def` instead of `defp`, and **delete** the
+existing `parse_describe_auto_scaling_groups_for_test/1` wrapper at
+`lib/aws_sdk/auto_scaling.ex:1370`, updating any test that calls it:
 
 ```elixir
   @doc false
-  def parse_describe_instance_refreshes_for_test(xml), do: parse_describe_instance_refreshes(xml)
+  def parse_describe_instance_refreshes(body) do
 ```
+
+This deviates from the `_for_test` convention already in the file, deliberately.
+The renderer (Task 12) emits parsers the same way, so a wrapper convention would
+mean two generated functions per operation — roughly 200 across the repo once
+Phase 3 lands — all of them pure indirection. `@doc false` keeps them out of
+`mix docs`, and the tests call the real function rather than a shim.
+
+Task 12 Step 3 must emit `@doc false def parse_*` accordingly; the two must
+agree or the generated module will not satisfy these tests.
 
 - [ ] **Step 4: Write the characterization tests**
 
@@ -2591,7 +2599,7 @@ defmodule AwsSdk.AutoScaling.ParserTest do
     parsed =
       "auto_scaling"
       |> Fixtures.read("DescribeInstanceRefreshes")
-      |> AutoScaling.parse_describe_instance_refreshes_for_test()
+      |> AutoScaling.parse_describe_instance_refreshes()
 
     assert parsed == %{
              instance_refreshes: [
@@ -2922,7 +2930,8 @@ emitted module, in order:
 4. `@endpoint` and `@registry`
 5. Per operation: `@doc` from `AwsSdk.Codegen.Docs.operation/2`, `@spec`, facade,
    `do_*`
-6. Per `:xpath` operation: `parse_*` and any `coerce_*` from
+6. Per `:xpath` operation: `@doc false def parse_*` (public, so Task 10's
+   characterization tests can call it) and any `coerce_*`, from
    `AwsSdk.Codegen.Xpath.parser/2`
 7. `defp sandbox?(opts)`
 8. `if Code.ensure_loaded?(SandboxRegistry) do` wrapping `sandbox_disabled?` and
@@ -3474,10 +3483,9 @@ grep -oE "^  def [a-z_]+\(" lib/aws_sdk/auto_scaling.ex | sort > /tmp/after.txt
 diff /tmp/before.txt /tmp/after.txt
 ```
 
-Expected: silent, except for the `*_for_test` wrappers added in Task 10 Step 3 —
-`AwsSdk.Codegen.Renderer` does not emit those, so they will show as removed.
-Decide now whether the renderer should emit them (it should, since Task 10's
-tests call them) and add that to Task 12 if so. Any other difference is a bug.
+Expected: silent. Task 10 promoted the parsers from `defp` to `@doc false def`
+and Task 12's renderer emits them the same way, so the two sets match. Any
+difference is a bug in the renderer.
 
 - [ ] **Step 3: Enumerate the newly-included members**
 
@@ -3886,13 +3894,14 @@ correct and harmless.
 - [ ] **Step 8: Move the `--check` CI job**
 
 `mix aws_gen.build --check` needs both checkouts, so it belongs in `aws_gen`'s
-CI, not `aws_sdk`'s. Add a workflow step that checks out `aws_sdk` as a sibling
-directory and runs it. Remove any `--check` step from `aws_sdk`'s CI, which can
-no longer run it.
+CI. Add a workflow step that checks out `aws_sdk` as a sibling directory and runs
+it, and remove the `--check` step from `aws_sdk`'s CI.
 
-If `aws_sdk` CI must still catch a hand-edit to a generated file, the cheap local
-substitute is a grep for the generated header on files that should have it — note
-that as a follow-up rather than building it here.
+That is the whole guard, and `aws_sdk` needs nothing of its own. `--check`
+regenerates and diffs, so a hand-edited generated file and a stale generated file
+are the same failure and are both caught. A hand-edit that reaches `aws_sdk`
+before `aws_gen` next runs is overwritten by the next generation and appears in
+that diff for review — the design working, not a hazard to guard against.
 
 - [ ] **Step 9: Document the split in both READMEs**
 
@@ -3964,3 +3973,12 @@ project."
   through Task 7 and set in Task 15's spec, but `AwsSdk.Codegen.Renderer` does
   not yet emit them; the 40 existing hand-written tasks are untouched. Add this
   in Phase 3, once the generated facade signatures they wrap are stable.
+
+  The flag is carried rather than deferred because the specs are written in
+  Task 15 and Phase 3, and adding it later would mean revisiting every spec.
+
+  Before that lands, `lib/mix/tasks/aws_sdk/helpers.ex` and each task's option
+  parsing and output formatting have to be expressible as data — design work
+  this plan has not done. Until then, a hand-written task whose generated facade
+  changed arity fails at compile time rather than silently, since warnings are
+  errors outside `:test`.
