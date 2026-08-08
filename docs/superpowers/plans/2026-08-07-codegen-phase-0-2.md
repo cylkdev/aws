@@ -352,12 +352,16 @@ this project is worth doing, and they must appear in the changelog.
 | `lib/aws_sdk/protocol/json.ex` | JSON-1.1 ditto |
 | `lib/aws_sdk/protocol/ec2.ex` | EC2-protocol ditto |
 | `lib/aws_sdk/protocol/rest_xml.ex` | REST/XML ditto (used by S3 in Phase 4) |
+| `lib/aws_sdk/coerce.ex` | `boolean/1`, `datetime/1`, `json/1` — called by generated parsers |
 | `lib/aws_sdk/config.ex` *(modify)* | add `sandbox_enabled?/1` |
+| `lib/aws_sdk/client.ex` *(modify)* | add public `apply_overrides/2` |
 
-**Codegen — dev-time, not shipped:**
+**Codegen — dev-time, not shipped. Task 17 moves all of it to `aws_gen` and
+renames `AwsSdk.Codegen.*` to `AwsGen.*`; nothing here may be called at runtime:**
 
 | File | Responsibility |
 |---|---|
+| `lib/aws_sdk/codegen.ex` | `load_spec/1`, `validate!/1` — spec + model into a `%Service{}` |
 | `lib/aws_sdk/codegen/service.ex` | `%AwsSdk.Codegen.Service{}` |
 | `lib/aws_sdk/codegen/operation.ex` | `%AwsSdk.Codegen.Operation{}` |
 | `lib/aws_sdk/codegen/argument.ex` | `%AwsSdk.Codegen.Argument{}` |
@@ -374,23 +378,43 @@ this project is worth doing, and they must appear in the changelog.
 | `lib/mix/tasks/aws_sdk.scaffold.ex` | `mix aws_sdk.scaffold <service> <Action>` |
 | `lib/mix/tasks/aws_sdk.models.refresh.ex` | re-pull vendored models |
 
-**Data:**
+**Data — moves to `aws_gen` in Task 17:**
 
 | File | Responsibility |
 |---|---|
-| `models/autoscaling.json` | vendored AWS SDK Go v2 model, never edited |
+| `models/autoscaling.json` | vendored AWS Smithy model, never edited |
 | `priv/specs/auto_scaling.exs` | hand-owned curation |
+| `priv/specs/auto_scaling.md` | the module's `@moduledoc`, moved verbatim |
+| `priv/templates/service.ex.eex` | service module template |
+| `priv/templates/sandbox.ex.eex` | sandbox module template |
 
 **Tests:**
 
-| File | Responsibility |
-|---|---|
-| `test/fixtures/auto_scaling/*.xml` | real AWS response bodies |
-| `test/aws_sdk/auto_scaling/parser_test.exs` | characterization: fixture → exact map |
-| `test/aws_sdk/codegen/xpath_test.exs` | field list → expected source |
-| `test/aws_sdk/codegen/model_test.exs` | model JSON → expected structs |
-| `test/aws_sdk/codegen/docs_test.exs` | field list + examples → expected `#=>` block |
-| `test/aws_sdk/codegen/renderer_test.exs` | service struct → expected module source |
+| File | Task | Responsibility |
+|---|---|---|
+| `test/aws_sdk/params_test.exs` | 1 | `maybe_put/3`, `nilify/1` |
+| `test/aws_sdk/body_test.exs` | 1 | codecs |
+| `test/aws_sdk/endpoint_test.exs` | 2 | region pinning, host interpolation |
+| `test/aws_sdk/config_test.exs` *(modify)* | 2 | `sandbox_enabled?/1` |
+| `test/aws_sdk/protocol/query_test.exs` | 3 | operation construction |
+| `test/aws_sdk/protocol/json_test.exs` | 4 | ditto |
+| `test/aws_sdk/protocol/ec2_test.exs` | 5 | ditto |
+| `test/aws_sdk/protocol/rest_xml_test.exs` | 5 | ditto |
+| `test/aws_sdk/codegen/structs_test.exs` | 7 | struct defaults and enforced keys |
+| `test/aws_sdk/codegen/model_test.exs` | 8 | model JSON → expected structs |
+| `test/aws_sdk/codegen/xpath_test.exs` | 9 | field list → expected source |
+| `test/aws_sdk/coerce_test.exs` | 9 | doctests for `AwsSdk.Coerce` |
+| `test/support/fixtures.ex` | 10 | fixture reader |
+| `test/fixtures/auto_scaling/*.xml` | 10 | real AWS response bodies |
+| `test/aws_sdk/auto_scaling/parser_test.exs` | 10 | characterization: fixture → exact map |
+| `test/aws_sdk/codegen/docs_test.exs` | 11 | field list + examples → expected `#=>` block |
+| `test/aws_sdk/codegen/renderer_test.exs` | 12 | service struct → expected module source |
+| `test/aws_sdk/codegen/renderer/sandbox_test.exs` | 13 | sandbox module source |
+| `test/mix/tasks/aws_sdk_gen_test.exs` | 14 | `--check`, `load_spec/1`, `validate!/1` |
+| `test/mix/tasks/aws_sdk_scaffold_test.exs` | 16 | scaffold output |
+
+Everything under `test/aws_sdk/codegen/` and `test/mix/tasks/` moves to `aws_gen`
+in Task 17. `test/aws_sdk/coerce_test.exs` does not — `AwsSdk.Coerce` is runtime.
 
 ---
 
@@ -1621,12 +1645,12 @@ defmodule AwsSdk.Codegen.StructsTest do
     end
   end
 
-  test "an Argument defaults to a body-located string" do
+  test "an Argument leaves the model-derived fields nil" do
     arg = %AwsSdk.Codegen.Argument{name: :bucket}
 
-    assert arg.location == :body
-    assert arg.type == :string
     assert arg.wire == nil
+    assert arg.type == nil
+    assert arg.location == nil
   end
 
   test "a Response defaults to the xpath strategy" do
@@ -1702,15 +1726,15 @@ defmodule AwsSdk.Codegen.Argument do
   """
 
   @enforce_keys [:name]
-  defstruct [:name, :wire, :doc, :example, type: :string, location: :body]
+  defstruct [:name, :wire, :doc, :example, :type, :location]
 
   @type t :: %__MODULE__{
           name: atom,
           wire: String.t() | nil,
           doc: String.t() | nil,
           example: term,
-          type: AwsSdk.Codegen.Field.type(),
-          location: :body | :uri | :query | :header | :header_prefix
+          type: AwsSdk.Codegen.Field.type() | nil,
+          location: :body | :uri | :query | :header | :header_prefix | nil
         }
 end
 ```
@@ -1726,15 +1750,15 @@ defmodule AwsSdk.Codegen.Option do
   """
 
   @enforce_keys [:name]
-  defstruct [:name, :wire, :doc, :example, type: :string, location: :body]
+  defstruct [:name, :wire, :doc, :example, :type, :location]
 
   @type t :: %__MODULE__{
           name: atom,
           wire: String.t() | nil,
           doc: String.t() | nil,
           example: term,
-          type: AwsSdk.Codegen.Field.type(),
-          location: :body | :uri | :query | :header | :header_prefix
+          type: AwsSdk.Codegen.Field.type() | nil,
+          location: :body | :uri | :query | :header | :header_prefix | nil
         }
 end
 ```
@@ -2169,11 +2193,20 @@ require.
 
 **Files:**
 - Create: `lib/aws_sdk/codegen/xpath.ex`
+- Create: `lib/aws_sdk/coerce.ex`
 - Test: `test/aws_sdk/codegen/xpath_test.exs`
+- Test: `test/aws_sdk/coerce_test.exs`
 
 **Interfaces:**
 - Consumes: `%AwsSdk.Codegen.Response{}`, `%AwsSdk.Codegen.Field{}` (Task 7)
-- Produces: `AwsSdk.Codegen.Xpath.parser(name :: atom, %AwsSdk.Codegen.Response{}) :: iodata`
+- Produces:
+  - `AwsSdk.Codegen.Xpath.parser(name :: atom, %AwsSdk.Codegen.Response{}) :: iodata`
+  - `AwsSdk.Coerce.boolean(term) :: boolean | nil | term`
+  - `AwsSdk.Coerce.datetime(term) :: DateTime.t() | nil | term`
+  - `AwsSdk.Coerce.json(term) :: map | nil | term`
+
+`AwsSdk.Coerce` is runtime code that ships with `aws_sdk`; the rest of this task
+is generator code that moves to `aws_gen` in Task 17.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2425,16 +2458,36 @@ The coercion pass walks the same field list: for each field whose type is
 Run: `mix test test/aws_sdk/codegen/xpath_test.exs`
 Expected: PASS, 10 tests
 
-- [ ] **Step 6: Run the doctests**
+- [ ] **Step 6: Run the `AwsSdk.Coerce` doctests**
 
-Run: `mix test --only doctest` (or `mix test test/aws_sdk/codegen` if the project
-has no doctest tag; add `doctest AwsSdk.Coerce` to a test module)
-Expected: PASS
+```elixir
+# test/aws_sdk/coerce_test.exs
+defmodule AwsSdk.CoerceTest do
+  use ExUnit.Case, async: true
+
+  doctest AwsSdk.Coerce
+
+  test "an unparseable timestamp passes through rather than raising" do
+    assert AwsSdk.Coerce.datetime("not a date") == "not a date"
+  end
+
+  test "a boolean AWS spells unexpectedly passes through" do
+    assert AwsSdk.Coerce.boolean("TRUE") == "TRUE"
+  end
+end
+```
+
+Run: `mix test test/aws_sdk/coerce_test.exs`
+Expected: PASS, 8 tests (6 doctests, 2 explicit)
+
+The two explicit tests exist because the doctests only cover the happy path, and
+pass-through-on-failure is the behaviour that keeps a client from crashing when
+AWS changes a member's type.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add lib/aws_sdk/codegen/xpath.ex lib/aws_sdk/coerce.ex test/aws_sdk/codegen/xpath_test.exs
+git add lib/aws_sdk/codegen/xpath.ex lib/aws_sdk/coerce.ex test/aws_sdk/codegen/xpath_test.exs test/aws_sdk/coerce_test.exs
 git commit -m "feat: compile AwsSdk.Codegen.Field lists into parser source"
 ```
 
@@ -2748,7 +2801,7 @@ git commit -m "feat: render operation docs from fixed templates"
 
 **Interfaces:**
 - Consumes: `%AwsSdk.Codegen.Service{}` (Task 7), `AwsSdk.Codegen.Model` (Task 8), `AwsSdk.Codegen.Xpath` (Task 9), `AwsSdk.Codegen.Docs` (Task 11)
-- Produces: `AwsSdk.Codegen.Renderer.service(%AwsSdk.Codegen.Service{}) :: binary`
+- Produces: `AwsSdk.Codegen.Renderer.render(%AwsSdk.Codegen.Service{}) :: binary`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2791,7 +2844,7 @@ defmodule AwsSdk.Codegen.RendererTest do
     ]
   }
 
-  defp source, do: Renderer.service(@service)
+  defp source, do: Renderer.render(@service)
 
   test "emits a do-not-edit header" do
     assert source() =~ "# Generated by mix aws_sdk.gen — do not edit"
@@ -2854,7 +2907,7 @@ end
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `mix test test/aws_sdk/codegen/renderer_test.exs`
-Expected: FAIL — `AwsSdk.Codegen.Renderer.service/1 is undefined`
+Expected: FAIL — `AwsSdk.Codegen.Renderer.render/1 is undefined`
 
 - [ ] **Step 3: Implement `AwsSdk.Codegen.Renderer`**
 
@@ -3141,19 +3194,138 @@ defmodule Mix.Tasks.AwsSdk.Gen do
     end
   end
 
-  @doc "Regenerates and compares against the tree. Returns `:ok` or raises."
+  @doc """
+  Renders every spec and returns the files it would write as `%{path => source}`.
+  """
+  @spec render([binary]) :: %{binary => binary}
+  def render(services) do
+    services
+    |> specs()
+    |> Enum.flat_map(fn path ->
+      service = AwsSdk.Codegen.load_spec(path)
+      base = service.module |> Module.split() |> List.last() |> Recase.to_snake()
+
+      [
+        {"lib/aws_sdk/#{base}.ex", AwsSdk.Codegen.Renderer.render(service)},
+        {"lib/aws_sdk/#{base}/sandbox.ex", AwsSdk.Codegen.Renderer.Sandbox.render(service)}
+      ]
+    end)
+    |> Map.new()
+  end
+
+  @doc "Writes every rendered file to disk."
+  @spec write([binary]) :: :ok
+  def write(services) do
+    services
+    |> render()
+    |> Enum.each(fn {path, source} ->
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path, source)
+      Mix.shell().info("wrote #{path}")
+    end)
+  end
+
+  @doc """
+  Regenerates and compares against the tree. Returns `:ok`, or raises listing
+  every path whose on-disk content differs from what the generator produces.
+  """
   @spec check([binary]) :: :ok
   def check(services \\ []) do
-    # for each spec: render, read the on-disk file, compare, collect mismatches
+    stale =
+      services
+      |> render()
+      |> Enum.reject(fn {path, source} -> File.read(path) == {:ok, source} end)
+      |> Enum.map(&elem(&1, 0))
+
+    if stale == [] do
+      :ok
+    else
+      Mix.raise("""
+      Generated files are out of date:
+
+      #{Enum.map_join(stale, "\n", &("  " <> &1))}
+
+      Run `mix aws_sdk.gen` and commit the result. If you hand-edited one of
+      these, move the change into its spec under priv/specs/ instead.
+      """)
+    end
+  end
+
+  defp specs([]), do: Path.wildcard("priv/specs/*.exs")
+  defp specs(names), do: Enum.map(names, &"priv/specs/#{&1}.exs")
+end
+```
+
+`report_uncurated/1` is left to Task 16 Step 4, which is where its output format
+is pinned by a test. Until then have it call `Mix.raise("not implemented")` —
+`mix aws_sdk.gen --report-uncurated` is not used by any step before Task 16.
+
+`AwsSdk.Codegen` needs creating at `lib/aws_sdk/codegen.ex` with two functions:
+
+```elixir
+defmodule AwsSdk.Codegen do
+  @moduledoc """
+  Loads a curation spec and fills in everything derivable from the AWS model.
+
+  A spec under `priv/specs/` carries only what the model cannot express — which
+  inputs are positional and in what order, which optionals are exposed, the
+  sandbox key. This module reads the model named by `%AwsSdk.Codegen.Service{
+  model:}` and populates each operation's `request`, `response`, and each
+  argument's and option's `wire`, `type` and `location`.
+  """
+
+  alias AwsSdk.Codegen.{Model, Operation, Service}
+
+  @doc """
+  Evaluates a spec file and returns a fully populated `%AwsSdk.Codegen.Service{}`.
+
+  Raises if the spec names an operation or member the model does not have.
+  """
+  @spec load_spec(Path.t()) :: Service.t()
+  def load_spec(path) do
+    {service, _bindings} = Code.eval_file(path)
+    {:ok, model} = Model.load(service.model)
+
+    service
+    |> validate!(model)
+    |> Map.update!(:operations, fn operations ->
+      Enum.map(operations, &populate(&1, model))
+    end)
+  end
+
+  defp populate(%Operation{} = operation, model) do
+    %Operation{
+      operation
+      | request: Model.request(model, operation.action),
+        response: Model.response(model, operation.action),
+        args: Enum.map(operation.args, &fill(&1, model, operation.action)),
+        opts: Enum.map(operation.opts, &fill(&1, model, operation.action))
+    }
+  end
+
+  # A spec may override any of these; the model only fills what is nil.
+  defp fill(param, model, action) do
+    %{wire: wire, type: type, location: location} = Model.member(model, action, param.name)
+
+    %{
+      param
+      | wire: param.wire || wire,
+        type: param.type || type,
+        location: param.location || location
+    }
   end
 end
 ```
 
-Fill in `write/1`, `check/1` and `report_uncurated/1`. `AwsSdk.Codegen` gains
-`load_spec/1` (evaluate the `.exs`, then walk each operation filling `request`,
-`response` and each argument's/option's `wire`/`type`/`location` from the model)
-and `validate!/1` (raise on a member the model does not have). Both belong in
-`lib/aws_sdk/codegen.ex` — create it.
+`validate!/2` walks every operation and raises `"unknown member :nope in
+DescribeInstanceRefreshes"` when `Model.member/3` returns `:error`, and
+`"unknown action \"Nope\""` when the model has no such operation. Write it to
+satisfy the third test above.
+
+Note the `fill/3` precedence: a spec value wins, the model fills the rest. This is
+why Task 7 defaults `type` and `location` to `nil` on both structs — a non-nil
+default would be indistinguishable from a deliberate override and would silently
+shadow the model.
 
 - [ ] **Step 4: Run the tests**
 
@@ -3233,40 +3405,108 @@ alias AwsSdk.Codegen.{Argument, Operation, Option, Service}
       sandbox_key: :auto_scaling_group_name,
       mix_task: true
     }
-    # ... the other 11
+    # the remaining 11, from the table below
   ]
 }
 ```
 
+All twelve, with the argument names and order read from the current facades in
+`lib/aws_sdk/auto_scaling.ex`. Transcribe every row — a missing operation is a
+silently removed public function:
+
+| `action` | `name` | `args`, in order | `sandbox_key` | `response.strategy` |
+|---|---|---|---|---|
+| `DescribeAutoScalingGroups` | `:describe_auto_scaling_groups` | — | `:*` | `:xpath` |
+| `DescribeAutoScalingInstances` | `:describe_auto_scaling_instances` | — | `:*` | `:xpath` |
+| `DescribeInstanceRefreshes` | `:describe_instance_refreshes` | `auto_scaling_group_name` | `:auto_scaling_group_name` | `:xpath` |
+| `DescribeScalingActivities` | `:describe_scaling_activities` | `auto_scaling_group_name` | `:auto_scaling_group_name` | `:xpath` |
+| `StartInstanceRefresh` | `:start_instance_refresh` | `auto_scaling_group_name` | `:auto_scaling_group_name` | `:xpath` |
+| `CancelInstanceRefresh` | `:cancel_instance_refresh` | `auto_scaling_group_name` | `:auto_scaling_group_name` | `:xpath` |
+| `RollbackInstanceRefresh` | `:rollback_instance_refresh` | `auto_scaling_group_name` | `:auto_scaling_group_name` | `:xpath` |
+| `CompleteLifecycleAction` | `:complete_lifecycle_action` | read the multi-line head at `auto_scaling.ex:512` | first arg | `:empty` |
+| `RecordLifecycleActionHeartbeat` | `:record_lifecycle_action_heartbeat` | `lifecycle_hook_name`, `auto_scaling_group_name` | `:lifecycle_hook_name` | `:empty` |
+| `SetInstanceHealth` | `:set_instance_health` | `instance_id`, `health_status` | `:instance_id` | `:empty` |
+| `TerminateInstanceInAutoScalingGroup` | `:terminate_instance_in_auto_scaling_group` | read the multi-line head at `auto_scaling.ex:698` | first arg | `:xpath` |
+| `SetDesiredCapacity` | `:set_desired_capacity` | `auto_scaling_group_name`, `desired_capacity` | `:auto_scaling_group_name` | `:empty` |
+
+Two checks that the transcription is complete, both of which must hold before
+generating:
+
+- The module has 12 `build_operation("...")` call sites and 8 `defp parse_`
+  definitions. Your spec must have 12 operations, of which exactly 8 are
+  `:xpath` and 4 are `:empty` — the four that today match `{:ok, %{body: _body}}`
+  and return `{:ok, %{}}`.
+- `sandbox_key` for the two operations with no required input is `:*`, matching
+  the existing `Sandbox.apply(@registry, __MODULE__, :describe_auto_scaling_groups, :*, binding)`.
+
+The `response.strategy` column is not written in the spec — it comes from the
+model. It is here so you can check the generated output against it.
+
 Move the current `@moduledoc` verbatim into `priv/specs/auto_scaling.md`. It is
 hand-written prose about shared options and sandbox setup, unchanged by this work.
 
-- [ ] **Step 2: Generate into a scratch directory and read the output**
+- [ ] **Step 2: Generate over the hand-written module and read the diff**
+
+The working tree must be clean first — this overwrites two tracked files, and
+`git diff` is how you read the result.
 
 ```bash
-mix aws_sdk.gen auto_scaling --check || true
-git stash list  # ensure nothing is stashed; you are about to overwrite files
-mix aws_sdk.gen auto_scaling
-git diff --stat lib/aws_sdk/auto_scaling.ex lib/aws_sdk/auto_scaling/sandbox.ex
+git status --porcelain lib/aws_sdk/auto_scaling.ex lib/aws_sdk/auto_scaling/sandbox.ex
 ```
 
-Read the full `git diff` before running any test. You are looking for anything
-structurally wrong — a missing operation, a mangled guard, a lost `@doc`.
+Expected: no output. If there is any, commit or stash it before continuing.
+
+```bash
+mix aws_sdk.gen auto_scaling
+git --no-pager diff --stat lib/aws_sdk/auto_scaling.ex lib/aws_sdk/auto_scaling/sandbox.ex
+git --no-pager diff lib/aws_sdk/auto_scaling.ex | less
+```
+
+Read the full diff before running any test. You are looking for structural
+damage, not for the response-shape changes — a missing operation, a mangled
+guard, a lost `@doc`, a `@spec` whose arity disagrees with its function.
+
+A quick structural check that the public API survived:
+
+```bash
+git show HEAD:lib/aws_sdk/auto_scaling.ex | grep -oE "^  def [a-z_]+\(" | sort > /tmp/before.txt
+grep -oE "^  def [a-z_]+\(" lib/aws_sdk/auto_scaling.ex | sort > /tmp/after.txt
+diff /tmp/before.txt /tmp/after.txt
+```
+
+Expected: silent, except for the `*_for_test` wrappers added in Task 10 Step 3 —
+`AwsSdk.Codegen.Renderer` does not emit those, so they will show as removed.
+Decide now whether the renderer should emit them (it should, since Task 10's
+tests call them) and add that to Task 12 if so. Any other difference is a bug.
 
 - [ ] **Step 3: Enumerate the newly-included members**
+
+Compare what the model says against what the old parser returned. The
+characterization test from Task 10 is the record of the latter, so use its
+expected map rather than grepping source:
 
 ```bash
 mix run -e '
   {:ok, m} = AwsSdk.Codegen.Model.load("autoscaling")
-  r = AwsSdk.Codegen.Model.response(m, "DescribeInstanceRefreshes")
-  r.fields |> Enum.map(& &1.name) |> Enum.sort() |> IO.inspect(label: "model")
+
+  for action <- ~w(DescribeInstanceRefreshes DescribeAutoScalingGroups
+                   DescribeAutoScalingInstances DescribeScalingActivities
+                   StartInstanceRefresh TerminateInstanceInAutoScalingGroup) do
+    r = AwsSdk.Codegen.Model.response(m, action)
+    names = r.fields |> Enum.map(& &1.name) |> Enum.sort()
+    IO.puts("#{action}: #{inspect(names)}")
+  end
 '
-grep -oE "^\s+[a-z_]+:" lib/aws_sdk/auto_scaling.ex | head -100
 ```
 
-Write the list of members the model has that the old parser did not into the
-commit message. These are the fidelity rule 4 fixes, and they are the headline
-result of the whole exercise.
+For each action, diff that list against the top-level keys of the expected map in
+`test/aws_sdk/auto_scaling/parser_test.exs`, and repeat one level down for each
+nested structure. Anything the model has and the test does not is a fidelity rule
+4 fix.
+
+Write that list into the commit message and the changelog. It is the headline
+result of the whole exercise, and it is the evidence that the generator is doing
+something worth the effort rather than merely reproducing what you had.
 
 - [ ] **Step 4: Run the characterization tests and triage every failure**
 
@@ -3321,12 +3561,16 @@ Expected: PASS, including `mix aws_sdk.gen --check`
   - Members AWS types as `boolean` are `true`/`false` rather than `"true"`/`"false"`.
   - Members AWS types as `timestamp` are `DateTime` structs rather than ISO-8601
     binaries.
-  - Documented members that were previously dropped are now returned. <!-- list them -->
+  - Documented members that were previously dropped are now returned:
+    `describe_instance_refreshes` gains …, `describe_scaling_activities`
+    gains …
 
   Callers pattern-matching the previous binary values must be updated.
 ```
 
-Replace the `<!-- list them -->` comment with the actual list from Step 3.
+Fill the ellipses from Step 3's output, one clause per affected function, naming
+every member. "Some fields were added" is not an acceptable changelog entry —
+a caller cannot act on it.
 
 - [ ] **Step 8: Commit**
 
@@ -3515,7 +3759,7 @@ defmodule AwsGen.MixProject do
     [
       app: :aws_gen,
       version: "0.1.0",
-      elixir: "~> 1.15",
+      elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps()
     ]
@@ -3529,7 +3773,7 @@ defmodule AwsGen.MixProject do
   defp deps do
     [
       {:aws_sdk, path: "../aws_sdk"},
-      {:recase, "~> 0.5"}
+      {:recase, "~> 0.9.1"}
     ]
   end
 end
@@ -3539,8 +3783,12 @@ end
 `%AwsSdk.Endpoint{}` — the struct that generated modules emit. One struct serves
 both, per Task 2. The dependency runs generator → SDK and never the other way.
 
-Read `aws_sdk/mix.exs` for the actual `:recase` version constraint and match it
-rather than the `~> 0.5` above.
+The `:elixir` and `:recase` constraints match `aws_sdk/mix.exs:11` and `:119` as
+of this plan. Re-read that file rather than trusting these if it has moved.
+
+`aws_gen` needs no `:sweet_xml` dependency: it emits `~x` sigils as *text* and
+never evaluates them. `:ex_utils` likewise stays in `aws_sdk` — the generated
+`:deserialize` strategy calls it at runtime, the generator never does.
 
 - [ ] **Step 4: Move the files and rename the namespace**
 
