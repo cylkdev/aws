@@ -31,7 +31,10 @@ description of the operation plus the AWS service model.
 5. **S3 is in scope**, including a request sub-language for per-operation URLs,
    verbs, and parameter locations.
 6. **Structs over tuples** throughout the codegen data model.
-7. **Two apps.** The generator ships as `aws_gen`; `aws_sdk` holds the runtime
+7. **Endpoint resolution is not part of this.** AWS publishes it as data and
+   this library must evaluate that data, not approximate it — see the Endpoint
+   section. It is specified and planned separately and lands first.
+8. **Two apps.** The generator ships as `aws_gen`; `aws_sdk` holds the runtime
    and the generated service modules. `aws_gen` depends on `aws_sdk` and writes
    into a checkout of it; `aws_sdk` never depends on `aws_gen`. Same relationship
    as `aws-beam/aws-codegen` to `aws-beam/aws-elixir`. No consumer of the
@@ -48,11 +51,9 @@ All structs live under `AwsSdk.Codegen`.
 ```elixir
 %AwsSdk.Codegen.Service{
   module: AwsSdk.AutoScaling,
-  signing_name: "autoscaling",
   protocol: :query,                    # :json_1_1 | :query | :ec2 | :rest_xml
-  api_version: "2011-01-01",
-  target_prefix: nil,                  # :json_1_1 only
-  endpoint: %AwsSdk.Codegen.Endpoint{},
+  model: "autoscaling",                # basename under models/
+  endpoint: %AwsSdk.Endpoint{},
   registry: :aws_auto_scaling_sandbox,
   operations: [%AwsSdk.Codegen.Operation{}]
 }
@@ -60,33 +61,47 @@ All structs live under `AwsSdk.Codegen`.
 
 ### Endpoint
 
+**Superseded.** This spec originally defined an `%AwsSdk.Codegen.Endpoint{host,
+region, default_region}` — a hand-rolled approximation of endpoint resolution,
+with the partition hardcoded into the host template and a `region` field pinning
+global services to `us-east-1`.
+
+That was wrong. AWS publishes endpoint resolution as data,
+`smithy.rules#endpointRuleSet`, because it is not a host template: it varies by
+partition, by FIPS and dual-stack selection, and by caller-supplied endpoint, and
+it carries SigV4 signing overrides that differ per partition. IAM's rule set
+resolves to 34 hosts and signs in `us-east-1`, `cn-north-1`, `us-gov-west-1` or
+`us-iso-east-1` depending on region. A hardcoded `iam.amazonaws.com` signing for
+`us-east-1` — which is what this library does today, and what this spec first
+proposed keeping — is wrong on both the host and the signing scope in every
+partition but the commercial one.
+
+Endpoint resolution is therefore its own concern, specified and planned
+separately in `docs/superpowers/plans/2026-08-07-endpoint-resolution.md`, which
+runs before the codegen work. What survives here is the residue: the wire framing
+a rule set does not describe.
+
 ```elixir
-%AwsSdk.Codegen.Endpoint{
-  host: "autoscaling.{region}.amazonaws.com",   # {region} interpolated
-  region: nil,              # nil = resolved from config; binary = pinned
-  default_region: "us-east-1",
+%AwsSdk.Endpoint{
+  signing_name: "autoscaling",
+  api_version: "2011-01-01",
+  content_type: "application/x-www-form-urlencoded",
+  target_prefix: nil,          # JSON 1.1 only
+  service_id: "autoscaling",   # names the rule set under priv/endpoints/
   override_key: :auto_scaling
 }
 ```
 
-One field carries the regional/global distinction rather than a tag plus a
-payload. `region: nil` means the caller's configured region fills both the host
-template and the SigV4 scope. A binary pins both:
+`signing_name` and `api_version` are themselves derived from the model — the
+service shape's top-level `version` key and its `aws.auth#sigv4` trait — so a
+spec file writes neither. `AwsSdk.Endpoints.resolve/2` returns the URL and, when
+the rule set specifies one, a signing region and name that override
+`signing_name` for that call.
 
-```elixir
-# AwsSdk.IAM
-%AwsSdk.Codegen.Endpoint{host: "iam.amazonaws.com", region: "us-east-1",
-                         default_region: "us-east-1", override_key: :iam}
-
-# AwsSdk.Organizations
-%AwsSdk.Codegen.Endpoint{host: "organizations.{region}.amazonaws.com", region: "us-east-1",
-                         default_region: "us-east-1", override_key: :organizations}
-```
-
-This closes by construction the bug documented at `lib/aws_sdk/organizations.ex`
-in `build_operation/3`: a `profile:` carrying a region produced
-`organizations.<that-region>.amazonaws.com`, which does not resolve. A pinned
-`region` is the only value that can reach the host template.
+There is no regional-versus-global distinction in this struct. The rule set
+carries it, which is also what closes the `profile:`-carrying-a-region bug
+documented in `lib/aws_sdk/organizations.ex`: no code composes a host from a
+caller-supplied region any more.
 
 ### Operation
 
