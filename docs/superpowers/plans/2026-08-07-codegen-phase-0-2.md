@@ -1823,9 +1823,11 @@ defmodule AwsSdk.Codegen.Service do
   @enforce_keys [:module, :protocol, :endpoint, :registry, :model]
   defstruct [:module, :protocol, :endpoint, :registry, :model, :moduledoc, operations: []]
 
+  @type protocol :: :json_1_0 | :json_1_1 | :rest_json | :query | :ec2 | :rest_xml
+
   @type t :: %__MODULE__{
           module: module,
-          protocol: :json_1_1 | :query | :ec2 | :rest_xml,
+          protocol: protocol,
           endpoint: AwsSdk.Endpoint.t(),
           registry: atom,
           model: String.t(),
@@ -1870,6 +1872,100 @@ and option.
   - `AwsSdk.Codegen.Model.request(model, action :: binary) :: %AwsSdk.Codegen.Request{}`
   - `AwsSdk.Codegen.Model.member(model, action :: binary, name :: atom) :: %{wire: binary, type: atom, location: atom} | :error`
   - `AwsSdk.Codegen.Model.optional_members(model, action :: binary) :: [atom]`
+
+#### What we take from aws-codegen
+
+Nothing executable. No dependency is added, no code is vendored, nothing is
+copied. `aws-beam/aws-codegen` is a **peer project** — another generator reading
+the same AWS models and emitting a different code style. We cannot use its
+backend to produce our output.
+
+What it gives us is documentation. AWS's Smithy JSON AST has no published schema,
+and `aws-codegen` is a working reader of it. Three facts below are ones you would
+otherwise have to reverse-engineer from the JSON. Read them, then write
+`AwsSdk.Codegen.Model` from scratch.
+
+All references are pinned to commit `06b1a3d0438be2d3490d7de3c0860da0ddbc6381`:
+<https://github.com/aws-beam/aws-codegen/blob/06b1a3d0438be2d3490d7de3c0860da0ddbc6381/lib/aws_codegen/spec.ex>
+
+**Fact 1 — how to find the service shape** (`spec.ex:80-84`):
+
+```elixir
+  def find_service(api) do
+    Enum.find_value(api["shapes"], fn {service, value} ->
+      if match?(%{"type" => "service"}, value), do: service
+    end)
+  end
+```
+
+A Smithy model is a flat `"shapes"` map keyed by fully-qualified id
+(`"com.amazonaws.autoscaling#AutoScaling"`). Exactly one shape has
+`"type" => "service"`, and its key is the namespace prefix for every other shape
+in the file. Take this as-is — `AwsSdk.Codegen.Model` needs the same lookup.
+
+**Fact 2 — where the protocol lives** (`spec.ex:37-64`):
+
+```elixir
+    traits = api["shapes"]["com.amazonaws." <> api_name <> "#" <> service_name]["traits"]
+    protocol0 =
+      Enum.find_value(traits, fn {k, _v} ->
+        case String.split(k, "#") do
+          ["aws.protocols", protocol] -> protocol
+          _ ->
+            nil
+        end
+      end)
+```
+
+```elixir
+      protocol =
+        protocol0
+        |> String.replace("restJson1", "rest_json")
+        |> String.replace(["awsJson1_0", "awsJson1_1"], "json")
+        |> String.replace("awsQuery", "query")
+        |> String.replace("restXml", "rest_xml")
+        |> String.replace("ec2Query", "ec2")
+        |> then(fn value ->
+          if value in ~w(rest_json json query rest_xml ec2) do
+            value
+          else
+            raise "the protocol #{value} is not valid"
+          end
+        end)
+        |> String.to_atom()
+```
+
+This is the fact worth the most: the protocol is not a field, it is the *presence
+of a trait* on the service shape whose key is namespaced `aws.protocols#`. So
+`"aws.protocols#awsQuery" => %{}` is how a model says "Query protocol". You would
+not guess that from reading the JSON. The trait-name → protocol mapping is the
+authoritative list, and raising on an unknown value rather than defaulting is the
+right behaviour — copy that decision.
+
+**Fact 3 — where the service's display name lives** (`spec.ex:99-101`):
+
+```elixir
+  defp module_name(traits, language) do
+    service_name =
+      traits["aws.api#service"]["sdkId"]
+```
+
+The `aws.api#service` trait carries `sdkId` (and `arnNamespace`). We do not use
+`sdkId` for module naming — `%AwsSdk.Codegen.Service{module:}` is curation, typed
+by hand in the spec file. It is useful in `mix aws_sdk.scaffold` output as a
+comment, and as the check that you loaded the model you meant to.
+
+#### Where we deviate, and why
+
+| aws-codegen | `AwsSdk.Codegen.Model` | Why |
+|---|---|---|
+| `awsJson1_0` and `awsJson1_1` both map to `:json` (`spec.ex:53`) | `:json_1_0` and `:json_1_1` stay distinct | They differ on the wire: the `content-type` is `application/x-amz-json-1.0` versus `-1.1`. Collapsing them is safe for aws-codegen because its template emits the version separately; it is not safe for us. |
+| Rebuilds the service shape id from the *filename* (`spec.ex:37`: `"com.amazonaws." <> api_name <> "#" <> service_name`) | Uses the id `find_service/1` already returned | `spec.ex:34-35` gets the full id, strips the namespace off it, then line 37 reconstructs it from the filename — which breaks for any model whose filename does not match its namespace. Just keep the id. |
+| Parses with `Poison` (`spec.ex:95`) | `:json.decode/1` | Already an OTP built-in and already used across this repo. Adding Poison would be a new dep for nothing. |
+| `AWS.CodeGen.Shapes.collect_shapes/2` extracts members without resolving targets | Recursive resolution into a `%AwsSdk.Codegen.Field{}` tree | This is the substance of Step 3 and it does not exist upstream. `Shapes` is shallow by design — its templates resolve lazily. Our parser compiler needs the whole tree with `cardinality`, `optional` and `type` settled, including recursion cycles. Expect no help here. |
+| `AWS.CodeGen.Docstring` converts AWS's HTML prose to markdown | not used | Docs come from fixed templates (Task 11), not model prose. This module is why `aws-codegen` depends on `floki` and `fast_html`, the latter needing cmake and a C toolchain — a build prerequisite worth not inheriting. |
+
+Read `spec.ex` in full before Step 3. It is 154 lines.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2003,9 +2099,27 @@ assumed schema. The required behaviours, each pinned by a test above:
 - Recursion must terminate. AWS models contain recursive shapes; carry a `seen`
   MapSet of shape ids down the walk and stop at a repeat, emitting no children.
   Add a test for this if the AutoScaling model has such a shape.
-- `request/2` for a `query`-protocol service is a constant. Read the protocol
-  from the service shape's traits and raise on an unrecognised one rather than
-  defaulting — a silent wrong default would generate wrong wire code.
+- `request/2` for a `query`-protocol service is a constant. Read the protocol from
+  the service shape's traits per Fact 2 above and raise on an unrecognised one
+  rather than defaulting — a silent wrong default would generate wrong wire code.
+  The mapping, keeping the two JSON versions distinct as the deviation table
+  requires:
+
+```elixir
+  @protocols %{
+    "awsQuery" => :query,
+    "ec2Query" => :ec2,
+    "awsJson1_0" => :json_1_0,
+    "awsJson1_1" => :json_1_1,
+    "restJson1" => :rest_json,
+    "restXml" => :rest_xml
+  }
+```
+
+  Only `:query`, `:ec2`, `:json_1_1` and `:rest_xml` have a protocol module after
+  Task 5. A spec naming a service whose model declares `:json_1_0` or
+  `:rest_json` must fail at generation time with a clear message, not emit a call
+  to a module that does not exist.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 

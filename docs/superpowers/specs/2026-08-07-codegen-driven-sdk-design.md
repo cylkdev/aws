@@ -212,10 +212,18 @@ and pinned, never edited. Lives at the repo root, excluded from the hex package,
 since generation is a dev-time activity. `mix aws_sdk.models.refresh` re-pulls
 them.
 
-This is what `aws-beam/aws-codegen` contributes. Not its templates — those render
-the `AWS.S3.list_buckets(%AWS.Client{}, input)` shape, which is the opposite of
-this library's API. What is valuable is the model corpus it consumes and its
-protocol taxonomy, which lines up 1:1 with this library's four protocols.
+**`aws-beam/aws-codegen` is not a dependency of this design.** It is a peer
+project: someone else's generator, reading the same AWS models and emitting a
+different code style (`AWS.S3.list_buckets(%AWS.Client{}, input)` — string-keyed
+maps, no curation, no sandbox). Two generators for the same input, not a
+component this one plugs into.
+
+Its contribution is documentation. AWS's Smithy JSON AST has no published schema,
+and `aws-codegen` is a working reader of it, so it tells us which traits carry
+the protocol and how to locate the service shape. We read it, then write our own
+reader. No dependency is added and no code is vendored — see "What we take from
+aws-codegen" in the implementation plan for the exact excerpts and where we
+deviate from them.
 
 **`priv/specs/<service>.exs`** — pure curation, hand-owned, evaluating to an
 `%AwsSdk.Codegen.Service{}`. Per operation it carries only what the model cannot
