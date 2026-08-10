@@ -418,6 +418,89 @@ defmodule AwsSdk.ConformanceTest do
              data.tag_specification_set
   end
 
+  test "CreateLaunchTemplateVersion reads the new version and an optional warning" do
+    xml_without_warning = """
+    <CreateLaunchTemplateVersionResponse><launchTemplateVersion>
+    <launchTemplateId>lt-1</launchTemplateId><launchTemplateName>web</launchTemplateName>
+    <versionNumber>2</versionNumber><createTime>2026-01-01T00:00:00Z</createTime>
+    <createdBy>arn:aws:iam::1:user/u</createdBy><defaultVersion>false</defaultVersion>
+    <launchTemplateData>
+    <imageId>ami-1</imageId><instanceType>t3.micro</instanceType>
+    </launchTemplateData>
+    </launchTemplateVersion></CreateLaunchTemplateVersionResponse>
+    """
+
+    assert AwsSdk.EC2.parse_create_launch_template_version_for_test(xml_without_warning) == %{
+             launch_template_version: %{
+               launch_template_id: "lt-1",
+               launch_template_name: "web",
+               version_number: 2,
+               version_description: "",
+               create_time: "2026-01-01T00:00:00Z",
+               created_by: "arn:aws:iam::1:user/u",
+               default_version: "false",
+               launch_template_data: %{
+                 image_id: "ami-1",
+                 instance_type: "t3.micro",
+                 kernel_id: "",
+                 ram_disk_id: "",
+                 key_name: "",
+                 user_data: "",
+                 ebs_optimized: "",
+                 disable_api_termination: "",
+                 disable_api_stop: "",
+                 instance_initiated_shutdown_behavior: "",
+                 security_group_id_set: [],
+                 security_group_set: [],
+                 iam_instance_profile: nil,
+                 monitoring: nil,
+                 placement: nil,
+                 cpu_options: nil,
+                 metadata_options: nil,
+                 enclave_options: nil,
+                 hibernation_options: nil,
+                 maintenance_options: nil,
+                 private_dns_name_options: nil,
+                 instance_market_options: nil,
+                 credit_specification: nil,
+                 capacity_reservation_specification: nil,
+                 instance_requirements: nil,
+                 block_device_mapping_set: [],
+                 network_interface_set: [],
+                 tag_specification_set: [],
+                 license_set: [],
+                 elastic_gpu_specification_set: []
+               }
+             },
+             warning: nil
+           }
+
+    xml_with_warning = """
+    <CreateLaunchTemplateVersionResponse><launchTemplateVersion>
+    <launchTemplateId>lt-1</launchTemplateId><launchTemplateName>web</launchTemplateName>
+    <versionNumber>2</versionNumber><createTime>2026-01-01T00:00:00Z</createTime>
+    <createdBy>arn:aws:iam::1:user/u</createdBy><defaultVersion>false</defaultVersion>
+    <launchTemplateData>
+    <imageId>ami-1</imageId><instanceType>t3.micro</instanceType>
+    </launchTemplateData>
+    </launchTemplateVersion>
+    <warning><errorSet><item><code>duplicateSecurityGroupId</code>
+    <message>Security group sg-1 is duplicated.</message></item></errorSet></warning>
+    </CreateLaunchTemplateVersionResponse>
+    """
+
+    parsed = AwsSdk.EC2.parse_create_launch_template_version_for_test(xml_with_warning)
+
+    assert parsed.launch_template_version.launch_template_id == "lt-1"
+    assert parsed.launch_template_version.version_number == 2
+
+    assert parsed.warning == %{
+             errors: [
+               %{code: "duplicateSecurityGroupId", message: "Security group sg-1 is duplicated."}
+             ]
+           }
+  end
+
   test "a launch template listing carries version pointers but no template data" do
     xml = """
     <DescribeLaunchTemplatesResponse><launchTemplates>
