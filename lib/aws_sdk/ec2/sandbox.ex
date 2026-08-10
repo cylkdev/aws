@@ -184,6 +184,22 @@ if Code.ensure_loaded?(SandboxRegistry) do
       Sandbox.register(@registry, __MODULE__, :describe_launch_template_versions, entries)
     end
 
+    def create_launch_template_version_response(launch_template_id, opts) do
+      binding = [launch_template_id: launch_template_id, opts: opts]
+
+      Sandbox.apply(
+        @registry,
+        __MODULE__,
+        :create_launch_template_version,
+        launch_template_id,
+        binding
+      )
+    end
+
+    def set_create_launch_template_version_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :create_launch_template_version, entries)
+    end
+
     def terminate_instances_response(instance_ids, opts) do
       binding = [instance_ids: instance_ids, opts: opts]
 
