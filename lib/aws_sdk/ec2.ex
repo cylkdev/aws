@@ -3129,23 +3129,28 @@ defmodule AwsSdk.EC2 do
 
   defp parse_describe_launch_templates(body) do
     %{
-      launch_templates:
-        xpath(body, ~x"//launchTemplates/item"l,
-          launch_template_id: ~x"./launchTemplateId/text()"s,
-          launch_template_name: ~x"./launchTemplateName/text()"s,
-          create_time: ~x"./createTime/text()"os,
-          created_by: ~x"./createdBy/text()"os,
-          default_version_number: ~x"./defaultVersionNumber/text()"oi,
-          latest_version_number: ~x"./latestVersionNumber/text()"oi,
-          operator: [
-            ~x"./operator"o,
-            managed: ~x"./managed/text()"os,
-            principal: ~x"./principal/text()"os
-          ],
-          tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
-        ),
+      launch_templates: xpath(body, ~x"//launchTemplates/item"l, launch_template_fields()),
       next_token: xpath(body, ~x"//DescribeLaunchTemplatesResponse/nextToken/text()"os)
     }
+  end
+
+  # One LaunchTemplate, as both DescribeLaunchTemplates and
+  # ModifyLaunchTemplate return it.
+  defp launch_template_fields do
+    [
+      launch_template_id: ~x"./launchTemplateId/text()"s,
+      launch_template_name: ~x"./launchTemplateName/text()"s,
+      create_time: ~x"./createTime/text()"os,
+      created_by: ~x"./createdBy/text()"os,
+      default_version_number: ~x"./defaultVersionNumber/text()"oi,
+      latest_version_number: ~x"./latestVersionNumber/text()"oi,
+      operator: [
+        ~x"./operator"o,
+        managed: ~x"./managed/text()"os,
+        principal: ~x"./principal/text()"os
+      ],
+      tag_set: [~x"./tagSet/item"l, key: ~x"./key/text()"s, value: ~x"./value/text()"s]
+    ]
   end
 
   @doc """
