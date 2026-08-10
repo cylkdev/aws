@@ -3510,6 +3510,10 @@ defmodule AwsSdk.EC2 do
       a timeout creates a second, redundant version.
     * `:resolve_alias` - When `true`, resolves an AMI alias in the returned
       `:launch_template_data` `:image_id` to the underlying AMI ID.
+
+  Returns `{:error, {:unexpected_response, %{operation: "CreateLaunchTemplateVersion", body: body}}}`
+  if a 200 response carries no `launchTemplateVersion` element, since AWS
+  always returns one on success.
   """
   @spec create_launch_template_version(
           launch_template_id :: String.t(),
@@ -3538,9 +3542,26 @@ defmodule AwsSdk.EC2 do
 
     with {:ok, op} <- build_operation("CreateLaunchTemplateVersion", params, opts),
          {:ok, %{body: body}} <- Client.request(op) do
-      {:ok, parse_create_launch_template_version(body)}
+      create_launch_template_version_result(body)
     end
   end
+
+  # AWS always returns launchTemplateVersion on success. Its absence means the
+  # response is not the one this operation promises, not that there is
+  # nothing to report.
+  defp create_launch_template_version_result(body) do
+    case parse_create_launch_template_version(body) do
+      %{launch_template_version: nil} ->
+        {:error, {:unexpected_response, %{operation: "CreateLaunchTemplateVersion", body: body}}}
+
+      result ->
+        {:ok, result}
+    end
+  end
+
+  @doc false
+  def create_launch_template_version_result_for_test(xml),
+    do: create_launch_template_version_result(xml)
 
   @doc false
   def parse_create_launch_template_version_for_test(xml),
@@ -3608,6 +3629,10 @@ defmodule AwsSdk.EC2 do
 
     * `:client_token` - a unique string making the call idempotent, so a retry
       after a timeout does not move the default twice.
+
+  Returns `{:error, {:unexpected_response, %{operation: "ModifyLaunchTemplate", body: body}}}`
+  if a 200 response carries no `launchTemplate` element, since AWS always
+  returns one on success.
   """
   @spec modify_launch_template(
           launch_template_id :: String.t(),
@@ -3630,9 +3655,25 @@ defmodule AwsSdk.EC2 do
 
     with {:ok, op} <- build_operation("ModifyLaunchTemplate", params, opts),
          {:ok, %{body: body}} <- Client.request(op) do
-      {:ok, parse_modify_launch_template(body)}
+      modify_launch_template_result(body)
     end
   end
+
+  # AWS always returns launchTemplate on success. Its absence means the
+  # response is not the one this operation promises, not that there is
+  # nothing to report.
+  defp modify_launch_template_result(body) do
+    case parse_modify_launch_template(body) do
+      %{launch_template: nil} ->
+        {:error, {:unexpected_response, %{operation: "ModifyLaunchTemplate", body: body}}}
+
+      result ->
+        {:ok, result}
+    end
+  end
+
+  @doc false
+  def modify_launch_template_result_for_test(xml), do: modify_launch_template_result(xml)
 
   @doc false
   def parse_modify_launch_template_for_test(xml), do: parse_modify_launch_template(xml)

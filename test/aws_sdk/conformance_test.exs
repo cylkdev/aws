@@ -501,6 +501,21 @@ defmodule AwsSdk.ConformanceTest do
                %{code: "duplicateSecurityGroupId", message: "Security group sg-1 is duplicated."}
              ]
            }
+
+    assert {:ok, ^parsed} =
+             AwsSdk.EC2.create_launch_template_version_result_for_test(xml_with_warning)
+  end
+
+  test "CreateLaunchTemplateVersion errors when the response carries no launchTemplateVersion" do
+    xml = """
+    <CreateLaunchTemplateVersionResponse>
+      <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
+    </CreateLaunchTemplateVersionResponse>
+    """
+
+    assert {:error,
+            {:unexpected_response, %{operation: "CreateLaunchTemplateVersion", body: ^xml}}} =
+             AwsSdk.EC2.create_launch_template_version_result_for_test(xml)
   end
 
   test "ModifyLaunchTemplate reads the template whose default moved" do
@@ -540,6 +555,20 @@ defmodule AwsSdk.ConformanceTest do
                tag_set: [%{key: "Colour", value: "blue"}]
              }
            } == AwsSdk.EC2.parse_modify_launch_template_for_test(xml)
+
+    assert {:ok, %{launch_template: %{launch_template_id: "lt-0a1b2c3d4e5f6a7b8"}}} =
+             AwsSdk.EC2.modify_launch_template_result_for_test(xml)
+  end
+
+  test "ModifyLaunchTemplate errors when the response carries no launchTemplate" do
+    xml = """
+    <ModifyLaunchTemplateResponse>
+      <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
+    </ModifyLaunchTemplateResponse>
+    """
+
+    assert {:error, {:unexpected_response, %{operation: "ModifyLaunchTemplate", body: ^xml}}} =
+             AwsSdk.EC2.modify_launch_template_result_for_test(xml)
   end
 
   test "a launch template listing carries version pointers but no template data" do
