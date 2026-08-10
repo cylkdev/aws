@@ -3466,6 +3466,100 @@ defmodule AwsSdk.EC2 do
   end
 
   @doc """
+  Creates a new version of a launch template.
+
+  `launch_template_data` is AWS's `RequestLaunchTemplateData`, given with AWS's
+  own member names, the way `filters` are given elsewhere in this module. Its
+  members are sent as `LaunchTemplateData.<Member>`.
+
+  ## Examples
+
+      AwsSdk.EC2.create_launch_template_version("lt-0a1b2c3d", %{"ImageId" => "ami-1"})
+      #=> {:ok,
+      #=>  %{
+      #=>    launch_template_version: %{
+      #=>      launch_template_id: "lt-0a1b2c3d",
+      #=>      version_number: 2,
+      #=>      default_version: "false",
+      #=>      launch_template_data: %{image_id: "ami-1"}
+      #=>    },
+      #=>    warning: nil
+      #=>  }}
+
+  A new version is not the default version. An auto scaling group pointed at
+  `$Latest` launches it; one pointed at `$Default` does not.
+
+  `:source_version` names the version the new one inherits from — without it,
+  a member left out of `launch_template_data` is left out of the new version
+  rather than carried over.
+
+  Nested members of `RequestLaunchTemplateData` are not encoded: a value must
+  be a scalar AWS accepts as `LaunchTemplateData.<Member>`.
+  """
+  @spec create_launch_template_version(
+          launch_template_id :: String.t(),
+          launch_template_data :: map(),
+          opts :: keyword()
+        ) :: {:ok, map()} | {:error, term()}
+  def create_launch_template_version(launch_template_id, launch_template_data, opts \\ [])
+      when is_binary(launch_template_id) and is_map(launch_template_data) do
+    if sandbox?(opts) do
+      sandbox_create_launch_template_version_response(launch_template_id, opts)
+    else
+      do_create_launch_template_version(launch_template_id, launch_template_data, opts)
+    end
+  end
+
+  defp do_create_launch_template_version(launch_template_id, launch_template_data, opts) do
+    params =
+      launch_template_data
+      |> Enum.reduce(%{"LaunchTemplateId" => launch_template_id}, fn {member, value}, acc ->
+        Map.put(acc, "LaunchTemplateData.#{member}", to_string(value))
+      end)
+      |> maybe_put("SourceVersion", opts[:source_version])
+      |> maybe_put("VersionDescription", opts[:version_description])
+      |> maybe_put("ClientToken", opts[:client_token])
+      |> maybe_put("ResolveAlias", opts[:resolve_alias])
+
+    with {:ok, op} <- build_operation("CreateLaunchTemplateVersion", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_create_launch_template_version(body)}
+    end
+  end
+
+  @doc false
+  def parse_create_launch_template_version_for_test(xml),
+    do: parse_create_launch_template_version(xml)
+
+  defp parse_create_launch_template_version(body) do
+    %{
+      launch_template_version:
+        xpath(
+          body,
+          ~x"//launchTemplateVersion"o,
+          launch_template_id: ~x"./launchTemplateId/text()"s,
+          launch_template_name: ~x"./launchTemplateName/text()"s,
+          version_number: ~x"./versionNumber/text()"oi,
+          version_description: ~x"./versionDescription/text()"os,
+          create_time: ~x"./createTime/text()"os,
+          created_by: ~x"./createdBy/text()"os,
+          default_version: ~x"./defaultVersion/text()"os,
+          launch_template_data: [~x"./launchTemplateData"o | launch_template_data_fields()]
+        ),
+      warning:
+        xpath(
+          body,
+          ~x"//warning"o,
+          errors: [
+            ~x"./errorSet/item"l,
+            code: ~x"./code/text()"os,
+            message: ~x"./message/text()"os
+          ]
+        )
+    }
+  end
+
+  @doc """
   Describes the specified tags for the given resources.
 
   Returns `%{tag_set: [...], next_token: ...}`, where each tag is
@@ -3726,6 +3820,11 @@ defmodule AwsSdk.EC2 do
       as: :describe_launch_template_versions_response
 
     @doc false
+    defdelegate sandbox_create_launch_template_version_response(launch_template_id, opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :create_launch_template_version_response
+
+    @doc false
     defdelegate sandbox_describe_instances_response(opts),
       to: AwsSdk.EC2.Sandbox,
       as: :describe_instances_response
@@ -3850,6 +3949,9 @@ defmodule AwsSdk.EC2 do
     defp sandbox_describe_launch_templates_response(_), do: raise("sandbox not available")
 
     defp sandbox_describe_launch_template_versions_response(_),
+      do: raise("sandbox not available")
+
+    defp sandbox_create_launch_template_version_response(_, _),
       do: raise("sandbox not available")
 
     defp sandbox_describe_instances_response(_), do: raise("sandbox not available")

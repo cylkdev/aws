@@ -257,6 +257,65 @@ defmodule AwsSdk.EC2.SandboxTest do
     end
   end
 
+  describe "create_launch_template_version/3" do
+    test "returns the response registered for the launch template id" do
+      Sandbox.set_create_launch_template_version_responses([
+        {"lt-1",
+         fn ->
+           {:ok,
+            %{
+              launch_template_version: %{
+                launch_template_id: "lt-1",
+                version_number: 2,
+                default_version: "false"
+              },
+              warning: nil
+            }}
+         end}
+      ])
+
+      assert {:ok,
+              %{
+                launch_template_version: %{
+                  launch_template_id: "lt-1",
+                  version_number: 2,
+                  default_version: "false"
+                },
+                warning: nil
+              }} =
+               EC2.create_launch_template_version("lt-1", %{"ImageId" => "ami-1"},
+                 sandbox: [enabled: true]
+               )
+    end
+
+    test "matches the launch template id by regex" do
+      Sandbox.set_create_launch_template_version_responses([
+        {~r/^lt-/,
+         fn -> {:ok, %{launch_template_version: %{version_number: 7}, warning: nil}} end}
+      ])
+
+      assert {:ok, %{launch_template_version: %{version_number: 7}, warning: nil}} =
+               EC2.create_launch_template_version("lt-matched", %{"ImageId" => "ami-1"},
+                 sandbox: [enabled: true]
+               )
+    end
+
+    test "passes the launch template id to a function that takes it" do
+      Sandbox.set_create_launch_template_version_responses([
+        {"lt-1",
+         fn launch_template_id ->
+           {:ok,
+            %{launch_template_version: %{launch_template_id: launch_template_id}, warning: nil}}
+         end}
+      ])
+
+      assert {:ok, %{launch_template_version: %{launch_template_id: "lt-1"}, warning: nil}} =
+               EC2.create_launch_template_version("lt-1", %{"ImageId" => "ami-1"},
+                 sandbox: [enabled: true]
+               )
+    end
+  end
+
   describe "terminate_instances/2" do
     test "returns the registered state changes" do
       Sandbox.set_terminate_instances_responses([
