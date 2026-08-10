@@ -571,13 +571,13 @@ defmodule AwsSdk.ConformanceTest do
              AwsSdk.EC2.modify_launch_template_result_for_test(xml)
   end
 
-  test "ModifyLaunchTemplate builds LaunchTemplateId and DefaultVersion, with ClientToken only when given" do
-    assert %{"LaunchTemplateId" => "lt-1", "DefaultVersion" => "3"} ==
+  test "ModifyLaunchTemplate builds LaunchTemplateId and SetDefaultVersion, with ClientToken only when given" do
+    assert %{"LaunchTemplateId" => "lt-1", "SetDefaultVersion" => "3"} ==
              AwsSdk.EC2.modify_launch_template_params_for_test("lt-1", "3")
 
     assert %{
              "LaunchTemplateId" => "lt-1",
-             "DefaultVersion" => "3",
+             "SetDefaultVersion" => "3",
              "ClientToken" => "token-1"
            } ==
              AwsSdk.EC2.modify_launch_template_params_for_test("lt-1", "3",

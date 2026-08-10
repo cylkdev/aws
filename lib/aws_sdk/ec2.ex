@@ -3614,7 +3614,7 @@ defmodule AwsSdk.EC2 do
   @doc """
   Moves a launch template's default version.
 
-  AWS marks `DefaultVersion` optional on this operation. It is required here:
+  AWS marks `SetDefaultVersion` optional on this operation. It is required here:
   it is the only thing the operation changes, and a modify that changes nothing
   is not worth making.
 
@@ -3669,7 +3669,7 @@ defmodule AwsSdk.EC2 do
   end
 
   defp modify_launch_template_params(launch_template_id, default_version, opts) do
-    %{"LaunchTemplateId" => launch_template_id, "DefaultVersion" => default_version}
+    %{"LaunchTemplateId" => launch_template_id, "SetDefaultVersion" => default_version}
     |> maybe_put("ClientToken", opts[:client_token])
   end
 
