@@ -12,13 +12,10 @@ defmodule AwsSdk.EC2 do
   with SigV4 signing under the same region.
 
   The scope of this module is deliberately narrow: security groups,
-  VPC/subnet discovery, instance and tag lookup, launch template reads,
-  and AMI/snapshot lifecycle — the operations needed by the callers of
-  this library. Instances are described and terminated but never launched
-  here; launch templates are read, and new versions of an existing template
-  are created, but templates themselves are never created or modified; the
-  image operations exist to retire AMIs a build pipeline has
-  superseded. Each public function mirrors the wrapper
+  VPC/subnet discovery, instance description and termination, tag lookup,
+  launch template reads and version creation, moving a launch template's
+  default version, and AMI/snapshot lifecycle — the operations needed by
+  the callers of this library. Each public function mirrors the wrapper
   pattern used throughout `AwsSdk.*` (inline sandbox branch + `do_*`
   helper + typed response map).
 
@@ -3129,7 +3126,12 @@ defmodule AwsSdk.EC2 do
 
   defp parse_describe_launch_templates(body) do
     %{
-      launch_templates: xpath(body, ~x"//launchTemplates/item"l, launch_template_fields()),
+      launch_templates:
+        xpath(
+          body,
+          ~x"//DescribeLaunchTemplatesResponse/launchTemplates/item"l,
+          launch_template_fields()
+        ),
       next_token: xpath(body, ~x"//DescribeLaunchTemplatesResponse/nextToken/text()"os)
     }
   end
@@ -3584,8 +3586,7 @@ defmodule AwsSdk.EC2 do
   it is the only thing the operation changes, and a modify that changes nothing
   is not worth making.
 
-  `default_version` is the version number as a string, or `"$Latest"` or
-  `"$Default"`.
+  `default_version` is the version number as a string, or `"$Latest"`.
 
   ## Examples
 
