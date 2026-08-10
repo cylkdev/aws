@@ -424,6 +424,7 @@ defmodule AwsSdk.ConformanceTest do
     <launchTemplateId>lt-1</launchTemplateId><launchTemplateName>web</launchTemplateName>
     <versionNumber>2</versionNumber><createTime>2026-01-01T00:00:00Z</createTime>
     <createdBy>arn:aws:iam::1:user/u</createdBy><defaultVersion>false</defaultVersion>
+    <operator><managed>true</managed><principal>ec2.amazonaws.com</principal></operator>
     <launchTemplateData>
     <imageId>ami-1</imageId><instanceType>t3.micro</instanceType>
     </launchTemplateData>
@@ -439,6 +440,7 @@ defmodule AwsSdk.ConformanceTest do
                create_time: "2026-01-01T00:00:00Z",
                created_by: "arn:aws:iam::1:user/u",
                default_version: "false",
+               operator: %{managed: "true", principal: "ec2.amazonaws.com"},
                launch_template_data: %{
                  image_id: "ami-1",
                  instance_type: "t3.micro",

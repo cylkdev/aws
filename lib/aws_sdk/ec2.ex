@@ -15,7 +15,8 @@ defmodule AwsSdk.EC2 do
   VPC/subnet discovery, instance and tag lookup, launch template reads,
   and AMI/snapshot lifecycle — the operations needed by the callers of
   this library. Instances are described and terminated but never launched
-  here; launch templates are read but never created or modified; the
+  here; launch templates are read, and new versions of an existing template
+  are created, but templates themselves are never created or modified; the
   image operations exist to retire AMIs a build pipeline has
   superseded. Each public function mirrors the wrapper
   pattern used throughout `AwsSdk.*` (inline sandbox branch + `do_*`
@@ -3489,12 +3490,19 @@ defmodule AwsSdk.EC2 do
   A new version is not the default version. An auto scaling group pointed at
   `$Latest` launches it; one pointed at `$Default` does not.
 
-  `:source_version` names the version the new one inherits from — without it,
-  a member left out of `launch_template_data` is left out of the new version
-  rather than carried over.
-
   Nested members of `RequestLaunchTemplateData` are not encoded: a value must
   be a scalar AWS accepts as `LaunchTemplateData.<Member>`.
+
+  ## Options
+
+    * `:source_version` - The version the new one inherits from. Without it, a
+      member left out of `launch_template_data` is left out of the new version
+      rather than carried over.
+    * `:version_description` - A description for the new version.
+    * `:client_token` - An idempotency token. Without it, a retried call after
+      a timeout creates a second, redundant version.
+    * `:resolve_alias` - When `true`, resolves an AMI alias in the returned
+      `:launch_template_data` `:image_id` to the underlying AMI ID.
   """
   @spec create_launch_template_version(
           launch_template_id :: String.t(),
@@ -3536,7 +3544,7 @@ defmodule AwsSdk.EC2 do
       launch_template_version:
         xpath(
           body,
-          ~x"//launchTemplateVersion"o,
+          ~x"//CreateLaunchTemplateVersionResponse/launchTemplateVersion"o,
           launch_template_id: ~x"./launchTemplateId/text()"s,
           launch_template_name: ~x"./launchTemplateName/text()"s,
           version_number: ~x"./versionNumber/text()"oi,
@@ -3544,12 +3552,17 @@ defmodule AwsSdk.EC2 do
           create_time: ~x"./createTime/text()"os,
           created_by: ~x"./createdBy/text()"os,
           default_version: ~x"./defaultVersion/text()"os,
+          operator: [
+            ~x"./operator"o,
+            managed: ~x"./managed/text()"os,
+            principal: ~x"./principal/text()"os
+          ],
           launch_template_data: [~x"./launchTemplateData"o | launch_template_data_fields()]
         ),
       warning:
         xpath(
           body,
-          ~x"//warning"o,
+          ~x"//CreateLaunchTemplateVersionResponse/warning"o,
           errors: [
             ~x"./errorSet/item"l,
             code: ~x"./code/text()"os,
