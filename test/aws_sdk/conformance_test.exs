@@ -503,6 +503,45 @@ defmodule AwsSdk.ConformanceTest do
            }
   end
 
+  test "ModifyLaunchTemplate reads the template whose default moved" do
+    xml = """
+    <ModifyLaunchTemplateResponse>
+      <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
+      <launchTemplate>
+        <launchTemplateId>lt-0a1b2c3d4e5f6a7b8</launchTemplateId>
+        <launchTemplateName>deployd-cylk-web-dev-blue</launchTemplateName>
+        <createTime>2026-08-10T17:29:15.000Z</createTime>
+        <createdBy>arn:aws:sts::291093735280:assumed-role/deploy/session</createdBy>
+        <defaultVersionNumber>3</defaultVersionNumber>
+        <latestVersionNumber>7</latestVersionNumber>
+        <operator>
+          <managed>true</managed>
+          <principal>ec2.amazonaws.com</principal>
+        </operator>
+        <tagSet>
+          <item>
+            <key>Colour</key>
+            <value>blue</value>
+          </item>
+        </tagSet>
+      </launchTemplate>
+    </ModifyLaunchTemplateResponse>
+    """
+
+    assert %{
+             launch_template: %{
+               launch_template_id: "lt-0a1b2c3d4e5f6a7b8",
+               launch_template_name: "deployd-cylk-web-dev-blue",
+               create_time: "2026-08-10T17:29:15.000Z",
+               created_by: "arn:aws:sts::291093735280:assumed-role/deploy/session",
+               default_version_number: 3,
+               latest_version_number: 7,
+               operator: %{managed: "true", principal: "ec2.amazonaws.com"},
+               tag_set: [%{key: "Colour", value: "blue"}]
+             }
+           } == AwsSdk.EC2.parse_modify_launch_template_for_test(xml)
+  end
+
   test "a launch template listing carries version pointers but no template data" do
     xml = """
     <DescribeLaunchTemplatesResponse><launchTemplates>

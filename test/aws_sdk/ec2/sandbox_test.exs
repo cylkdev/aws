@@ -316,6 +316,54 @@ defmodule AwsSdk.EC2.SandboxTest do
     end
   end
 
+  describe "modify_launch_template/3" do
+    test "returns the response registered for the launch template id" do
+      Sandbox.set_modify_launch_template_responses([
+        {"lt-1",
+         fn ->
+           {:ok,
+            %{
+              launch_template: %{
+                launch_template_id: "lt-1",
+                default_version_number: 3,
+                latest_version_number: 7
+              }
+            }}
+         end}
+      ])
+
+      assert {:ok,
+              %{
+                launch_template: %{
+                  launch_template_id: "lt-1",
+                  default_version_number: 3,
+                  latest_version_number: 7
+                }
+              }} = EC2.modify_launch_template("lt-1", "3", sandbox: [enabled: true])
+    end
+
+    test "matches the launch template id by regex" do
+      Sandbox.set_modify_launch_template_responses([
+        {~r/^lt-/, fn -> {:ok, %{launch_template: %{default_version_number: 9}}} end}
+      ])
+
+      assert {:ok, %{launch_template: %{default_version_number: 9}}} =
+               EC2.modify_launch_template("lt-matched", "9", sandbox: [enabled: true])
+    end
+
+    test "passes the launch template id to a function that takes it" do
+      Sandbox.set_modify_launch_template_responses([
+        {"lt-1",
+         fn launch_template_id ->
+           {:ok, %{launch_template: %{launch_template_id: launch_template_id}}}
+         end}
+      ])
+
+      assert {:ok, %{launch_template: %{launch_template_id: "lt-1"}}} =
+               EC2.modify_launch_template("lt-1", "3", sandbox: [enabled: true])
+    end
+  end
+
   describe "terminate_instances/2" do
     test "returns the registered state changes" do
       Sandbox.set_terminate_instances_responses([

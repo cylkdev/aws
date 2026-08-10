@@ -3578,6 +3578,76 @@ defmodule AwsSdk.EC2 do
   end
 
   @doc """
+  Moves a launch template's default version.
+
+  AWS marks `DefaultVersion` optional on this operation. It is required here:
+  it is the only thing the operation changes, and a modify that changes nothing
+  is not worth making.
+
+  `default_version` is the version number as a string, or `"$Latest"` or
+  `"$Default"`.
+
+  ## Examples
+
+      AwsSdk.EC2.modify_launch_template("lt-0a1b2c3d", "3")
+      #=> {:ok,
+      #=>  %{
+      #=>    launch_template: %{
+      #=>      launch_template_id: "lt-0a1b2c3d",
+      #=>      default_version_number: 3,
+      #=>      latest_version_number: 7
+      #=>    }
+      #=>  }}
+
+  An auto scaling group launching `$Default` reads what this sets, so moving
+  the default is what puts a version in front of the next instance a group
+  starts. A group launching `$Latest` ignores it.
+
+  ## Options
+
+    * `:client_token` - a unique string making the call idempotent, so a retry
+      after a timeout does not move the default twice.
+  """
+  @spec modify_launch_template(
+          launch_template_id :: String.t(),
+          default_version :: String.t(),
+          opts :: keyword()
+        ) :: {:ok, map()} | {:error, term()}
+  def modify_launch_template(launch_template_id, default_version, opts \\ [])
+      when is_binary(launch_template_id) and is_binary(default_version) do
+    if sandbox?(opts) do
+      sandbox_modify_launch_template_response(launch_template_id, opts)
+    else
+      do_modify_launch_template(launch_template_id, default_version, opts)
+    end
+  end
+
+  defp do_modify_launch_template(launch_template_id, default_version, opts) do
+    params =
+      %{"LaunchTemplateId" => launch_template_id, "DefaultVersion" => default_version}
+      |> maybe_put("ClientToken", opts[:client_token])
+
+    with {:ok, op} <- build_operation("ModifyLaunchTemplate", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      {:ok, parse_modify_launch_template(body)}
+    end
+  end
+
+  @doc false
+  def parse_modify_launch_template_for_test(xml), do: parse_modify_launch_template(xml)
+
+  defp parse_modify_launch_template(body) do
+    %{
+      launch_template:
+        xpath(
+          body,
+          ~x"//ModifyLaunchTemplateResponse/launchTemplate"o,
+          launch_template_fields()
+        )
+    }
+  end
+
+  @doc """
   Describes the specified tags for the given resources.
 
   Returns `%{tag_set: [...], next_token: ...}`, where each tag is
@@ -3843,6 +3913,11 @@ defmodule AwsSdk.EC2 do
       as: :create_launch_template_version_response
 
     @doc false
+    defdelegate sandbox_modify_launch_template_response(launch_template_id, opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :modify_launch_template_response
+
+    @doc false
     defdelegate sandbox_describe_instances_response(opts),
       to: AwsSdk.EC2.Sandbox,
       as: :describe_instances_response
@@ -3970,6 +4045,9 @@ defmodule AwsSdk.EC2 do
       do: raise("sandbox not available")
 
     defp sandbox_create_launch_template_version_response(_, _),
+      do: raise("sandbox not available")
+
+    defp sandbox_modify_launch_template_response(_, _),
       do: raise("sandbox not available")
 
     defp sandbox_describe_instances_response(_), do: raise("sandbox not available")
