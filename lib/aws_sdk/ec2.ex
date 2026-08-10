@@ -3530,21 +3530,32 @@ defmodule AwsSdk.EC2 do
   end
 
   defp do_create_launch_template_version(launch_template_id, launch_template_data, opts) do
-    params =
-      launch_template_data
-      |> Enum.reduce(%{"LaunchTemplateId" => launch_template_id}, fn {member, value}, acc ->
-        Map.put(acc, "LaunchTemplateData.#{member}", to_string(value))
-      end)
-      |> maybe_put("SourceVersion", opts[:source_version])
-      |> maybe_put("VersionDescription", opts[:version_description])
-      |> maybe_put("ClientToken", opts[:client_token])
-      |> maybe_put("ResolveAlias", opts[:resolve_alias])
+    params = create_launch_template_version_params(launch_template_id, launch_template_data, opts)
 
     with {:ok, op} <- build_operation("CreateLaunchTemplateVersion", params, opts),
          {:ok, %{body: body}} <- Client.request(op) do
       create_launch_template_version_result(body)
     end
   end
+
+  defp create_launch_template_version_params(launch_template_id, launch_template_data, opts) do
+    launch_template_data
+    |> Enum.reduce(%{"LaunchTemplateId" => launch_template_id}, fn {member, value}, acc ->
+      Map.put(acc, "LaunchTemplateData.#{member}", to_string(value))
+    end)
+    |> maybe_put("SourceVersion", opts[:source_version])
+    |> maybe_put("VersionDescription", opts[:version_description])
+    |> maybe_put("ClientToken", opts[:client_token])
+    |> maybe_put("ResolveAlias", opts[:resolve_alias])
+  end
+
+  @doc false
+  def create_launch_template_version_params_for_test(
+        launch_template_id,
+        launch_template_data,
+        opts \\ []
+      ),
+      do: create_launch_template_version_params(launch_template_id, launch_template_data, opts)
 
   # AWS always returns launchTemplateVersion on success. Its absence means the
   # response is not the one this operation promises, not that there is
@@ -3649,15 +3660,22 @@ defmodule AwsSdk.EC2 do
   end
 
   defp do_modify_launch_template(launch_template_id, default_version, opts) do
-    params =
-      %{"LaunchTemplateId" => launch_template_id, "DefaultVersion" => default_version}
-      |> maybe_put("ClientToken", opts[:client_token])
+    params = modify_launch_template_params(launch_template_id, default_version, opts)
 
     with {:ok, op} <- build_operation("ModifyLaunchTemplate", params, opts),
          {:ok, %{body: body}} <- Client.request(op) do
       modify_launch_template_result(body)
     end
   end
+
+  defp modify_launch_template_params(launch_template_id, default_version, opts) do
+    %{"LaunchTemplateId" => launch_template_id, "DefaultVersion" => default_version}
+    |> maybe_put("ClientToken", opts[:client_token])
+  end
+
+  @doc false
+  def modify_launch_template_params_for_test(launch_template_id, default_version, opts \\ []),
+    do: modify_launch_template_params(launch_template_id, default_version, opts)
 
   # AWS always returns launchTemplate on success. Its absence means the
   # response is not the one this operation promises, not that there is

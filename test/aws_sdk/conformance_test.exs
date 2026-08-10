@@ -571,6 +571,45 @@ defmodule AwsSdk.ConformanceTest do
              AwsSdk.EC2.modify_launch_template_result_for_test(xml)
   end
 
+  test "ModifyLaunchTemplate builds LaunchTemplateId and DefaultVersion, with ClientToken only when given" do
+    assert %{"LaunchTemplateId" => "lt-1", "DefaultVersion" => "3"} ==
+             AwsSdk.EC2.modify_launch_template_params_for_test("lt-1", "3")
+
+    assert %{
+             "LaunchTemplateId" => "lt-1",
+             "DefaultVersion" => "3",
+             "ClientToken" => "token-1"
+           } ==
+             AwsSdk.EC2.modify_launch_template_params_for_test("lt-1", "3",
+               client_token: "token-1"
+             )
+  end
+
+  test "CreateLaunchTemplateVersion builds LaunchTemplateData.<Member> and only-given options" do
+    assert %{"LaunchTemplateId" => "lt-1", "LaunchTemplateData.ImageId" => "ami-1"} ==
+             AwsSdk.EC2.create_launch_template_version_params_for_test("lt-1", %{
+               "ImageId" => "ami-1"
+             })
+
+    assert %{
+             "LaunchTemplateId" => "lt-1",
+             "LaunchTemplateData.ImageId" => "ami-1",
+             "LaunchTemplateData.InstanceType" => "t3.micro",
+             "SourceVersion" => "2",
+             "VersionDescription" => "blue",
+             "ClientToken" => "token-1",
+             "ResolveAlias" => "true"
+           } ==
+             AwsSdk.EC2.create_launch_template_version_params_for_test(
+               "lt-1",
+               %{"ImageId" => "ami-1", "InstanceType" => "t3.micro"},
+               source_version: "2",
+               version_description: "blue",
+               client_token: "token-1",
+               resolve_alias: "true"
+             )
+  end
+
   test "a launch template listing carries version pointers but no template data" do
     xml = """
     <DescribeLaunchTemplatesResponse><launchTemplates>
