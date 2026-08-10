@@ -33,3 +33,8 @@ aws_sdk-*.tar
 dialyzer/
 *.plt
 *.plt.*
+# Isolated worktrees for feature work.
+/.worktrees/
+
+# Scratch for subagent-driven development: ledgers, briefs, review packages.
+/.superpowers/
