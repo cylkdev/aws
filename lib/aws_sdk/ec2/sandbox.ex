@@ -200,6 +200,16 @@ if Code.ensure_loaded?(SandboxRegistry) do
       Sandbox.register(@registry, __MODULE__, :create_launch_template_version, entries)
     end
 
+    def modify_launch_template_response(launch_template_id, opts) do
+      binding = [launch_template_id: launch_template_id, opts: opts]
+
+      Sandbox.apply(@registry, __MODULE__, :modify_launch_template, launch_template_id, binding)
+    end
+
+    def set_modify_launch_template_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :modify_launch_template, entries)
+    end
+
     def terminate_instances_response(instance_ids, opts) do
       binding = [instance_ids: instance_ids, opts: opts]
 
