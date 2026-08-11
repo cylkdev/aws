@@ -210,6 +210,22 @@ if Code.ensure_loaded?(SandboxRegistry) do
       Sandbox.register(@registry, __MODULE__, :modify_launch_template, entries)
     end
 
+    def delete_launch_template_version_response(launch_template_id, opts) do
+      binding = [launch_template_id: launch_template_id, opts: opts]
+
+      Sandbox.apply(
+        @registry,
+        __MODULE__,
+        :delete_launch_template_version,
+        launch_template_id,
+        binding
+      )
+    end
+
+    def set_delete_launch_template_version_responses(entries) do
+      Sandbox.register(@registry, __MODULE__, :delete_launch_template_version, entries)
+    end
+
     def terminate_instances_response(instance_ids, opts) do
       binding = [instance_ids: instance_ids, opts: opts]
 

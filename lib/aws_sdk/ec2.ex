@@ -3708,6 +3708,115 @@ defmodule AwsSdk.EC2 do
   end
 
   @doc """
+  Deletes one version of a launch template.
+
+  `version` is the version number as a string.
+
+  ## Examples
+
+      AwsSdk.EC2.delete_launch_template_version("lt-0a1b2c3d", "3")
+      #=> {:ok,
+      #=>  %{
+      #=>    launch_template_id: "lt-0a1b2c3d",
+      #=>    launch_template_name: "web",
+      #=>    version_number: 3
+      #=>  }}
+
+  AWS answers a version it could not delete inside a 200, in the
+  `unsuccessfullyDeletedLaunchTemplateVersionSet` rather than as an HTTP
+  error. That set, not the status code, decides success here — a version
+  found there comes back as
+  `{:error, {:launch_template_version_not_deleted, %{launch_template_id:, launch_template_name:, version_number:, response_error: %{code:, message:}}}}`,
+  carrying the code and message AWS gave. The default version cannot be
+  deleted this way; it must first be moved with `modify_launch_template/3`.
+
+  Returns `{:error, {:unexpected_response, %{operation: "DeleteLaunchTemplateVersions", body: body}}}`
+  if a 200 response carries the requested version in neither set.
+  """
+  @spec delete_launch_template_version(
+          launch_template_id :: String.t(),
+          version :: String.t(),
+          opts :: keyword()
+        ) :: {:ok, map()} | {:error, term()}
+  def delete_launch_template_version(launch_template_id, version, opts \\ [])
+      when is_binary(launch_template_id) and is_binary(version) do
+    if sandbox?(opts) do
+      sandbox_delete_launch_template_version_response(launch_template_id, opts)
+    else
+      do_delete_launch_template_version(launch_template_id, version, opts)
+    end
+  end
+
+  defp do_delete_launch_template_version(launch_template_id, version, opts) do
+    params = delete_launch_template_version_params(launch_template_id, version, opts)
+
+    with {:ok, op} <- build_operation("DeleteLaunchTemplateVersions", params, opts),
+         {:ok, %{body: body}} <- Client.request(op) do
+      delete_launch_template_version_result(body)
+    end
+  end
+
+  defp delete_launch_template_version_params(launch_template_id, version, opts) do
+    %{"LaunchTemplateId" => launch_template_id, "LaunchTemplateVersion.1" => version}
+    |> maybe_put("DryRun", opts[:dry_run])
+  end
+
+  @doc false
+  def delete_launch_template_version_params_for_test(launch_template_id, version, opts \\ []),
+    do: delete_launch_template_version_params(launch_template_id, version, opts)
+
+  # AWS reports a version it could not delete inside the unsuccessful set of
+  # a 200 response, not as an HTTP error, so that set -- not the status code
+  # -- is what decides success. Absence from both sets means the response is
+  # not the one this operation promises.
+  defp delete_launch_template_version_result(body) do
+    case parse_delete_launch_template_versions(body) do
+      %{successful: [item]} ->
+        {:ok, item}
+
+      %{unsuccessful: [item]} ->
+        {:error, {:launch_template_version_not_deleted, item}}
+
+      _ ->
+        {:error, {:unexpected_response, %{operation: "DeleteLaunchTemplateVersions", body: body}}}
+    end
+  end
+
+  @doc false
+  def delete_launch_template_version_result_for_test(xml),
+    do: delete_launch_template_version_result(xml)
+
+  @doc false
+  def parse_delete_launch_template_versions_for_test(xml),
+    do: parse_delete_launch_template_versions(xml)
+
+  defp parse_delete_launch_template_versions(body) do
+    %{
+      successful:
+        xpath(
+          body,
+          ~x"//DeleteLaunchTemplateVersionsResponse/successfullyDeletedLaunchTemplateVersionSet/item"l,
+          launch_template_id: ~x"./launchTemplateId/text()"os,
+          launch_template_name: ~x"./launchTemplateName/text()"os,
+          version_number: ~x"./versionNumber/text()"oi
+        ),
+      unsuccessful:
+        xpath(
+          body,
+          ~x"//DeleteLaunchTemplateVersionsResponse/unsuccessfullyDeletedLaunchTemplateVersionSet/item"l,
+          launch_template_id: ~x"./launchTemplateId/text()"os,
+          launch_template_name: ~x"./launchTemplateName/text()"os,
+          version_number: ~x"./versionNumber/text()"oi,
+          response_error: [
+            ~x"./responseError"o,
+            code: ~x"./code/text()"os,
+            message: ~x"./message/text()"os
+          ]
+        )
+    }
+  end
+
+  @doc """
   Describes the specified tags for the given resources.
 
   Returns `%{tag_set: [...], next_token: ...}`, where each tag is
@@ -3978,6 +4087,11 @@ defmodule AwsSdk.EC2 do
       as: :modify_launch_template_response
 
     @doc false
+    defdelegate sandbox_delete_launch_template_version_response(launch_template_id, opts),
+      to: AwsSdk.EC2.Sandbox,
+      as: :delete_launch_template_version_response
+
+    @doc false
     defdelegate sandbox_describe_instances_response(opts),
       to: AwsSdk.EC2.Sandbox,
       as: :describe_instances_response
@@ -4108,6 +4222,9 @@ defmodule AwsSdk.EC2 do
       do: raise("sandbox not available")
 
     defp sandbox_modify_launch_template_response(_, _),
+      do: raise("sandbox not available")
+
+    defp sandbox_delete_launch_template_version_response(_, _),
       do: raise("sandbox not available")
 
     defp sandbox_describe_instances_response(_), do: raise("sandbox not available")

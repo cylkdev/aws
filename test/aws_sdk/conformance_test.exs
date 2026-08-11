@@ -585,6 +585,120 @@ defmodule AwsSdk.ConformanceTest do
              )
   end
 
+  test "DeleteLaunchTemplateVersions reads a version in the successful set" do
+    # Documented shape, from the API reference's example response -- no real
+    # call to this operation has been made.
+    xml = """
+    <DeleteLaunchTemplateVersionsResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+        <requestId>67fc746a-1b3f-467e-8583-7061cexample</requestId>
+        <unsuccessfullyDeletedLaunchTemplateVersionSet/>
+        <successfullyDeletedLaunchTemplateVersionSet>
+            <item>
+                <launchTemplateId>lt-0a20c965061f64abc</launchTemplateId>
+                <launchTemplateName>MyLaunchTemplate</launchTemplateName>
+                <versionNumber>3</versionNumber>
+            </item>
+        </successfullyDeletedLaunchTemplateVersionSet>
+    </DeleteLaunchTemplateVersionsResponse>
+    """
+
+    assert %{
+             successful: [
+               %{
+                 launch_template_id: "lt-0a20c965061f64abc",
+                 launch_template_name: "MyLaunchTemplate",
+                 version_number: 3
+               }
+             ],
+             unsuccessful: []
+           } == AwsSdk.EC2.parse_delete_launch_template_versions_for_test(xml)
+
+    assert {:ok,
+            %{
+              launch_template_id: "lt-0a20c965061f64abc",
+              launch_template_name: "MyLaunchTemplate",
+              version_number: 3
+            }} == AwsSdk.EC2.delete_launch_template_version_result_for_test(xml)
+  end
+
+  test "DeleteLaunchTemplateVersions reads a version in the unsuccessful set as an error, not a success" do
+    # Documented shape, built from the API reference's
+    # DeleteLaunchTemplateVersionsResponseErrorItem and ResponseError
+    # structures -- no real call to this operation has been made.
+    xml = """
+    <DeleteLaunchTemplateVersionsResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+        <requestId>67fc746a-1b3f-467e-8583-7061cexample</requestId>
+        <unsuccessfullyDeletedLaunchTemplateVersionSet>
+            <item>
+                <launchTemplateId>lt-0a20c965061f64abc</launchTemplateId>
+                <launchTemplateName>MyLaunchTemplate</launchTemplateName>
+                <versionNumber>2</versionNumber>
+                <responseError>
+                    <code>launchTemplateVersionDoesNotExist</code>
+                    <message>The specified launch template version does not exist.</message>
+                </responseError>
+            </item>
+        </unsuccessfullyDeletedLaunchTemplateVersionSet>
+        <successfullyDeletedLaunchTemplateVersionSet/>
+    </DeleteLaunchTemplateVersionsResponse>
+    """
+
+    assert %{
+             successful: [],
+             unsuccessful: [
+               %{
+                 launch_template_id: "lt-0a20c965061f64abc",
+                 launch_template_name: "MyLaunchTemplate",
+                 version_number: 2,
+                 response_error: %{
+                   code: "launchTemplateVersionDoesNotExist",
+                   message: "The specified launch template version does not exist."
+                 }
+               }
+             ]
+           } == AwsSdk.EC2.parse_delete_launch_template_versions_for_test(xml)
+
+    assert {:error,
+            {:launch_template_version_not_deleted,
+             %{
+               launch_template_id: "lt-0a20c965061f64abc",
+               launch_template_name: "MyLaunchTemplate",
+               version_number: 2,
+               response_error: %{
+                 code: "launchTemplateVersionDoesNotExist",
+                 message: "The specified launch template version does not exist."
+               }
+             }}} == AwsSdk.EC2.delete_launch_template_version_result_for_test(xml)
+  end
+
+  test "DeleteLaunchTemplateVersions errors when the response carries the version in neither set" do
+    xml = """
+    <DeleteLaunchTemplateVersionsResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+        <requestId>67fc746a-1b3f-467e-8583-7061cexample</requestId>
+        <unsuccessfullyDeletedLaunchTemplateVersionSet/>
+        <successfullyDeletedLaunchTemplateVersionSet/>
+    </DeleteLaunchTemplateVersionsResponse>
+    """
+
+    assert {:error,
+            {:unexpected_response, %{operation: "DeleteLaunchTemplateVersions", body: ^xml}}} =
+             AwsSdk.EC2.delete_launch_template_version_result_for_test(xml)
+  end
+
+  test "DeleteLaunchTemplateVersions builds LaunchTemplateId and LaunchTemplateVersion.1" do
+    assert %{"LaunchTemplateId" => "lt-1", "LaunchTemplateVersion.1" => "3"} ==
+             AwsSdk.EC2.delete_launch_template_version_params_for_test("lt-1", "3")
+
+    assert %{
+             "LaunchTemplateId" => "lt-1",
+             "LaunchTemplateVersion.1" => "3",
+             "DryRun" => "true"
+           } ==
+             AwsSdk.EC2.delete_launch_template_version_params_for_test("lt-1", "3",
+               dry_run: "true"
+             )
+  end
+
   test "CreateLaunchTemplateVersion builds LaunchTemplateData.<Member> and only-given options" do
     assert %{"LaunchTemplateId" => "lt-1", "LaunchTemplateData.ImageId" => "ami-1"} ==
              AwsSdk.EC2.create_launch_template_version_params_for_test("lt-1", %{
