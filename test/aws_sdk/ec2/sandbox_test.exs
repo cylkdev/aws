@@ -255,6 +255,32 @@ defmodule AwsSdk.EC2.SandboxTest do
                  sandbox: [enabled: true]
                )
     end
+
+    test "returns the response registered for the launch template id" do
+      Sandbox.set_describe_launch_template_versions_responses([
+        {"lt-1", fn -> {:ok, %{launch_template_versions: [%{version_number: 1}], next_token: nil}} end},
+        {"lt-2", fn -> {:ok, %{launch_template_versions: [%{version_number: 2}], next_token: nil}} end}
+      ])
+
+      assert {:ok, %{launch_template_versions: [%{version_number: 2}]}} =
+               EC2.describe_launch_template_versions(
+                 launch_template_id: "lt-2",
+                 sandbox: [enabled: true]
+               )
+    end
+
+    test "falls back to a stub registered for every call when the id is not named" do
+      Sandbox.set_describe_launch_template_versions_responses([
+        fn -> {:ok, %{launch_template_versions: [%{version_number: 9}], next_token: nil}} end
+      ])
+
+      assert {:ok, %{launch_template_versions: [%{version_number: 9}]}} =
+               EC2.describe_launch_template_versions(
+                 launch_template_id: nil,
+                 versions: ["$Default"],
+                 sandbox: [enabled: true]
+               )
+    end
   end
 
   describe "create_launch_template_version/3" do

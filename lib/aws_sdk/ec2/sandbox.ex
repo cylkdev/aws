@@ -177,7 +177,13 @@ if Code.ensure_loaded?(SandboxRegistry) do
     def describe_launch_template_versions_response(opts) do
       binding = [opts: opts]
 
-      Sandbox.apply(@registry, __MODULE__, :describe_launch_template_versions, :*, binding)
+      Sandbox.apply(
+        @registry,
+        __MODULE__,
+        :describe_launch_template_versions,
+        opts[:launch_template_id] || :*,
+        binding
+      )
     end
 
     def set_describe_launch_template_versions_responses(entries) do
