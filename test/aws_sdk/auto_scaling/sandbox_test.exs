@@ -20,6 +20,72 @@ defmodule AwsSdk.AutoScaling.SandboxTest do
               %{auto_scaling_groups: [%{auto_scaling_group_name: "my-asg"}], next_token: nil}} =
                AutoScaling.describe_auto_scaling_groups(sandbox: [enabled: true])
     end
+
+    test "returns the response registered for the slot a tag:Slot filter names" do
+      Sandbox.set_describe_auto_scaling_groups_responses([
+        {"blue",
+         fn ->
+           {:ok,
+            %{auto_scaling_groups: [%{auto_scaling_group_name: "blue-asg"}], next_token: nil}}
+         end},
+        {"green",
+         fn ->
+           {:ok,
+            %{auto_scaling_groups: [%{auto_scaling_group_name: "green-asg"}], next_token: nil}}
+         end},
+        fn ->
+          {:ok,
+           %{
+             auto_scaling_groups: [
+               %{auto_scaling_group_name: "blue-asg"},
+               %{auto_scaling_group_name: "green-asg"}
+             ],
+             next_token: nil
+           }}
+        end
+      ])
+
+      assert {:ok, %{auto_scaling_groups: [%{auto_scaling_group_name: "green-asg"}]}} =
+               AutoScaling.describe_auto_scaling_groups(
+                 filters: [
+                   %{name: "tag:ReleaseApp", values: ["cylk-web"]},
+                   %{name: "tag:Slot", values: ["green"]}
+                 ],
+                 sandbox: [enabled: true]
+               )
+    end
+
+    test "falls back to the stub for every call when no tag:Slot filter names a slot" do
+      Sandbox.set_describe_auto_scaling_groups_responses([
+        {"blue",
+         fn ->
+           {:ok,
+            %{auto_scaling_groups: [%{auto_scaling_group_name: "blue-asg"}], next_token: nil}}
+         end},
+        fn ->
+          {:ok,
+           %{
+             auto_scaling_groups: [
+               %{auto_scaling_group_name: "blue-asg"},
+               %{auto_scaling_group_name: "green-asg"}
+             ],
+             next_token: nil
+           }}
+        end
+      ])
+
+      assert {:ok,
+              %{
+                auto_scaling_groups: [
+                  %{auto_scaling_group_name: "blue-asg"},
+                  %{auto_scaling_group_name: "green-asg"}
+                ]
+              }} =
+               AutoScaling.describe_auto_scaling_groups(
+                 filters: [%{name: "tag:ReleaseApp", values: ["cylk-web"]}],
+                 sandbox: [enabled: true]
+               )
+    end
   end
 
   describe "describe_instance_refreshes/2" do

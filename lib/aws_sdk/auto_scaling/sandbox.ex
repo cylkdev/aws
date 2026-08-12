@@ -18,8 +18,27 @@ if Code.ensure_loaded?(SandboxRegistry) do
     def describe_auto_scaling_groups_response(opts) do
       binding = [opts: opts]
 
-      Sandbox.apply(@registry, __MODULE__, :describe_auto_scaling_groups, :*, binding)
+      Sandbox.apply(
+        @registry,
+        __MODULE__,
+        :describe_auto_scaling_groups,
+        slot_filter_value(opts[:filters]) || :*,
+        binding
+      )
     end
+
+    # A describe narrowed to one slot names it in a `tag:Slot` filter; a
+    # describe of every slot of a service does not. Keying on that value lets
+    # a caller register one reply per slot and another for the unfiltered
+    # read, the way `create_auto_scaling_group` keys on the group it is given.
+    defp slot_filter_value(filters) when is_list(filters) do
+      Enum.find_value(filters, fn
+        %{name: "tag:Slot", values: [value | _rest]} -> value
+        _filter -> nil
+      end)
+    end
+
+    defp slot_filter_value(_filters), do: nil
 
     def set_describe_auto_scaling_groups_responses(entries) do
       Sandbox.register(@registry, __MODULE__, :describe_auto_scaling_groups, entries)
