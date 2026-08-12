@@ -55,7 +55,14 @@ if Code.ensure_loaded?(SandboxRegistry) do
     @state "state"
     @disabled "disabled"
     @sleep 10
-    @keys :unique
+
+    # A registry of duplicate keys, so every test process holds its own entry
+    # under the one context and `SandboxRegistry.lookup/2` picks the entry
+    # belonging to the caller or one of its ancestors. A unique registry lets
+    # one process own the context at a time, and every other process spins in
+    # `SandboxRegistry.register/4`'s retry until that one exits — which is a
+    # busy wait that grows with the size of the suite, not isolation.
+    @keys :duplicate
 
     @typedoc """
     Selects which registered stub a call resolves to.
@@ -90,8 +97,7 @@ if Code.ensure_loaded?(SandboxRegistry) do
     """
     @spec disable(atom, module) :: :ok
     def disable(registry, module) do
-      with {:error, :registry_not_started} <-
-             SandboxRegistry.register(registry, @disabled, %{}, @keys) do
+      with {:error, :registry_not_started} <- put_state(registry, @disabled, %{}) do
         raise_not_started!(module)
       end
     end
@@ -268,13 +274,40 @@ if Code.ensure_loaded?(SandboxRegistry) do
           fun when is_function(fun) -> {:*, fun}
         end)
         |> Map.new(fn {key, fun} -> {{function, key}, fun} end)
-        |> then(&SandboxRegistry.register(registry, @state, &1, @keys))
+        |> then(&put_state(registry, @state, &1))
         |> then(fn
           :ok -> :ok
           {:error, :registry_not_started} -> raise_not_started!(module)
         end)
 
       :ok = Process.sleep(@sleep)
+    end
+
+    # Writes `state` into the calling process's entry for `context`, merged
+    # with whatever it already holds.
+    #
+    # A duplicate-key registry lets one process register a key more than once,
+    # and `SandboxRegistry.lookup/2` reads the first entry it finds for that
+    # pid — so a second registration would shadow the first rather than add to
+    # it. Registering stubs for two functions in one test is ordinary, so the
+    # entry is read, merged and rewritten, leaving exactly one per process.
+    defp put_state(registry, context, state) do
+      case Process.whereis(registry) do
+        nil ->
+          {:error, :registry_not_started}
+
+        _pid_or_port ->
+          merged =
+            case SandboxRegistry.lookup(registry, context) do
+              {:ok, existing} when is_map(existing) -> Map.merge(existing, state)
+              _unregistered -> state
+            end
+
+          Registry.unregister(registry, context)
+          Registry.register(registry, context, merged)
+
+          :ok
+      end
     end
 
     # -------------------------------------------------------------------------

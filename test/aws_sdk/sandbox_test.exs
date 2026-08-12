@@ -192,5 +192,34 @@ defmodule AwsSdk.SandboxTest do
 
       assert :second = Sandbox.apply(@registry, __MODULE__, :replace_thing, "a", opts: [])
     end
+
+    # A unique-key registry lets one process own the context at a time, so the
+    # second of these would spin in SandboxRegistry.register/4's retry until
+    # the first exited, and a suite registering from many processes at once
+    # pays that wait on every one of them.
+    test "processes holding registrations at the same time each resolve their own stubs" do
+      parent = self()
+
+      # Every task registers and then waits, so all eight hold a registration
+      # at once rather than finishing one after another. Under a unique-key
+      # registry the first task owns the context and the other seven spin in
+      # SandboxRegistry.register/4's retry, never reaching the barrier.
+      tasks =
+        Enum.map(1..8, fn n ->
+          Task.async(fn ->
+            Sandbox.register(@registry, __MODULE__, :held_thing, [{"k", fn -> n end}])
+            send(parent, {:registered, n})
+
+            receive do
+              :go -> Sandbox.apply(@registry, __MODULE__, :held_thing, "k", opts: [])
+            end
+          end)
+        end)
+
+      Enum.each(1..8, fn n -> assert_receive {:registered, ^n}, 2000 end)
+      Enum.each(tasks, fn task -> send(task.pid, :go) end)
+
+      assert [1, 2, 3, 4, 5, 6, 7, 8] = Enum.map(tasks, &Task.await/1)
+    end
   end
 end
